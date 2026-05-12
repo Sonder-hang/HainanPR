@@ -1,0 +1,44 @@
+INFO:     Will watch for changes in these directories: ['/home/ubuntu/41811_fullstack/41811/backend_fastapi/Hainan_SQL-main/text2sql_app']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [831640] using WatchFiles
+==================================================
+  Text-to-SQL 指标调试服务
+  打开浏览器: http://127.0.0.1:8000
+  日志页面:   http://127.0.0.1:8000/log
+==================================================
+INFO:     Started server process [831662]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:54704 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:45694 - "POST /api/indicators/add HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38110 - "POST /api/indicators/add HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46314 - "POST /api/indicators/add HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57752 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54366 - "DELETE /api/indicators/four/delete/1/ HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:40474 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50556 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55796 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55810 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36734 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42954 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42962 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53976 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48870 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36692 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33096 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35320 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56028 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:34960 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34974 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36672 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40980 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53662 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39376 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39260 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49504 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49034 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38924 - "POST /api/test_sql HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53788 - "POST /api/run HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:34956 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36858 - "POST /api/run HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47390 - "POST /api/run HTTP/1.1" 200 OK
