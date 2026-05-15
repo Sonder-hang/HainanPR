@@ -1,0 +1,100 @@
+# ============================
+# Python
+# ============================
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# pip / pipenv lock files (if you want to keep requirements.txt but ignore lock)
+# pipfile.lock
+# poetry.lock
+
+# ============================
+# Node.js
+# ============================
+node_modules/
+pnpm-lock.yaml   # if using pnpm
+yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-test.log*
+
+# ============================
+# Vue / Vite
+# ============================
+dist-ssr/
+*.local
+
+# ============================
+# Database
+# ============================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# ============================
+# Logs
+# ============================
+logs/*.log
+logs/*.pid
+*.log
+pid/
+
+# ============================
+# Environment & Secrets
+# ============================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+secrets.json
+credentials.json
+
+# ============================
+# IDE & Editor
+# ============================
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================
+# FastAPI / Uvicorn
+# ============================
+*.pot
+*.mo
+
+# ============================
+# Text2SQL 独立子项目
+# ============================
+backend_fastapi/Hainan_SQL-main/logs/
+backend_fastapi/Hainan_SQL-main/text2sql_app/__pycache__/
+backend_fastapi/Hainan_SQL-main/text2sql_app/venv/
+
+# ============================
+# Keep requirements files
+# ============================
+!requirements.txt
