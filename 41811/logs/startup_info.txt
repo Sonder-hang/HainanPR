@@ -1,3 +1,0 @@
-text2sql_app: 599730
-backend_fastapi: 599733
-my-vue-app: 599735
