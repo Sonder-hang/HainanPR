@@ -1,0 +1,153 @@
+[
+  {
+    "label": "医疗结果质量",
+    "value": "outcome",
+    "children": [
+      {
+        "label": "死亡相关",
+        "value": "death",
+        "children": [
+          { "label": "住院患者死亡率", "value": "overallMortalityRate" },
+          { "label": "围手术期死亡率", "value": "perioperativeMortality" },
+          { "label": "三、四级手术死亡率比", "value": "mortalityRateRatio" },
+          { "label": "死亡或出院预期转归不良患者", "value": "deathPatientDefinition" },
+          { "label": "死亡疾病谱", "value": "deathDiseaseSpectrum" },
+          { "label": "死亡手术谱", "value": "deathSurgicalSpectrum" }
+        ]
+      },
+      {
+        "label": "并发症与风险",
+        "value": "risk",
+        "children": [
+          { "label": "手术并发症发生率", "value": "surgicalComplication" },
+          { "label": "三、四级手术并发症率比", "value": "complicationRateRatio" },
+          { "label": "VTE发生率", "value": "vteIncidence" }
+        ]
+      },
+      {
+        "label": "再入院/再手术",
+        "value": "rehospitalization",
+        "children": [
+          { "label": "非预期再住院分析", "value": "unexpectedRehospitalizationAnalysis" },
+          { "label": "非计划再手术分析", "value": "unplannedReturnToORAnalysis" },
+          { "label": "非计划手术率", "value": "unplannedSurgeryRate" }
+        ]
+      }
+    ]
+  },
+  {
+    "label": "医疗过程质量",
+    "value": "process",
+    "children": [
+      {
+        "label": "手术过程管理",
+        "value": "surgery_process",
+        "children": [
+          { "label": "术前讨论完成率", "value": "preoperativeDiscussionRate" },
+          { "label": "术者参与讨论率", "value": "surgeonParticipationInPreoperativeDiscussionRate" },
+          { "label": "手术计划一致率", "value": "preoperativePlanConsistencyRate" },
+          { "label": "术者一致率", "value": "surgeonConsistencyRate" },
+          { "label": "手术医师时间重合率", "value": "surgeonTimeOverlapRate" },
+          { "label": "麻醉医师时间重合率", "value": "anesthesiologistTimeOverlapRate" }
+        ]
+      },
+      {
+        "label": "复杂手术管理",
+        "value": "complex_surgery",
+        "children": [
+          { "label": "多学科讨论率", "value": "preoperativeMultidisciplinaryDiscussionRateForLevel4" },
+          { "label": "三、四级手术实际开展率", "value": "level3And4SurgeryImplementationRate" }
+        ]
+      },
+      {
+        "label": "用药与输血",
+        "value": "drug_blood",
+        "children": [
+          { "label": "抗菌药预防使用率", "value": "antibioticProphylaxis" },
+          { "label": "特殊抗生素会诊率", "value": "specialAntibioticConsultationRate" },
+          { "label": "用血评估率", "value": "bloodUsageEvaluationRate" },
+          { "label": "自体血回输率", "value": "autologousBloodTransfusionRate" }
+        ]
+      },
+      {
+        "label": "医嘱执行",
+        "value": "order",
+        "children": [
+          { "label": "长期医嘱终止率", "value": "longTermOrderTerminationRate" }
+        ]
+      }
+    ]
+  },
+  {
+    "label": "医疗能力与结构",
+    "value": "capacity",
+    "children": [
+      {
+        "label": "诊断能力",
+        "value": "diagnosis",
+        "children": [
+          { "label": "ICD10种类数", "value": "icd10Subcategories" }
+        ]
+      },
+      {
+        "label": "手术能力",
+        "value": "surgery",
+        "children": [
+          { "label": "手术种类数", "value": "icd9Cm3Categories" }
+        ]
+      }
+    ]
+  },
+  {
+    "label": "核心制度执行",
+    "value": "system",
+    "children": [
+      {
+        "label": "查房制度",
+        "value": "round",
+        "children": [
+          { "label": "入院8小时查房率", "value": "patientAdmissionRoundRate" },
+          { "label": "查房记录规范率", "value": "seniorPhysicianRoundRate" }
+        ]
+      },
+      {
+        "label": "会诊制度",
+        "value": "consult",
+        "children": [
+          { "label": "急会诊及时率", "value": "emergencyConsultationTimelyRate" },
+          { "label": "急会诊有效率", "value": "emergencyConsultationEffectiveRate" },
+          { "label": "普通会诊及时率", "value": "regularConsultationTimelyRate" },
+          { "label": "普通会诊有效率", "value": "regularConsultationEffectiveRate" }
+        ]
+      },
+      {
+        "label": "病例讨论",
+        "value": "discussion",
+        "children": [
+          { "label": "死亡病例讨论", "value": "deathCaseDiscussionWithin5DaysRate" },
+          { "label": "科主任主持率", "value": "departmentDirectorPresideDeathDiscussionRate" },
+          { "label": "再入院讨论完成率", "value": "unplannedRehospitalizationSurgeryDiscussionRate" },
+          { "label": "讨论记录完整率", "value": "unplannedRehospitalizationSurgeryDiscussionCompleteRate" },
+          { "label": "高额费用讨论率", "value": "highCostDiscussionRate" }
+        ]
+      },
+      {
+        "label": "护理与转科",
+        "value": "nursing",
+        "children": [
+          { "label": "一级护理出院率", "value": "surgicalSpecialCareDischargeRate" },
+          { "label": "48小时转科率", "value": "transferWithin48HoursRate" }
+        ]
+      },
+      {
+        "label": "危急值与抢救",
+        "value": "emergency",
+        "children": [
+          { "label": "危急值报告时间", "value": "criticalValueReportTime" },
+          { "label": "危急值处置率", "value": "criticalValueTimelyDisposalRate" },
+          { "label": "抢救成功率", "value": "criticalCareSuccessRate" }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,2603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Text-to-SQL 指标调试</title>
+  <style>
+    :root {
+      --blue-50: #eff6ff; --blue-100: #dbeafe; --blue-200: #bfdbfe;
+      --blue-500: #3b82f6; --blue-600: #2563eb; --blue-700: #1d4ed8;
+      --slate-400: #94a3b8; --slate-500: #64748b; --slate-600: #475569; --slate-800: #1e293b;
+      --white: #ffffff; --paper: #f8fafc; --border: #e2e8f0;
+      --err: #dc2626; --err-bg: #fef2f2;
+      --ok: #15803d; --ok-bg: #f0fdf4;
+      --amber-600: #d97706; --amber-bg: #fffbeb;
+      --violet-600: #7c3aed; --violet-bg: #f5f3ff;
+      --red-500: #ef4444; --red-600: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:"Segoe UI","PingFang SC",system-ui,sans-serif; background:var(--paper); color:var(--slate-800); line-height:1.55; min-height:100vh; }
+    header { background:linear-gradient(90deg,var(--blue-600) 0%,var(--blue-500) 48%,var(--blue-100) 100%); color:var(--white); padding:1rem 1.5rem; border-bottom:3px solid var(--blue-200); }
+    header h1 { font-size:1.2rem; font-weight:600; margin:0; }
+    .sub { margin-top:.45rem; font-size:.82rem; opacity:.95; }
+    .sub a { color:var(--white); font-weight:600; text-decoration:underline; }
+    main { padding:1.25rem 1.5rem 2rem; max-width:1400px; margin:0 auto; }
+    label { display:block; font-size:.78rem; color:var(--slate-600); margin-bottom:.35rem; font-weight:500; }
+    select, textarea, input[type="text"] { width:100%; background:var(--white); border:1px solid var(--border); color:var(--slate-800); border-radius:8px; padding:.5rem .65rem; font-size:.9rem; }
+    textarea { min-height:72px; font-family:ui-monospace,monospace; font-size:.8rem; }
+    textarea.sql-edit { min-height:100px; background:#f1f5f9; }
+    .row { display:grid; gap:1rem; margin-bottom:1rem; }
+    @media(min-width:720px){ .row.cols-2{grid-template-columns:1fr 1fr;} .row.cols-3{grid-template-columns:1fr 1fr 1fr;} }
+    .toolbar { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.5rem; align-items:center; }
+    button { background:var(--blue-600); color:var(--white); border:none; padding:.5rem 1.1rem; border-radius:8px; font-weight:600; cursor:pointer; font-size:.88rem; box-shadow:0 1px 2px rgba(37,99,235,.25); }
+    button:disabled { opacity:.55; cursor:not-allowed; box-shadow:none; }
+    button.secondary { background:var(--white); color:var(--blue-700); border:1px solid var(--blue-200); box-shadow:none; }
+    button.green { background:var(--ok); }
+    button.amber { background:var(--amber-600); }
+    button.small { padding:.35rem .75rem; font-size:.78rem; }
+    button.danger { background:var(--red-600); }
+    button.danger-outline { background:var(--white); color:var(--red-600); border:1px solid #fca5a5; box-shadow:none; }
+    .tag { display:inline-block; padding:.15rem .5rem; border-radius:999px; font-size:.72rem; font-weight:700; }
+    .tag-ratio { background:var(--blue-100); color:var(--blue-700); }
+    .tag-stat { background:var(--ok-bg); color:var(--ok); }
+    .tag-analysis { background:var(--violet-bg); color:var(--violet-600); }
+    .table-chips { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.35rem; }
+    .chip { display:inline-flex; align-items:center; gap:.3rem; padding:.25rem .55rem; border-radius:8px; font-size:.75rem; background:var(--blue-50); border:1px solid var(--blue-200); color:var(--slate-800); }
+    .chip .chip-name { font-weight:600; }
+    .chip .chip-comment { color:var(--slate-500); font-size:.7rem; }
+    .section-title { font-size:.92rem; font-weight:700; color:var(--slate-800); margin:1.2rem 0 .6rem; padding-bottom:.3rem; border-bottom:2px solid var(--blue-200); }
+    .stats { display:flex; flex-wrap:wrap; gap:.75rem 1.25rem; margin:1rem 0; padding:.85rem 1rem; background:var(--white); border:1px solid var(--border); border-radius:10px; border-left:4px solid var(--blue-600); font-size:.86rem; }
+    .stats span { color:var(--slate-500); } .stats strong { color:var(--slate-800); }
+
+    /* ====== 流程进度指示器 ====== */
+    .flow-progress {
+      margin: 1rem 0;
+      padding: 1rem;
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    .flow-steps {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: .75rem;
+    }
+    .flow-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      position: relative;
+    }
+    .flow-step::after {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: 55%;
+      width: 90%;
+      height: 2px;
+      background: #e2e8f0;
+      z-index: 0;
+    }
+    .flow-step:last-child::after {
+      display: none;
+    }
+    .flow-step-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: var(--slate-500);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .75rem;
+      font-weight: 700;
+      position: relative;
+      z-index: 1;
+      transition: all .3s ease;
+    }
+    .flow-step-label {
+      font-size: .72rem;
+      color: var(--slate-500);
+      margin-top: .35rem;
+      text-align: center;
+      transition: all .3s ease;
+    }
+    .flow-step.active .flow-step-icon {
+      background: var(--violet-600);
+      color: white;
+      box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.2);
+    }
+    .flow-step.active .flow-step-label {
+      color: var(--violet-600);
+      font-weight: 600;
+    }
+    .flow-step.done .flow-step-icon {
+      background: #22c55e;
+      color: white;
+    }
+    .flow-step.done::after {
+      background: #22c55e;
+    }
+    .flow-step.done .flow-step-label {
+      color: #22c55e;
+    }
+    .flow-step.error .flow-step-icon {
+      background: var(--err);
+      color: white;
+    }
+    .flow-step.error .flow-step-label {
+      color: var(--err);
+    }
+    .flow-detail {
+      font-size: .82rem;
+      color: var(--slate-600);
+      text-align: center;
+      padding: .5rem;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+    .flow-detail.loading {
+      color: var(--violet-600);
+    }
+    .flow-detail.success {
+      color: #22c55e;
+      font-weight: 600;
+    }
+    .flow-detail.error {
+      color: var(--err);
+      font-weight: 600;
+    }
+
+    /* ====== 步骤详情面板 ====== */
+    .step-panels {
+      margin-top: 1rem;
+      border-top: 1px solid var(--border);
+      padding-top: 1rem;
+    }
+    .step-panel {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: .75rem;
+      overflow: hidden;
+    }
+    .step-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: .75rem 1rem;
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .step-panel-title {
+      font-weight: 600;
+      color: var(--slate-700);
+    }
+    .btn-toggle-panel {
+      background: none;
+      border: none;
+      color: var(--slate-500);
+      font-size: .75rem;
+      cursor: pointer;
+      padding: .25rem .5rem;
+      border-radius: 4px;
+    }
+    .btn-toggle-panel:hover {
+      background: var(--blue-50);
+      color: var(--blue-600);
+    }
+    .step-panel-body {
+      padding: 1rem;
+    }
+    .step-info-group {
+      margin-bottom: .75rem;
+    }
+    .step-info-label {
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--slate-500);
+      margin-bottom: .25rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .step-info-content {
+      background: var(--blue-50);
+      border: 1px solid var(--blue-100);
+      border-radius: 6px;
+      padding: .75rem;
+      font-size: .85rem;
+      color: var(--slate-700);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 150px;
+      overflow: auto;
+    }
+    .prompt-pre {
+      font-size: .72rem;
+      max-height: 120px;
+      overflow: auto;
+      background: #1e1b4b;
+      color: #e2e8f0;
+      padding: .65rem;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: .5rem 0;
+    }
+    .step-action-bar {
+      display: flex;
+      gap: .75rem;
+      align-items: center;
+      margin-top: .75rem;
+      padding-top: .75rem;
+      border-top: 1px dashed var(--border);
+    }
+    .step-action-bar input {
+      flex: 1;
+      padding: .5rem .75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: .85rem;
+    }
+    .step-action-bar input:focus {
+      outline: none;
+      border-color: var(--blue-500);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    /* ====== 步骤卡片（可折叠） ====== */
+    .step-cards {
+      margin-top: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+    .step-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: box-shadow .2s;
+    }
+    .step-card:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+    .step-card-header {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: .75rem 1rem;
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      cursor: pointer;
+      user-select: none;
+    }
+    .step-card-header:hover {
+      background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    }
+    .step-card-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: var(--slate-500);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .7rem;
+      font-weight: 700;
+    }
+    .step-card.done .step-card-icon {
+      background: #22c55e;
+      color: white;
+    }
+    .step-card.active .step-card-icon {
+      background: var(--violet-600);
+      color: white;
+    }
+    .step-card-title {
+      font-weight: 600;
+      color: var(--slate-700);
+      font-size: .9rem;
+    }
+    .step-card-status {
+      margin-left: auto;
+      font-size: .78rem;
+      color: var(--slate-500);
+    }
+    .step-card.done .step-card-status {
+      color: #22c55e;
+    }
+    .step-card.active .step-card-status {
+      color: var(--violet-600);
+    }
+    .step-card-toggle {
+      font-size: .7rem;
+      color: var(--slate-400);
+      transition: transform .2s;
+    }
+    .step-card.open .step-card-toggle {
+      transform: rotate(180deg);
+    }
+    .step-card-body {
+      display: none;
+      padding: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .step-card.open .step-card-body {
+      display: block;
+    }
+    .step-row {
+      margin-bottom: .75rem;
+    }
+    .step-label {
+      display: block;
+      font-size: .72rem;
+      font-weight: 600;
+      color: var(--slate-500);
+      margin-bottom: .25rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .step-content {
+      background: var(--blue-50);
+      border: 1px solid var(--blue-100);
+      border-radius: 6px;
+      padding: .75rem;
+      font-size: .82rem;
+      color: var(--slate-700);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 100px;
+      overflow: auto;
+    }
+    .step-prompt-details {
+      margin-top: .5rem;
+    }
+    .step-prompt-details summary {
+      font-size: .78rem;
+      color: var(--slate-600);
+      cursor: pointer;
+      padding: .35rem 0;
+    }
+    .step-prompt-details summary:hover {
+      color: var(--violet-600);
+    }
+    .formula strong { color:var(--blue-700); font-size:1.02rem; }
+    .dual { display:grid; grid-template-columns:1fr; gap:1.25rem; margin-top:1rem; }
+    @media(min-width:960px){ .dual{grid-template-columns:1fr 1fr;align-items:start;} }
+    .panel { background:var(--white); border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(15,23,42,.06); }
+    .panel-head { margin:0; padding:.55rem 1rem; font-size:.95rem; font-weight:600; color:var(--white); background:linear-gradient(90deg,var(--blue-600),var(--blue-500)); border-bottom:2px solid var(--blue-200); }
+    .panel-body { padding:.85rem 1rem 1rem; }
+    .panel-body h3 { margin:0 0 .4rem; font-size:.78rem; font-weight:600; color:var(--slate-600); }
+    .errbox { background:var(--err-bg); border:1px solid #fecaca; color:var(--err); padding:.6rem .85rem; border-radius:8px; font-size:.84rem; margin:.5rem 0; }
+    .okbox { background:var(--ok-bg); border:1px solid #bbf7d0; color:var(--ok); padding:.6rem .85rem; border-radius:8px; font-size:.84rem; margin:.5rem 0; }
+    table.data { width:max-content; min-width:100%; border-collapse:collapse; font-size:.74rem; }
+    table.data th, table.data td { border:1px solid var(--border); padding:.35rem .5rem; text-align:left; white-space:nowrap; }
+    table.data th { background:var(--blue-50); color:var(--slate-800); font-weight:600; position:sticky; top:0; z-index:1; }
+    table.data th.th-meaning { white-space:normal; vertical-align:bottom; }
+    table.data th.th-meaning .th-col { display:flex; flex-direction:column; align-items:flex-start; gap:.12rem; line-height:1.25; }
+    table.data th.th-meaning .col-en { font-weight:600; font-family:ui-monospace,monospace; font-size:.72rem; }
+    table.data th.th-meaning .col-cn { font-size:.68rem; color:var(--slate-500); font-weight:500; max-width:16rem; white-space:normal; }
+    table.data tr:nth-child(even) td { background:#fafbfc; }
+    .table-scroll { overflow:auto; max-height:min(55vh,520px); border:1px solid var(--border); border-radius:8px; background:var(--white); }
+    .empty-hint { color:var(--slate-500); font-size:.82rem; padding:.5rem 0; }
+    .stream-panel { margin:.75rem 0 1rem; padding:.65rem .85rem; background:var(--white); border:1px solid var(--blue-200); border-radius:10px; border-left:4px solid var(--blue-600); }
+    .stream-panel h3 { margin:0 0 .4rem; font-size:.78rem; font-weight:600; color:var(--slate-600); }
+    .stream-panel pre { margin:0; max-height:min(38vh,320px); overflow:auto; font-size:.72rem; line-height:1.45; white-space:pre-wrap; word-break:break-word; background:#0f172a; color:#e2e8f0; padding:.55rem .65rem; border-radius:8px; font-family:ui-monospace,monospace; }
+    .stream-panel pre .reasoning { color:#94a3b8; font-style:italic; }
+    .stream-meta { font-size:.72rem; color:var(--slate-500); margin-bottom:.35rem; }
+    label.inline { display:inline-flex; align-items:center; gap:.35rem; font-size:.82rem; color:var(--slate-800); cursor:pointer; user-select:none; }
+    label.inline input { width:auto; }
+    details.prompt-details { margin-bottom:.75rem; border:1px solid var(--border); border-radius:10px; background:var(--white); overflow:hidden; }
+    details.prompt-details > summary { cursor:pointer; padding:.55rem .75rem; font-size:.82rem; font-weight:600; color:var(--slate-600); background:#f8fafc; list-style:none; user-select:none; }
+    details.prompt-details > summary::-webkit-details-marker { display:none; }
+    details.prompt-details > summary::before { content:"▸ "; color:var(--blue-600); }
+    details.prompt-details[open] > summary::before { content:"▾ "; }
+    details.prompt-details .prompt-body { padding:.65rem .75rem; }
+    .hint { font-size:.72rem; color:var(--slate-500); margin-top:.15rem; }
+    .mode-tabs { display:flex; gap:0; margin-bottom:1rem; }
+    .mode-tab { padding:.6rem 1.2rem; font-size:.88rem; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--white); color:var(--slate-600); }
+    .mode-tab:first-child { border-radius:10px 0 0 10px; }
+    .mode-tab:last-child { border-radius:0 10px 10px 0; }
+    .mode-tab.active { background:var(--blue-600); color:var(--white); border-color:var(--blue-600); }
+    .hidden { display:none !important; }
+    .analysis-box { background:var(--violet-bg); border:1px solid #ddd6fe; border-radius:10px; padding:.75rem 1rem; margin:.5rem 0; font-size:.84rem; color:var(--violet-600); white-space:pre-wrap; }
+
+    /* 可滚动指标列表 */
+    .indicator-list-wrap {
+      max-height: 280px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--white);
+    }
+    .indicator-item {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      padding: .55rem .75rem;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background .15s;
+    }
+    .indicator-item:last-child { border-bottom: none; }
+    .indicator-item:hover { background: var(--blue-50); }
+    .indicator-item.active { background: var(--blue-100); border-left: 3px solid var(--blue-600); }
+    .indicator-item .ind-name { flex:1; font-weight:600; font-size:.86rem; color:var(--slate-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .indicator-item .ind-type { flex-shrink:0; }
+    .indicator-item .ind-actions { display:flex; gap:.35rem; flex-shrink:0; }
+    .indicator-item .ind-btn {
+      border-radius:6px; display:flex; align-items:center; justify-content:center;
+      font-size:.7rem; font-weight:600; cursor:pointer;
+      padding:.2rem .5rem; box-shadow:none; transition: all .15s; white-space:nowrap;
+    }
+    .indicator-item .ind-edit {
+      background:transparent; border:1px solid var(--blue-200); color:var(--blue-600);
+    }
+    .indicator-item .ind-edit:hover { background:var(--blue-50); border-color:var(--blue-600); }
+    .indicator-item .ind-del {
+      background:transparent; border:1px solid #fca5a5; color:var(--red-500);
+    }
+    .indicator-item .ind-del:hover { background:var(--err-bg); border-color:var(--red-600); color:var(--red-600); }
+    .edit-banner {
+      background: var(--amber-bg); border:1px solid #fde68a; border-radius:10px;
+      padding:.55rem .85rem; margin-bottom:.75rem; display:flex; align-items:center; gap:.6rem;
+      font-size:.86rem; color:var(--amber-600); font-weight:600;
+    }
+    .edit-banner .edit-banner-name { color:var(--slate-800); }
+    .edit-banner button { font-size:.76rem; padding:.25rem .65rem; }
+
+    /* 可滚动表格选择区域 */
+    .table-select-grid {
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:.4rem;
+      max-height:320px; overflow-y:auto; padding:.5rem;
+      border:1px solid var(--border); border-radius:8px; background:var(--white);
+    }
+    .table-select-item { display:flex; align-items:center; gap:.4rem; padding:.35rem .5rem; border-radius:6px; font-size:.78rem; cursor:pointer; }
+    .table-select-item:hover { background:var(--blue-50); }
+    .table-select-item input { width:auto; flex-shrink:0; }
+    .table-select-item .tname { font-weight:600; color:var(--slate-800); }
+    .table-select-item .tcomment { color:var(--slate-500); font-size:.72rem; }
+
+    /* 涉及表 chips 可滚动 */
+    .table-chips-wrap {
+      max-height: 120px;
+      overflow-y: auto;
+      padding: .25rem 0;
+    }
+
+    /* prompt 预览中文本正常显示 */
+    textarea.prompt-text {
+      font-family: "Segoe UI","PingFang SC",system-ui,sans-serif;
+      font-size: .82rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Text-to-SQL 指标调试</h1>
+    <div class="sub">
+      <a href="/log">/log 日志</a> · 支持三种指标类型：分子分母比值型 / 统计型 / 大模型分析型
+    </div>
+  </header>
+  <main>
+    <!-- 模式切换 -->
+    <div class="mode-tabs">
+      <div class="mode-tab active" data-mode="select" onclick="switchMode('select')">选择已有指标</div>
+      <div class="mode-tab" data-mode="create" onclick="switchMode('create')">新增指标</div>
+    </div>
+
+    <!-- 编辑模式横幅 -->
+    <div id="editBanner" class="edit-banner hidden">
+      <span>正在编辑：</span>
+      <span class="edit-banner-name" id="editBannerName"></span>
+      <button type="button" class="secondary small" onclick="cancelEdit()">取消编辑</button>
+    </div>
+
+    <!-- ====== 选择已有指标模式 ====== -->
+    <div id="modeSelect">
+      <div class="row cols-2">
+        <div>
+          <label>选择指标（点击选中，可滚动浏览）</label>
+          <div class="indicator-list-wrap" id="indicatorList"></div>
+        </div>
+        <div>
+          <label>指标类型</label>
+          <div id="indTypeDisplay" style="padding:.5rem 0;font-weight:600;">—</div>
+          <label style="margin-top:.75rem;">涉及表</label>
+          <div class="table-chips-wrap">
+            <div class="table-chips" id="tableChips"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== 新增指标模式 ====== -->
+    <div id="modeCreate" class="hidden">
+      <div class="row cols-3">
+        <div>
+          <label for="newName">指标名称</label>
+          <input type="text" id="newName" placeholder="输入新指标名" />
+        </div>
+        <div>
+          <label for="newType">指标类型</label>
+          <select id="newType" onchange="onNewTypeChange()">
+            <option value="分子分母比值型">分子分母比值型</option>
+            <option value="统计型">统计型</option>
+            <option value="大模型分析型">大模型分析型</option>
+          </select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button type="button" class="secondary small" id="btnRefreshTables" onclick="refreshTables()">刷新数据库表结构</button>
+        </div>
+      </div>
+      <div>
+        <label>选择涉及表（勾选后自动更新，可滚动）</label>
+        <div class="table-select-grid" id="tableSelectGrid"></div>
+      </div>
+    </div>
+
+    <!-- ====== 指标字段输入（根据类型切换） ====== -->
+    <div class="section-title">指标描述</div>
+    <div id="fieldsRatio">
+      <div class="row">
+        <div>
+          <label for="indFormula">指标计算公式</label>
+          <textarea id="indFormula" placeholder="指标计算公式…"></textarea>
+        </div>
+      </div>
+      <div class="row cols-2">
+        <div>
+          <label for="denDesc">分母描述</label>
+          <textarea id="denDesc" placeholder="分母判定逻辑…"></textarea>
+        </div>
+        <div>
+          <label for="numDesc">分子描述</label>
+          <textarea id="numDesc" placeholder="分子判定逻辑…"></textarea>
+        </div>
+      </div>
+    </div>
+    <div id="fieldsSingle" class="hidden">
+      <div class="row">
+        <div>
+          <label for="indDesc">指标描述</label>
+          <textarea id="indDesc" placeholder="描述指标的统计/分析逻辑…" style="min-height:100px;"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== 新增：任务理解工具条 ====== -->
+    <div class="toolbar" id="understandToolbar">
+      <button type="button" id="btnUnderstand" onclick="startUnderstand()">🔍 开始分析</button>
+      <span id="understandStatus" style="font-size:.82rem;color:var(--slate-500);"></span>
+    </div>
+
+    <!-- ====== 新增：任务理解确认面板 ====== -->
+    <div class="panel" id="understandPanel" style="display:none;margin:1rem 0;">
+      <h2 class="panel-head" style="background:linear-gradient(90deg,#7c3aed,#6d28d9);">🤔 模型理解确认</h2>
+      <div class="panel-body">
+        <!-- 模型分析内容 -->
+        <div class="understanding-section" id="understandThinking" style="display:none;margin-bottom:.75rem;">
+          <details class="wf-details" open>
+            <summary>🧠 模型思考过程</summary>
+            <pre id="understandThinkingContent" style="font-size:.72rem;max-height:200px;overflow:auto;background:#1e1b4b;color:#e2e8f0;padding:.65rem;border-radius:6px;white-space:pre-wrap;word-break:break-word;"></pre>
+          </details>
+        </div>
+
+        <!-- 模型原始回复 -->
+        <div class="understanding-section" id="understandRawReply" style="display:none;margin-bottom:.75rem;">
+          <details class="wf-details">
+            <summary>📄 模型原始回复（JSON）</summary>
+            <pre id="understandRawContent" style="font-size:.68rem;max-height:200px;overflow:auto;background:#f1f5f9;padding:.5rem;border-radius:6px;white-space:pre-wrap;word-break:break-word;"></pre>
+          </details>
+        </div>
+
+        <div class="understanding-section" id="understandIntent">
+          <h3 style="color:var(--violet-600);margin:.5rem 0;">📌 查询意图</h3>
+          <p id="intentText" style="font-size:.9rem;padding:.5rem;background:#f5f3ff;border-radius:6px;"></p>
+        </div>
+        <div class="understanding-section" id="understandFields">
+          <h3 style="color:var(--violet-600);margin:.5rem 0;">📋 将使用的字段</h3>
+          <div id="fieldsList" class="table-chips"></div>
+        </div>
+        <div class="understanding-section" id="understandPlan">
+          <h3 style="color:var(--violet-600);margin:.5rem 0;">📝 SQL编写计划</h3>
+          <div id="sqlPlan" style="font-size:.85rem;padding:.5rem;background:#f5f3ff;border-radius:6px;"></div>
+        </div>
+
+        <!-- ====== 缺失知识提示与填写区域 ====== -->
+        <div class="understanding-section" id="understandWarning" style="display:none;">
+          <div class="errbox" style="margin:.5rem 0;">
+            <strong>⚠️ 模型检测到信息缺失</strong>
+            <p id="missingInfo" style="margin:.35rem 0 0 0;"></p>
+          </div>
+          <div id="missingInfoForm" style="margin-top:.75rem;padding:.75rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
+            <label for="missingInfoInput" style="font-size:.82rem;color:var(--slate-600);font-weight:600;">请补充以下信息：</label>
+            <textarea id="missingInfoInput" placeholder="请在此填写缺失的信息..." style="min-height:60px;margin-top:.5rem;"></textarea>
+            <p style="font-size:.72rem;color:var(--slate-500);margin:.35rem 0 0 0;">填写后点击「补充信息后重新分析」</p>
+          </div>
+        </div>
+
+        <!-- Prompt预览 -->
+        <div class="understanding-section" id="understandPrompt" style="display:none;margin-top:.75rem;">
+          <details class="wf-details">
+            <summary>💬 【任务理解】System Prompt</summary>
+            <pre id="understandPromptContent" style="font-size:.68rem;max-height:150px;overflow:auto;background:#f8fafc;padding:.5rem;border-radius:6px;white-space:pre-wrap;word-break:break-word;"></pre>
+          </details>
+          <details class="wf-details" style="margin-top:.35rem;">
+            <summary>💬 【任务理解】User Message</summary>
+            <pre id="understandUserMsgContent" style="font-size:.68rem;max-height:150px;overflow:auto;background:#f8fafc;padding:.5rem;border-radius:6px;white-space:pre-wrap;word-break:break-word;"></pre>
+          </details>
+        </div>
+
+        <div class="toolbar" style="margin-top:1rem;">
+          <button type="button" class="green" id="btnConfirmUnderstand" onclick="confirmUnderstanding()">✅ 确认，开始生成SQL</button>
+          <button type="button" class="secondary" id="btnReunderstand" onclick="startUnderstand()">🔄 重新分析</button>
+          <button type="button" class="amber" id="btnFillMissing" style="display:none;" onclick="fillMissingAndRetry()">📝 补充信息后重新分析</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== 新增：逻辑检查面板 ====== -->
+    <div class="panel" id="logicCheckPanel" style="display:none;margin:1rem 0;">
+      <h2 class="panel-head" style="background:linear-gradient(90deg,#d97706,#b45309);">⚠️ 查询结果为空 - 逻辑验证</h2>
+      <div class="panel-body">
+        <!-- 模型分析内容 -->
+        <div class="understanding-section" id="logicThinking" style="display:none;margin-bottom:.75rem;">
+          <details class="wf-details" open>
+            <summary>🧠 模型思考过程（逻辑验证）</summary>
+            <pre id="logicThinkingContent" style="font-size:.72rem;max-height:200px;overflow:auto;background:#1e1b4b;color:#e2e8f0;padding:.65rem;border-radius:6px;white-space:pre-wrap;word-break:break-word;"></pre>
+          </details>
+        </div>
+
+        <!-- 模型原始回复 -->
+        <div class="understanding-section" id="logicRawReply" style="display:none;margin-bottom:.75rem;">
+          <details class="wf-details">
+            <summary>📄 模型原始回复（JSON）</summary>
+            <pre id="logicRawContent" style="font-size:.68rem;max-height:200px;overflow:auto;background:#f1f5f9;padding:.5rem;border-radius:6px;white-space:pre-wrap;word-break:break-word;"></pre>
+          </details>
+        </div>
+
+        <div class="understanding-section">
+          <h3 style="color:var(--amber-600);margin:.5rem 0;">🔍 SQL理解验证</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:.5rem 0;">
+            <div>
+              <label style="font-size:.78rem;color:var(--slate-600);font-weight:600;">📝 原需求理解</label>
+              <p id="logicOriginalIntent" style="font-size:.85rem;padding:.5rem;background:#fffbeb;border-radius:6px;min-height:60px;"></p>
+            </div>
+            <div>
+              <label style="font-size:.78rem;color:var(--slate-600);font-weight:600;">💻 SQL实际查询</label>
+              <p id="logicSqlUnderstanding" style="font-size:.85rem;padding:.5rem;background:#fffbeb;border-radius:6px;min-height:60px;"></p>
+            </div>
+          </div>
+          <div id="logicConsistency" style="font-size:.9rem;font-weight:600;padding:.75rem;border-radius:6px;margin:.75rem 0;text-align:center;"></div>
+        </div>
+        <div class="understanding-section" id="logicSuggestions" style="display:none;">
+          <h3 style="color:var(--amber-600);margin:.5rem 0;">📋 可能原因与修正建议</h3>
+          <div id="logicReasons" style="font-size:.85rem;padding:.75rem;background:#fffbeb;border-radius:6px;"></div>
+          <div id="logicCorrectionForm" style="margin-top:.75rem;display:none;">
+            <label for="logicCorrectionInput" style="font-size:.82rem;color:var(--slate-600);font-weight:600;">修正建议（可手动调整后重新生成）：</label>
+            <textarea id="logicCorrectionInput" placeholder="输入修正建议..." style="min-height:60px;margin-top:.5rem;"></textarea>
+            <div class="toolbar" style="margin-top:.5rem;">
+              <button type="button" class="green" onclick="retryWithCorrection()">🔄 按建议重新生成SQL</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Prompt预览 -->
+        <div class="understanding-section" id="logicPrompt" style="display:none;margin-top:.75rem;">
+          <details class="wf-details">
+            <summary>💬 【逻辑验证】System Prompt</summary>
+            <pre id="logicPromptContent" style="font-size:.68rem;max-height:150px;overflow:auto;background:#f8fafc;padding:.5rem;border-radius:6px;white-space:pre-wrap;word-break:break-word;"></pre>
+          </details>
+        </div>
+
+        <div class="toolbar" style="margin-top:1rem;">
+          <button type="button" class="secondary" onclick="hideLogicCheck()">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== Prompt 预览 ====== -->
+    <div class="section-title">Prompt 预览 <button type="button" class="secondary small" style="margin-left:.5rem" onclick="loadPromptPreview()">刷新预览</button></div>
+    <details class="prompt-details" id="promptDetails">
+      <summary>点击展开 / 收起 Prompt（可在生成前修改，不影响默认配置）</summary>
+      <div class="prompt-body">
+        <label for="sysPrompt">System Prompt</label>
+        <textarea id="sysPrompt" class="prompt-text" style="min-height:160px;"></textarea>
+        <div class="hint">修改此处仅影响本次发送给模型的 system prompt，不改变代码默认值。</div>
+        <label for="userMsg" style="margin-top:.75rem;">User Message</label>
+        <textarea id="userMsg" class="prompt-text" style="min-height:200px;"></textarea>
+        <div class="hint">修改此处仅影响本次发送给模型的 user message。</div>
+      </div>
+    </details>
+
+    <!-- ====== 操作按钮 ====== -->
+    <!-- 选择模式：保存 SQL -->
+    <div class="toolbar" id="toolbarSelect">
+      <button type="button" class="green" onclick="saveSqlToIndicator()">保存 SQL 到指标</button>
+    </div>
+    <!-- 新增/编辑模式：保存按钮 -->
+    <div class="toolbar hidden" id="toolbarGenerate">
+      <span id="modeCreateBtns" class="hidden">
+        <button type="button" class="green" id="btnSaveIndicator" onclick="saveIndicator()">完成配置（保存指标）</button>
+      </span>
+      <span id="modeEditBtns" class="hidden">
+        <button type="button" class="amber" id="btnUpdateIndicator" onclick="updateIndicator()">完成编辑</button>
+        <button type="button" class="secondary small" onclick="cancelEdit()">取消</button>
+      </span>
+    </div>
+
+    <!-- ====== 流程进度指示器 ====== -->
+    <div class="flow-progress hidden" id="flowProgress">
+      <!-- 流程进度条 -->
+      <div class="flow-header">
+        <div class="flow-steps" id="flowSteps">
+          <div class="flow-step" data-step="understand">
+            <div class="flow-step-icon">1</div>
+            <div class="flow-step-label">任务理解</div>
+          </div>
+          <div class="flow-step" data-step="content">
+            <div class="flow-step-icon">2</div>
+            <div class="flow-step-label">内容管道</div>
+          </div>
+          <div class="flow-step" data-step="structure">
+            <div class="flow-step-icon">3</div>
+            <div class="flow-step-label">结构管道</div>
+          </div>
+          <div class="flow-step" data-step="generate">
+            <div class="flow-step-icon">4</div>
+            <div class="flow-step-label">SQL生成</div>
+          </div>
+          <div class="flow-step" data-step="logic">
+            <div class="flow-step-icon">5</div>
+            <div class="flow-step-label">逻辑验证</div>
+          </div>
+        </div>
+        <div class="flow-detail" id="flowDetail">—</div>
+      </div>
+
+      <!-- 步骤详情卡片 -->
+      <div class="step-cards" id="stepCards">
+        <!-- 任务理解 -->
+        <div class="step-card" id="cardUnderstand">
+          <div class="step-card-header" onclick="toggleStepCard('Understand')">
+            <span class="step-card-icon">1</span>
+            <span class="step-card-title">📋 任务理解</span>
+            <span class="step-card-status" id="cardStatusUnderstand">—</span>
+            <span class="step-card-toggle">▼</span>
+          </div>
+          <div class="step-card-body" id="cardBodyUnderstand">
+            <div class="step-row">
+              <label class="step-label">【输入】用户问题</label>
+              <div class="step-content" id="stepUnderstandInput">—</div>
+            </div>
+            <div class="step-row">
+              <label class="step-label">【输出】模型理解</label>
+              <div class="step-content" id="stepUnderstandOutput">—</div>
+            </div>
+            <details class="step-prompt-details">
+              <summary>🔧 System Prompt</summary>
+              <pre id="stepUnderstandSystemPrompt" class="prompt-pre">—</pre>
+            </details>
+            <details class="step-prompt-details">
+              <summary>📨 User Message</summary>
+              <pre id="stepUnderstandUserMsg" class="prompt-pre">—</pre>
+            </details>
+          </div>
+        </div>
+
+        <!-- 内容管道 -->
+        <div class="step-card" id="cardContent">
+          <div class="step-card-header" onclick="toggleStepCard('Content')">
+            <span class="step-card-icon">2</span>
+            <span class="step-card-title">📝 内容管道</span>
+            <span class="step-card-status" id="cardStatusContent">—</span>
+            <span class="step-card-toggle">▼</span>
+          </div>
+          <div class="step-card-body" id="cardBodyContent">
+            <div class="step-row">
+              <label class="step-label">【输入】任务理解结果</label>
+              <div class="step-content" id="stepContentInput">—</div>
+            </div>
+            <div class="step-row">
+              <label class="step-label">【输出】内容管道结果</label>
+              <div class="step-content" id="stepContentOutput">—</div>
+            </div>
+            <details class="step-prompt-details">
+              <summary>🔧 System Prompt</summary>
+              <pre id="stepContentSystemPrompt" class="prompt-pre">—</pre>
+            </details>
+          </div>
+        </div>
+
+        <!-- 结构管道 -->
+        <div class="step-card" id="cardStructure">
+          <div class="step-card-header" onclick="toggleStepCard('Structure')">
+            <span class="step-card-icon">3</span>
+            <span class="step-card-title">🏗️ 结构管道</span>
+            <span class="step-card-status" id="cardStatusStructure">—</span>
+            <span class="step-card-toggle">▼</span>
+          </div>
+          <div class="step-card-body" id="cardBodyStructure">
+            <div class="step-row">
+              <label class="step-label">【输入】内容管道结果</label>
+              <div class="step-content" id="stepStructureInput">—</div>
+            </div>
+            <div class="step-row">
+              <label class="step-label">【输出】SQL骨架</label>
+              <div class="step-content" id="stepStructureOutput">—</div>
+            </div>
+            <details class="step-prompt-details">
+              <summary>🔧 System Prompt</summary>
+              <pre id="stepStructureSystemPrompt" class="prompt-pre">—</pre>
+            </details>
+          </div>
+        </div>
+
+        <!-- SQL生成 -->
+        <div class="step-card" id="cardGenerate">
+          <div class="step-card-header" onclick="toggleStepCard('Generate')">
+            <span class="step-card-icon">4</span>
+            <span class="step-card-title">⚡ SQL生成</span>
+            <span class="step-card-status" id="cardStatusGenerate">—</span>
+            <span class="step-card-toggle">▼</span>
+          </div>
+          <div class="step-card-body" id="cardBodyGenerate">
+            <div class="step-row">
+              <label class="step-label">【输入】指标信息 + 结构管道结果</label>
+              <div class="step-content" id="stepGenerateInput">—</div>
+            </div>
+            <div class="step-row">
+              <label class="step-label">【输出】生成的SQL</label>
+              <div class="step-content" id="stepGenerateOutput">—</div>
+            </div>
+            <details class="step-prompt-details">
+              <summary>🔧 System Prompt</summary>
+              <pre id="stepGenerateSystemPrompt" class="prompt-pre">—</pre>
+            </details>
+            <details class="step-prompt-details">
+              <summary>📨 User Message</summary>
+              <pre id="stepGenerateUserMsg" class="prompt-pre">—</pre>
+            </details>
+            <!-- 重新生成按钮 -->
+            <div class="step-action-bar" id="stepGenerateActions" style="display:none;">
+              <input type="text" id="regenFeedback" placeholder="输入错误原因或修改建议…" style="flex:1;min-width:200px;" />
+              <button type="button" class="secondary" id="btnRegenerate" onclick="regenerateSql()">🔄 重新生成</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 逻辑验证 -->
+        <div class="step-card" id="cardLogic">
+          <div class="step-card-header" onclick="toggleStepCard('Logic')">
+            <span class="step-card-icon">5</span>
+            <span class="step-card-title">🔍 逻辑验证</span>
+            <span class="step-card-status" id="cardStatusLogic">—</span>
+            <span class="step-card-toggle">▼</span>
+          </div>
+          <div class="step-card-body" id="cardBodyLogic">
+            <div class="step-row">
+              <label class="step-label">【输入】SQL + 查询意图</label>
+              <div class="step-content" id="stepLogicInput">—</div>
+            </div>
+            <div class="step-row">
+              <label class="step-label">【输出】验证结果</label>
+              <div class="step-content" id="stepLogicOutput">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 流式输出面板 -->
+    <div class="stream-panel" id="streamPanel" style="display:none;">
+      <h3>模型输出（流式）</h3>
+      <div class="stream-meta" id="streamMeta">—</div>
+      <pre id="llmStreamOut"></pre>
+    </div>
+    <div id="msg"></div>
+    <div class="stats" id="stats" style="display:none;"></div>
+
+    <!-- ====== 结果区域：分子分母比值型 ====== -->
+    <div id="resultDual">
+      <div class="dual">
+        <section class="panel" aria-label="分母">
+          <h2 class="panel-head">分母</h2>
+          <div class="panel-body">
+            <h3>SQL <span class="hint">（可编辑后点击测试）</span></h3>
+            <textarea class="sql-edit" id="sqlDen" placeholder="分母 SQL…"></textarea>
+            <button type="button" class="secondary small" onclick="testSql('sqlDen','testResultDen')">测试分母 SQL</button>
+            <div id="testResultDen"></div>
+            <h3 style="margin-top:.75rem;">查询结果预览</h3>
+            <div id="tableWrapDen"><p class="empty-hint">执行后将显示表格</p></div>
+          </div>
+        </section>
+        <section class="panel" aria-label="分子">
+          <h2 class="panel-head">分子</h2>
+          <div class="panel-body">
+            <h3>SQL <span class="hint">（可编辑后点击测试）</span></h3>
+            <textarea class="sql-edit" id="sqlNum" placeholder="分子 SQL…"></textarea>
+            <button type="button" class="secondary small" onclick="testSql('sqlNum','testResultNum')">测试分子 SQL</button>
+            <div id="testResultNum"></div>
+            <h3 style="margin-top:.75rem;">查询结果预览</h3>
+            <div id="tableWrapNum"><p class="empty-hint">执行后将显示表格</p></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ====== 结果区域：统计型 / 大模型分析型 ====== -->
+    <div id="resultSingle" class="hidden">
+      <div class="panel" style="margin-top:1rem;">
+        <h2 class="panel-head" id="singlePanelHead">查询结果</h2>
+        <div class="panel-body">
+          <h3>SQL <span class="hint">（可编辑后点击测试）</span></h3>
+          <textarea class="sql-edit" id="sqlSingle" placeholder="SQL…"></textarea>
+          <button type="button" class="secondary small" onclick="testSql('sqlSingle','testResultSingle')">测试 SQL</button>
+          <div id="testResultSingle"></div>
+          <div id="analysisBox" class="hidden"></div>
+          <h3 style="margin-top:.75rem;">查询结果预览</h3>
+          <div id="tableWrapSingle"><p class="empty-hint">执行后将显示表格</p></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let indicators = [];
+    let allTables = [];
+    let lastResult = null;
+    let currentMode = 'select';  // 'select' | 'create' | 'edit'
+    let selectedIndex = 0;
+    let editingIndex = -1;  // 编辑模式下正在编辑的指标下标
+    let _origSysPrompt = '';
+    let _origUserMsg = '';
+
+    let conversationId = null;
+    let conversationRounds = [];
+    let lastRawResponse = '';
+
+    // ====== 新增：任务理解相关变量 ======
+    let currentUnderstanding = null;
+    let lastUnderstandRequestId = null;
+    let currentMissingInfo = null;
+    let currentLogicCorrection = null;
+    let currentUnderstandPrompt = null;
+    let currentUnderstandUserMsg = null;
+    let currentLogicPrompt = null;
+
+    function esc(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    /** 表头：上行英文字段名，下行（中文含义），数据来自 /api/column_meanings */
+    function colHeaderTh(colName) {
+      const m = (window._columnMeanings || {})[colName] || '';
+      const en = `<span class="col-en">${esc(colName)}</span>`;
+      const cn = m ? `<span class="col-cn">（${esc(m)}）</span>` : '';
+      return `<th class="th-meaning"><div class="th-col">${en}${cn}</div></th>`;
+    }
+
+    function switchMode(mode) {
+      currentMode = mode;
+      const isForm = mode === 'create' || mode === 'edit';
+      document.querySelectorAll('.mode-tab').forEach(t => {
+        if (mode === 'edit') {
+          t.classList.toggle('active', t.dataset.mode === 'select');
+        } else {
+          t.classList.toggle('active', t.dataset.mode === mode);
+        }
+      });
+      $('modeSelect').classList.toggle('hidden', isForm);
+      $('modeCreate').classList.toggle('hidden', !isForm);
+      $('toolbarSelect').classList.toggle('hidden', mode !== 'select');
+      $('toolbarGenerate').classList.toggle('hidden', mode === 'select');
+      $('understandToolbar').classList.toggle('hidden', false);  // 三个模式都显示开始分析
+      $('modeCreateBtns').classList.toggle('hidden', mode !== 'create');
+      $('modeEditBtns').classList.toggle('hidden', mode !== 'edit');
+      $('editBanner').classList.toggle('hidden', mode !== 'edit');
+      if (mode === 'create') {
+        editingIndex = -1;
+        clearCreateForm();
+        onNewTypeChange();
+        loadAllTables();
+      } else if (mode === 'edit') {
+        // editIndicator 已经设好了字段
+      } else {
+        editingIndex = -1;
+        fillFieldsFromIndicator();
+        updateResultLayout();
+        $('streamPanel').style.display = 'none';
+        $('llmStreamOut').textContent = '';
+        $('stats').style.display = 'none';
+        $('msg').innerHTML = '';
+        $('analysisBox').classList.add('hidden');
+        lastResult = null;
+        resetConversation();
+      }
+    }
+
+    function getActiveType() {
+      if (currentMode === 'select') {
+        const ind = indicators[selectedIndex];
+        return ind ? (ind['类型'] || '分子分母比值型') : '分子分母比值型';
+      }
+      return $('newType').value;  // create 和 edit 共用 newType
+    }
+
+    function updateFieldVisibility(type) {
+      const isRatio = type === '分子分母比值型';
+      $('fieldsRatio').classList.toggle('hidden', !isRatio);
+      $('fieldsSingle').classList.toggle('hidden', isRatio);
+    }
+
+    function updateResultLayout() {
+      const type = getActiveType();
+      const isRatio = type === '分子分母比值型';
+      $('resultDual').classList.toggle('hidden', !isRatio);
+      $('resultSingle').classList.toggle('hidden', isRatio);
+      if (!isRatio) {
+        $('singlePanelHead').textContent = type === '大模型分析型' ? '分析结果' : '统计结果';
+      }
+    }
+
+    function typeTag(type) {
+      if (type === '统计型') return '<span class="tag tag-stat">统计型</span>';
+      if (type === '大模型分析型') return '<span class="tag tag-analysis">大模型分析型</span>';
+      return '<span class="tag tag-ratio">分子分母比值型</span>';
+    }
+
+    // ====== 指标列表渲染 ======
+    function renderIndicatorList() {
+      const wrap = $('indicatorList');
+      if (!indicators.length) {
+        wrap.innerHTML = '<div style="padding:.75rem;color:var(--slate-500);font-size:.82rem;">暂无指标，请点击「新增指标」创建</div>';
+        return;
+      }
+      wrap.innerHTML = indicators.map((x, i) => {
+        const name = x['指标名'] || `指标${i}`;
+        const type = x['类型'] || '分子分母比值型';
+        const active = i === selectedIndex ? ' active' : '';
+        return `<div class="indicator-item${active}" data-idx="${i}" onclick="selectIndicator(${i})">
+          <span class="ind-name" title="${esc(name)}">${esc(name)}</span>
+          <span class="ind-type">${typeTag(type)}</span>
+          <span class="ind-actions">
+            <button class="ind-btn ind-edit" title="编辑此指标" onclick="event.stopPropagation();editIndicator(${i})">编辑</button>
+            <button class="ind-btn ind-del" title="删除此指标" onclick="event.stopPropagation();deleteIndicator(${i},'${esc(name)}')">删除</button>
+          </span>
+        </div>`;
+      }).join('');
+    }
+
+    function selectIndicator(idx) {
+      selectedIndex = idx;
+      renderIndicatorList();
+      fillFieldsFromIndicator();
+      lastResult = null;
+    }
+
+    async function deleteIndicator(idx, name) {
+      if (!confirm(`确定删除指标「${name}」？此操作不可撤销。`)) return;
+      try {
+        const r = await fetch(`/api/indicators/${idx}`, { method: 'DELETE' });
+        const j = await r.json();
+        if (j.ok) {
+          $('msg').innerHTML = `<div class="okbox">已删除指标「${esc(name)}」</div>`;
+          await loadIndicators();
+        } else {
+          $('msg').innerHTML = `<div class="errbox">删除失败: ${esc(j.detail || '')}</div>`;
+        }
+      } catch (e) {
+        $('msg').innerHTML = `<div class="errbox">${esc(e)}</div>`;
+      }
+    }
+
+    async function editIndicator(idx) {
+      const ind = indicators[idx];
+      if (!ind) return;
+      editingIndex = idx;
+      const name = ind['指标名'] || '';
+      const type = ind['类型'] || '分子分母比值型';
+
+      // 先加载表列表再切换模式
+      await loadAllTables();
+
+      $('newName').value = name;
+      $('newType').value = type;
+      $('editBannerName').textContent = name;
+
+      // 勾选该指标已有的表
+      const indTables = new Set(ind['涉及到表'] || []);
+      $('tableSelectGrid').querySelectorAll('input[type=checkbox]').forEach(cb => {
+        cb.checked = indTables.has(cb.value);
+      });
+
+      // 填入描述字段
+      onNewTypeChange();
+      if (type === '分子分母比值型') {
+        $('indFormula').value = ind['指标计算公式'] || '';
+        $('numDesc').value = ind['分子描述'] || '';
+        $('denDesc').value = ind['分母描述'] || '';
+        $('sqlNum').value = ind['numerator_sql'] || '';
+        $('sqlDen').value = ind['denominator_sql'] || '';
+        $('sqlSingle').value = '';
+      } else {
+        $('indDesc').value = ind['指标描述'] || '';
+        $('sqlSingle').value = ind['sql'] || '';
+        $('sqlNum').value = '';
+        $('sqlDen').value = '';
+      }
+
+      $('testResultNum').innerHTML = '';
+      $('testResultDen').innerHTML = '';
+      $('testResultSingle').innerHTML = '';
+      $('tableWrapNum').innerHTML = '<p class="empty-hint">可编辑 SQL 后点击测试</p>';
+      $('tableWrapDen').innerHTML = '<p class="empty-hint">可编辑 SQL 后点击测试</p>';
+      $('tableWrapSingle').innerHTML = '<p class="empty-hint">可编辑 SQL 后点击测试</p>';
+      $('stats').style.display = 'none';
+      $('msg').innerHTML = '';
+      lastResult = null;
+      resetConversation();
+
+      switchMode('edit');
+    }
+
+    function cancelEdit() {
+      editingIndex = -1;
+      switchMode('select');
+    }
+
+    async function updateIndicator() {
+      if (editingIndex < 0) return;
+      const type = $('newType').value;
+      const name = $('newName').value.trim();
+      if (!name) { alert('请输入指标名称'); return; }
+      const tables = getSelectedNewTables();
+      if (!tables.length) { alert('请至少选择一张表'); return; }
+
+      const body = {
+        '指标名': name,
+        '类型': type,
+        '涉及到表': tables,
+        'system_prompt': $('sysPrompt').value || '',
+        'user_message': $('userMsg').value || '',
+      };
+      if (type === '分子分母比值型') {
+        body['指标计算公式'] = $('indFormula').value;
+        body['分子描述'] = $('numDesc').value;
+        body['分母描述'] = $('denDesc').value;
+        body['numerator_sql'] = $('sqlNum').value;
+        body['denominator_sql'] = $('sqlDen').value;
+      } else {
+        body['指标描述'] = $('indDesc').value;
+        body['sql'] = $('sqlSingle').value;
+      }
+
+      try {
+        const r = await fetch(`/api/indicators/${editingIndex}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (j.ok) {
+          $('msg').innerHTML = `<div class="okbox">指标「${esc(name)}」已更新</div>`;
+          selectedIndex = editingIndex;
+          editingIndex = -1;
+          await loadIndicators();
+          switchMode('select');
+        } else {
+          $('msg').innerHTML = `<div class="errbox">更新失败: ${esc(j.detail || '')}</div>`;
+        }
+      } catch (e) {
+        $('msg').innerHTML = `<div class="errbox">${esc(e)}</div>`;
+      }
+    }
+
+    // ====== 指标加载 & 切换 ======
+    async function loadIndicators() {
+      const r = await fetch('/api/indicators');
+      const j = await r.json();
+      indicators = j.indicators || [];
+      if (selectedIndex >= indicators.length) selectedIndex = Math.max(0, indicators.length - 1);
+      renderIndicatorList();
+      fillFieldsFromIndicator();
+      updateResultLayout();
+    }
+
+    function fillFieldsFromIndicator() {
+      const ind = indicators[selectedIndex];
+      if (!ind) return;
+      const type = ind['类型'] || '分子分母比值型';
+      $('indTypeDisplay').innerHTML = typeTag(type);
+      updateFieldVisibility(type);
+      updateResultLayout();
+
+      if (type === '分子分母比值型') {
+        $('indFormula').value = ind['指标计算公式'] || '';
+        $('numDesc').value = ind['分子描述'] || '';
+        $('denDesc').value = ind['分母描述'] || '';
+        $('sqlNum').value = ind['numerator_sql'] || '';
+        $('sqlDen').value = ind['denominator_sql'] || '';
+      } else {
+        $('indDesc').value = ind['指标描述'] || '';
+        $('sqlSingle').value = ind['sql'] || '';
+      }
+      $('testResultNum').innerHTML = '';
+      $('testResultDen').innerHTML = '';
+      $('testResultSingle').innerHTML = '';
+      $('tableWrapNum').innerHTML = '<p class="empty-hint">可编辑 SQL 后点击测试</p>';
+      $('tableWrapDen').innerHTML = '<p class="empty-hint">可编辑 SQL 后点击测试</p>';
+      $('tableWrapSingle').innerHTML = '<p class="empty-hint">可编辑 SQL 后点击测试</p>';
+
+      const tables = ind['涉及到表'] || [];
+      renderTableChips(tables);
+    }
+
+    function renderTableChips(tables) {
+      const catalog = window._tablesCatalog || {};
+      const byName = {};
+      (catalog.tables || []).forEach(t => byName[t['表名']] = t['业务定义'] || '');
+      $('tableChips').innerHTML = tables.map(n => {
+        const comment = byName[n] || '';
+        const shortComment = comment.length > 30 ? comment.slice(0, 30) + '…' : comment;
+        return `<div class="chip"><span class="chip-name">${esc(n)}</span>${shortComment ? `<span class="chip-comment">${esc(shortComment)}</span>` : ''}</div>`;
+      }).join('');
+    }
+
+    // ====== 新增指标模式 ======
+    function clearCreateForm() {
+      $('newName').value = '';
+      $('newType').value = '分子分母比值型';
+      $('indFormula').value = '';
+      $('numDesc').value = '';
+      $('denDesc').value = '';
+      $('indDesc').value = '';
+      $('sysPrompt').value = '';
+      $('userMsg').value = '';
+      _origSysPrompt = '';
+      _origUserMsg = '';
+      $('sqlNum').value = '';
+      $('sqlDen').value = '';
+      $('sqlSingle').value = '';
+      $('tableSelectGrid').querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+      resetConversation();
+    }
+
+    function resetConversation() {
+      conversationId = null;
+      conversationRounds = [];
+      lastRawResponse = '';
+      currentUnderstanding = null;
+      lastUnderstandRequestId = null;
+      currentMissingInfo = null;
+      currentLogicCorrection = null;
+      hideUnderstandPanel();
+      hideLogicCheckPanel();
+    }
+
+    // ====== 新增：任务理解相关函数 ======
+    function hideUnderstandPanel() {
+      $('understandPanel').style.display = 'none';
+    }
+
+    function showUnderstandPanel() {
+      $('understandPanel').style.display = 'block';
+    }
+
+    // ====== 流程进度控制 ======
+    function showFlowProgress() {
+      $('flowProgress').classList.remove('hidden');
+      // 隐藏下面的生成按钮工具栏
+      $('toolbarGenerate').classList.add('hidden');
+      $('toolbarSelect').classList.add('hidden');
+    }
+
+    function hideFlowProgress() {
+      $('flowProgress').classList.add('hidden');
+    }
+
+    function setFlowStep(step, status, detail) {
+      // step: 'understand' | 'content' | 'structure' | 'generate' | 'logic'
+      // status: 'pending' | 'active' | 'done' | 'error'
+      const stepEl = document.querySelector(`.flow-step[data-step="${step}"]`);
+      if (!stepEl) return;
+      stepEl.className = 'flow-step ' + status;
+
+      // 同时更新卡片状态
+      const cardName = step.charAt(0).toUpperCase() + step.slice(1);
+      setStepCardStatus(cardName, status, detail || '');
+
+      if (detail !== undefined) {
+        const detailEl = $('flowDetail');
+        detailEl.textContent = detail;
+        detailEl.className = 'flow-detail ' + status;
+        if (status === 'active') {
+          detailEl.classList.add('loading');
+        } else if (status === 'done') {
+          detailEl.classList.add('success');
+        } else if (status === 'error') {
+          detailEl.classList.add('error');
+        }
+      }
+    }
+
+    function resetFlowSteps() {
+      // 重置流程进度条
+      document.querySelectorAll('.flow-step').forEach(el => {
+        el.className = 'flow-step';
+      });
+      $('flowDetail').textContent = '—';
+      $('flowDetail').className = 'flow-detail';
+      // 重置所有步骤卡片
+      ['Understand', 'Content', 'Structure', 'Generate', 'Logic'].forEach(name => {
+        const card = $(`card${name}`);
+        if (card) {
+          card.className = 'step-card';
+        }
+        const statusEl = $(`cardStatus${name}`);
+        if (statusEl) statusEl.textContent = '—';
+        // 清空内容
+        const inputEl = $(`step${name}Input`);
+        const outputEl = $(`step${name}Output`);
+        if (inputEl) inputEl.textContent = '—';
+        if (outputEl) outputEl.textContent = '—';
+      });
+    }
+
+    function completeFlowSteps() {
+      // 所有步骤标记为完成
+      ['understand', 'content', 'structure', 'generate'].forEach(step => {
+        setFlowStep(step, 'done');
+      });
+      $('flowDetail').textContent = '✅ 全部流程完成';
+      $('flowDetail').className = 'flow-detail success';
+      // 流程完成后恢复工具栏显示
+      if (currentMode === 'select') {
+        $('toolbarSelect').classList.remove('hidden');
+      } else {
+        $('toolbarGenerate').classList.remove('hidden');
+      }
+    }
+
+    // ====== 步骤卡片控制 ======
+    function toggleStepCard(name) {
+      const card = $(`card${name}`);
+      if (!card) return;
+      card.classList.toggle('open');
+    }
+
+    function showStepCard(name) {
+      const card = $(`card${name}`);
+      if (card) {
+        card.classList.add('open');
+      }
+    }
+
+    function setStepCardStatus(name, status, statusText) {
+      const card = $(`card${name}`);
+      const statusEl = $(`cardStatus${name}`);
+      if (card) {
+        card.classList.remove('done', 'active', 'error');
+        if (status) card.classList.add(status);
+      }
+      if (statusEl) {
+        statusEl.textContent = statusText || '';
+      }
+    }
+
+    function updateStepCard(name, input, output, systemPrompt, userMsg) {
+      const inputEl = $(`step${name}Input`);
+      const outputEl = $(`step${name}Output`);
+      const promptEl = $(`step${name}SystemPrompt`);
+      const userMsgEl = $(`step${name}UserMsg`);
+
+      if (inputEl) inputEl.textContent = input || '—';
+      if (outputEl) outputEl.textContent = output || '—';
+      if (promptEl) promptEl.textContent = systemPrompt || '（无）';
+      if (userMsgEl) userMsgEl.textContent = userMsg || '（无）';
+
+      showStepCard(name);
+    }
+
+    function hideLogicCheckPanel() {
+      $('logicCheckPanel').style.display = 'none';
+    }
+
+    function showLogicCheckPanel() {
+      $('logicCheckPanel').style.display = 'block';
+    }
+
+    function updateUnderstandStatus(text, isError = false) {
+      $('understandStatus').textContent = text;
+      $('understandStatus').style.color = isError ? 'var(--err)' : 'var(--slate-500)';
+    }
+
+    async function startUnderstand() {
+      // 获取指标描述作为查询需求
+      const type = getActiveType();
+      let question = '';
+
+      if (currentMode === 'select') {
+        // select模式：从已有指标获取描述
+        const ind = indicators[selectedIndex];
+        if (!ind) {
+          $('msg').innerHTML = '<div class="errbox">请先选择一个指标</div>';
+          return;
+        }
+        if (type === '分子分母比值型') {
+          const formula = ind['指标计算公式'] || '';
+          const num = ind['分子描述'] || '';
+          const den = ind['分母描述'] || '';
+          question = `指标计算公式：${formula}\n分子：${num}\n分母：${den}`;
+        } else {
+          question = ind['指标描述'] || '';
+        }
+      } else {
+        // create/edit模式：从表单获取
+        if (type === '分子分母比值型') {
+          const formula = $('indFormula').value.trim();
+          const num = $('numDesc').value.trim();
+          const den = $('denDesc').value.trim();
+          question = `指标计算公式：${formula}\n分子：${num}\n分母：${den}`;
+        } else {
+          question = $('indDesc').value.trim();
+        }
+      }
+
+      if (!question) {
+        $('msg').innerHTML = '<div class="errbox">该指标没有描述，请使用「新增指标」模式或编辑指标添加描述</div>';
+        return;
+      }
+
+      let tables = [];
+      if (currentMode === 'select') {
+        const ind = indicators[selectedIndex];
+        tables = ind ? (ind['涉及到表'] || []) : [];
+      } else {
+        tables = getSelectedNewTables();
+      }
+
+      if (!tables.length) {
+        $('msg').innerHTML = '<div class="errbox">请先选择涉及的表</div>';
+        return;
+      }
+
+      // 如果有补充的缺失信息，追加到问题中
+      let fullQuestion = question;
+      if (currentMissingInfo) {
+        fullQuestion = question + '\n\n【用户补充信息】：' + currentMissingInfo;
+      }
+
+      $('btnUnderstand').disabled = true;
+      updateUnderstandStatus('正在分析需求...');
+      hideUnderstandPanel();
+
+      // 显示流程进度指示器
+      resetFlowSteps();
+      showFlowProgress();
+      setFlowStep('understand', 'active', '正在理解任务...');
+
+      try {
+        const r = await fetch('/api/understand', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            selected_tables: tables,
+            user_question: fullQuestion,
+            indicator_type: type,
+            indicator_name: currentMode === 'select' ? (indicators[selectedIndex]?.['指标名'] || '') : $('newName').value,
+            indicator_formula: type === '分子分母比值型' ? $('indFormula').value : '',
+            numerator_desc: type === '分子分母比值型' ? $('numDesc').value : '',
+            denominator_desc: type === '分子分母比值型' ? $('denDesc').value : '',
+            indicator_desc: type !== '分子分母比值型' ? $('indDesc').value : '',
+          }),
+        });
+
+        const data = await r.json();
+
+        if (!r.ok || !data.ok) {
+          updateUnderstandStatus('分析失败: ' + (data.error || '未知错误'), true);
+          $('msg').innerHTML = '<div class="errbox">' + esc(data.error || '任务理解失败') + '</div>';
+          return;
+        }
+
+        lastUnderstandRequestId = data.request_id;
+        currentUnderstanding = data.understanding;
+        currentUnderstandPrompt = data.system_prompt || null;
+        currentUnderstandUserMsg = data.user_message || null;
+
+        // 标记理解步骤完成
+        setFlowStep('understand', 'done', '✅ 任务理解完成');
+
+        // 保存理解结果到步骤面板
+        const understandOutput = JSON.stringify(data.understanding, null, 2);
+        updateStepCard('Understand', fullQuestion, understandOutput, data.system_prompt || '');
+        if (data.user_message) {
+          const userMsgEl = $('stepUnderstandUserMsg');
+          if (userMsgEl) userMsgEl.textContent = data.user_message;
+        }
+
+        // 渲染理解结果
+        renderUnderstandingResult(data.understanding, data.llm_thinking, data.llm_raw);
+
+        // 检查是否需要用户补充信息
+        const check = data.understanding?.['缺失检查'] || {};
+        const needMoreInfo = check['信息完备'] === false && check['缺失说明'];
+        if (needMoreInfo) {
+          currentMissingInfo = null; // 重置，等待用户填写
+          $('btnFillMissing').style.display = 'inline-block';
+          $('btnConfirmUnderstand').disabled = true;
+        } else {
+          $('btnFillMissing').style.display = 'none';
+          $('btnConfirmUnderstand').disabled = false;
+        }
+
+        updateUnderstandStatus('✅ 分析完成，请确认');
+        showUnderstandPanel();
+
+      } catch (e) {
+        updateUnderstandStatus('分析失败: ' + e.message, true);
+        $('msg').innerHTML = '<div class="errbox">' + esc(e) + '</div>';
+      } finally {
+        $('btnUnderstand').disabled = false;
+      }
+    }
+
+    async function fillMissingAndRetry() {
+      const missingInput = $('missingInfoInput').value.trim();
+      if (!missingInput) {
+        $('msg').innerHTML = '<div class="errbox">请填写缺失的信息后再重试</div>';
+        return;
+      }
+      currentMissingInfo = missingInput;
+      $('missingInfoInput').value = '';
+      hideUnderstandPanel();
+      updateUnderstandStatus('正在重新分析（已补充信息）...');
+      await startUnderstand();
+    }
+
+    function renderUnderstandingResult(understanding, thinking, raw) {
+      // 查询意图
+      $('intentText').textContent = understanding['查询意图'] || '—';
+
+      // 使用字段
+      const fields = understanding['使用字段'] || [];
+      if (fields.length) {
+        $('fieldsList').innerHTML = fields.map(f =>
+          `<div class="chip"><span class="chip-name">${esc(f['字段'] || '')}</span><span class="chip-comment">${esc(f['用途'] || '')}</span></div>`
+        ).join('');
+      } else {
+        $('fieldsList').innerHTML = '<span class="empty-hint">未识别到字段</span>';
+      }
+
+      // SQL计划
+      const plan = understanding['SQL计划'] || {};
+      let planHtml = '<ul style="margin:.35rem 0 .35rem 1.2rem;padding:0;">';
+      if (plan['JOIN']) planHtml += `<li>关联表：${esc(plan['JOIN'])}</li>`;
+      if (plan['WHERE']) planHtml += `<li>筛选条件：${esc(plan['WHERE'])}</li>`;
+      if (plan['GROUP BY']) planHtml += `<li>分组：${esc(plan['GROUP BY'])}</li>`;
+      if (plan['HAVING']) planHtml += `<li>聚合筛选：${esc(plan['HAVING'])}</li>`;
+      if (plan['ORDER BY']) planHtml += `<li>排序：${esc(plan['ORDER BY'])}</li>`;
+      if (plan['LIMIT']) planHtml += `<li>数量限制：${esc(plan['LIMIT'])}</li>`;
+      planHtml += '</ul>';
+      $('sqlPlan').innerHTML = planHtml || '<span class="empty-hint">无</span>';
+
+      // 缺失检查
+      const check = understanding['缺失检查'] || {};
+      const isCorrect = check['理解正确'] !== false;
+      const isComplete = check['信息完备'] !== false;
+      const missing = check['缺失说明'];
+
+      if (!isCorrect || !isComplete || missing) {
+        $('understandWarning').style.display = 'block';
+        $('missingInfo').textContent = missing || '模型认为理解有误或信息不完整';
+      } else {
+        $('understandWarning').style.display = 'none';
+      }
+
+      // 思考过程
+      if (thinking) {
+        $('understandThinking').style.display = 'block';
+        $('understandThinkingContent').textContent = thinking;
+      } else {
+        $('understandThinking').style.display = 'none';
+      }
+
+      // 原始回复
+      if (raw) {
+        $('understandRawReply').style.display = 'block';
+        $('understandRawContent').textContent = raw;
+      } else {
+        $('understandRawReply').style.display = 'none';
+      }
+
+      // Prompt
+      if (currentUnderstandPrompt) {
+        $('understandPrompt').style.display = 'block';
+        $('understandPromptContent').textContent = currentUnderstandPrompt;
+        $('understandUserMsgContent').textContent = currentUnderstandUserMsg || '(无)';
+      } else {
+        $('understandPrompt').style.display = 'none';
+      }
+    }
+
+    async function confirmUnderstanding() {
+      if (!currentUnderstanding) {
+        $('msg').innerHTML = '<div class="errbox">请先生成任务理解</div>';
+        return;
+      }
+
+      const type = getActiveType();
+      let tables = [];
+      if (currentMode === 'select') {
+        const ind = indicators[selectedIndex];
+        tables = ind ? (ind['涉及到表'] || []) : [];
+      } else {
+        tables = getSelectedNewTables();
+      }
+
+      // 重新构建 fullQuestion（因为它是 startUnderstand 中的局部变量）
+      let question = '';
+      if (currentMode === 'select') {
+        const ind = indicators[selectedIndex];
+        if (type === '分子分母比值型') {
+          const formula = ind['指标计算公式'] || '';
+          const num = ind['分子描述'] || '';
+          const den = ind['分母描述'] || '';
+          question = `指标计算公式：${formula}\n分子：${num}\n分母：${den}`;
+        } else {
+          question = ind['指标描述'] || '';
+        }
+      } else {
+        if (type === '分子分母比值型') {
+          const formula = $('indFormula').value.trim();
+          const num = $('numDesc').value.trim();
+          const den = $('denDesc').value.trim();
+          question = `指标计算公式：${formula}\n分子：${num}\n分母：${den}`;
+        } else {
+          question = $('indDesc').value.trim();
+        }
+      }
+      let fullQuestion = question;
+      if (currentMissingInfo) {
+        fullQuestion = question + '\n\n【用户补充信息】：' + currentMissingInfo;
+      }
+
+      // 保存确认时的上下文，供重新生成使用
+      lastConfirmContext = { type, tables };
+
+      $('btnConfirmUnderstand').disabled = true;
+      updateUnderstandStatus('正在生成SQL...');
+      hideUnderstandPanel();
+
+      // 重置并显示流程进度
+      resetFlowSteps();
+      showFlowProgress();
+
+      // 标记理解步骤已完成
+      setFlowStep('understand', 'done', '✅ 任务理解完成');
+
+      // 保存理解结果输入
+      updateStepCard('Understand', fullQuestion, JSON.stringify(currentUnderstanding, null, 2), currentUnderstandPrompt || '');
+
+      // 分步执行：1. 内容管道 -> 2. 结构管道 -> 3. SQL生成
+      try {
+        // ====== 步骤1: 内容管道 ======
+        setFlowStep('content', 'active', '正在执行内容管道...');
+        updateStepCard('Content', JSON.stringify(currentUnderstanding, null, 2), '正在执行...', '（加载中）');
+
+        const contentResult = await fetch('/api/content_pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            selected_tables: tables,
+            confirmed_question: fullQuestion,
+          }),
+        });
+        const contentData = await contentResult.json();
+
+        if (!contentData.ok) {
+          throw new Error('内容管道失败: ' + (contentData.error || '未知错误'));
+        }
+
+        // 内容管道完成
+        setFlowStep('content', 'done', '✅ 内容管道完成');
+        const identifiers = contentData.identifiers || {};
+        updateStepCard('Content', JSON.stringify(currentUnderstanding, null, 2),
+          JSON.stringify(identifiers, null, 2), contentData.system_prompt || '（无）');
+
+        // ====== 步骤2: 结构管道 ======
+        setFlowStep('structure', 'active', '正在执行结构管道...');
+        updateStepCard('Structure', JSON.stringify(identifiers, null, 2), '正在执行...', '（加载中）');
+
+        const structureResult = await fetch('/api/structure_pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            confirmed_question: fullQuestion,
+            identifiers: identifiers,
+          }),
+        });
+        const structureData = await structureResult.json();
+
+        if (!structureData.ok) {
+          throw new Error('结构管道失败: ' + (structureData.error || '未知错误'));
+        }
+
+        // 结构管道完成
+        setFlowStep('structure', 'done', '✅ 结构管道完成');
+        const structure = structureData.structure || {};
+        updateStepCard('Structure', JSON.stringify(identifiers, null, 2),
+          JSON.stringify(structure, null, 2), structureData.system_prompt || '（无）');
+
+        // ====== 步骤3: SQL生成 ======
+        setFlowStep('generate', 'active', '正在生成SQL...');
+        updateStepCard('Generate', '（结构管道结果 + 指标信息）', '正在生成...', '（加载中）');
+
+        const generateResult = await fetch('/api/continue_generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            understanding: currentUnderstanding,
+            selected_tables: tables,
+            indicator_type: type,
+            indicator_name: currentMode === 'select' ? (indicators[selectedIndex]?.['指标名'] || '') : $('newName').value,
+            indicator_formula: type === '分子分母比值型' ? $('indFormula').value : '',
+            numerator_desc: type === '分子分母比值型' ? $('numDesc').value : '',
+            denominator_desc: type === '分子分母比值型' ? $('denDesc').value : '',
+            indicator_desc: type !== '分子分母比值型' ? $('indDesc').value : '',
+            use_content_pipeline: true,
+            use_structure_pipeline: true,
+          }),
+        });
+        const data = await generateResult.json();
+
+        if (!generateResult.ok || !data.ok) {
+          updateUnderstandStatus('SQL生成失败', true);
+          setFlowStep('generate', 'error', '❌ SQL生成失败: ' + (data.error || ''));
+          $('msg').innerHTML = '<div class="errbox">' + esc(data.error || 'SQL生成失败') + '</div>';
+          return;
+        }
+
+        // 保存SQL生成结果
+        const sqlOutput = type === '分子分母比值型'
+          ? `分子SQL:\n${data.numerator_sql || '（无）'}\n\n分母SQL:\n${data.denominator_sql || '（无）'}`
+          : `SQL:\n${data.sql || '（无）'}`;
+        
+        // 构建输入信息展示
+        const generateInput = [
+          '【指标信息】',
+          `指标名: ${currentMode === 'select' ? (indicators[selectedIndex]?.['指标名'] || '') : $('newName').value}`,
+          `类型: ${type}`,
+          type === '分子分母比值型' ? `公式: ${$('indFormula').value}` : '',
+          type === '分子分母比值型' ? `分子描述: ${$('numDesc').value}` : '',
+          type === '分子分母比值型' ? `分母描述: ${$('denDesc').value}` : '',
+          type !== '分子分母比值型' ? `指标描述: ${$('indDesc').value}` : '',
+          '',
+          '【结构管道结果】',
+          JSON.stringify(structure || {}, null, 2),
+        ].filter(line => line !== '').join('\n');
+        
+        // 构建User Message展示
+        const userMessage = data.user_message || '（无）';
+        
+        updateStepCard('Generate', generateInput, sqlOutput, data.system_prompt || '（无）', userMessage);
+
+        // 显示重新生成按钮
+        $('stepGenerateActions').style.display = 'flex';
+
+        setFlowStep('generate', 'done', '✅ SQL生成完成');
+
+        // 检查结果是否为空，触发逻辑检查
+        if (type === '分子分母比值型') {
+          if (data.numerator_count === 0 || data.denominator_count === 0) {
+            await triggerLogicCheck(data, currentUnderstanding);
+          } else {
+            completeFlowSteps();
+            applyRunResult(data);
+          }
+        } else {
+          if (data.count === 0) {
+            await triggerLogicCheck(data, currentUnderstanding);
+          } else {
+            completeFlowSteps();
+            applyRunResult(data);
+          }
+        }
+
+      } catch (e) {
+        updateUnderstandStatus('SQL生成失败: ' + e.message, true);
+        setFlowStep('generate', 'error', '❌ SQL生成失败: ' + e.message);
+        $('msg').innerHTML = '<div class="errbox">' + esc(e) + '</div>';
+      } finally {
+        $('btnConfirmUnderstand').disabled = false;
+      }
+    }
+
+    // ====== 重新生成SQL ======
+    let lastGeneratedData = null;  // 保存最后一次生成的结果
+    let lastConfirmContext = null;  // 保存确认时的上下文
+
+    async function regenerateSql() {
+      const feedback = $('regenFeedback').value.trim();
+
+      if (!feedback) {
+        $('msg').innerHTML = '<div class="errbox">请输入错误原因或修改建议</div>';
+        return;
+      }
+
+      if (!lastConfirmContext) {
+        $('msg').innerHTML = '<div class="errbox">请先生成一次SQL</div>';
+        return;
+      }
+
+      const btn = $('btnRegenerate');
+      btn.disabled = true;
+      btn.textContent = '正在重新生成...';
+
+      const { type, tables } = lastConfirmContext;
+
+      setFlowStep('generate', 'active', '🔄 正在重新生成SQL...');
+      updateStepCard('Generate', '（用户反馈）' + feedback, '正在重新生成...', '（加载中）');
+
+      try {
+        const r = await fetch('/api/continue_generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            understanding: currentUnderstanding,
+            selected_tables: tables,
+            indicator_type: type,
+            indicator_name: currentMode === 'select' ? (indicators[selectedIndex]?.['指标名'] || '') : $('newName').value,
+            indicator_formula: type === '分子分母比值型' ? $('indFormula').value : '',
+            numerator_desc: type === '分子分母比值型' ? $('numDesc').value : '',
+            denominator_desc: type === '分子分母比值型' ? $('denDesc').value : '',
+            indicator_desc: type !== '分子分母比值型' ? $('indDesc').value : '',
+            use_content_pipeline: false,
+            use_structure_pipeline: false,
+            regenerate_feedback: feedback,
+            previous_sql: lastGeneratedData ? (lastGeneratedData.numerator_sql || lastGeneratedData.sql) : null,
+          }),
+        });
+
+        const data = await r.json();
+
+        if (!r.ok || !data.ok) {
+          setFlowStep('generate', 'error', '❌ 重新生成失败: ' + (data.error || ''));
+          $('msg').innerHTML = '<div class="errbox">' + esc(data.error || '重新生成失败') + '</div>';
+          return;
+        }
+
+        // 保存重新生成的结果
+        lastGeneratedData = data;
+
+        // 更新步骤面板
+        const sqlOutput = type === '分子分母比值型'
+          ? `分子SQL:\n${data.numerator_sql || '（无）'}\n\n分母SQL:\n${data.denominator_sql || '（无）'}`
+          : `SQL:\n${data.sql || '（无）'}`;
+        updateStepCard('Generate', '【用户反馈】' + feedback, sqlOutput, data.generate_prompt || '（无）');
+
+        setFlowStep('generate', 'done', '✅ 重新生成完成');
+        $('regenFeedback').value = '';
+
+        // 应用结果
+        applyRunResult(data);
+
+        // 如果结果为空，触发逻辑检查
+        if (type === '分子分母比值型') {
+          if (data.numerator_count === 0 || data.denominator_count === 0) {
+            await triggerLogicCheck(data, currentUnderstanding);
+          }
+        } else {
+          if (data.count === 0) {
+            await triggerLogicCheck(data, currentUnderstanding);
+          }
+        }
+
+      } catch (e) {
+        setFlowStep('generate', 'error', '❌ 重新生成失败: ' + e.message);
+        $('msg').innerHTML = '<div class="errbox">' + esc(e) + '</div>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 重新生成SQL';
+      }
+    }
+
+    async function triggerLogicCheck(sqlResult, understanding) {
+      const sql = sqlResult.numerator_sql || sqlResult.sql || '';
+
+      setFlowStep('logic', 'active', '⚠️ 结果为空，正在进行逻辑验证...');
+
+      // 保存逻辑验证输入
+      const logicInput = `原需求理解：${understanding['查询意图'] || '（无）'}\n生成的SQL：${sql}`;
+      updateStepCard('Logic', logicInput, '正在验证...', '（加载中）');
+
+      try {
+        const r = await fetch('/api/logic_check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sql: sql,
+            original_intent: understanding['查询意图'] || '',
+            original_question: '',
+          }),
+        });
+
+        const data = await r.json();
+
+        if (r.ok && data.ok) {
+          setFlowStep('logic', 'done', '⚠️ 逻辑验证完成');
+
+          // 保存逻辑验证结果
+          const logicOutput = JSON.stringify(data.logic_result || {}, null, 2);
+          updateStepCard('Logic', logicInput, logicOutput, '（逻辑验证无需额外Prompt）');
+
+          renderLogicCheckResult(data, understanding);
+          showLogicCheckPanel();
+          // 同时显示SQL结果
+          applyRunResult(sqlResult);
+        } else {
+          setFlowStep('logic', 'error', '⚠️ 逻辑验证失败');
+          updateStepCard('Logic', logicInput, '验证失败: ' + (data.error || '未知错误'), '（逻辑验证无需额外Prompt）');
+          // 逻辑检查失败，仍显示SQL结果
+          applyRunResult(sqlResult);
+        }
+      } catch (e) {
+        setFlowStep('logic', 'error', '⚠️ 逻辑验证异常');
+        updateStepCard('Logic', logicInput, '验证异常: ' + e.message, '（逻辑验证无需额外Prompt）');
+        // 逻辑检查异常，仍显示SQL结果
+        applyRunResult(sqlResult);
+      }
+    }
+
+    function renderLogicCheckResult(data, understanding) {
+      const logicResult = data.logic_result || {};
+
+      $('logicOriginalIntent').textContent = understanding['查询意图'] || '—';
+      $('logicSqlUnderstanding').textContent = data.sql_understanding || '—';
+
+      // 思考过程
+      const thinking = (data.llm_thinking_step1 || '') + '\n\n' + (data.llm_thinking_step2 || '');
+      if (thinking.trim()) {
+        $('logicThinking').style.display = 'block';
+        $('logicThinkingContent').textContent = thinking.trim();
+      } else {
+        $('logicThinking').style.display = 'none';
+      }
+
+      // 原始回复
+      const raw = 'Step1:\n' + (data.llm_raw_step1 || '') + '\n\nStep2:\n' + (data.llm_raw_step2 || '');
+      if (raw.trim() !== 'Step1:\n\nStep2:\n') {
+        $('logicRawReply').style.display = 'block';
+        $('logicRawContent').textContent = raw;
+      } else {
+        $('logicRawReply').style.display = 'none';
+      }
+
+      const isConsistent = logicResult['一致性判断'] === '一致';
+      const consistencyEl = $('logicConsistency');
+      if (isConsistent) {
+        consistencyEl.className = 'okbox';
+        consistencyEl.textContent = '✅ 逻辑一致：SQL查询与原需求理解一致，查询结果确实为空';
+        consistencyEl.style.background = 'var(--ok-bg)';
+        consistencyEl.style.borderColor = '#bbf7d0';
+        consistencyEl.style.color = 'var(--ok)';
+      } else {
+        consistencyEl.className = 'errbox';
+        consistencyEl.textContent = '❌ 逻辑不一致：SQL实际查询与原需求存在差异';
+        consistencyEl.style.background = 'var(--err-bg)';
+        consistencyEl.style.borderColor = '#fecaca';
+        consistencyEl.style.color = 'var(--err)';
+      }
+
+      // 可能原因与建议
+      const reasons = logicResult['可能原因'] || [];
+      const suggestion = logicResult['建议修正'] || '';
+      if (reasons.length || suggestion) {
+        $('logicSuggestions').style.display = 'block';
+        let reasonsHtml = '';
+        if (reasons.length) {
+          reasonsHtml = '<p style="font-weight:600;margin:.35rem 0;">可能原因：</p><ul style="margin:.35rem 0 .35rem 1.2rem;padding:0;">';
+          reasons.forEach(r => { reasonsHtml += `<li>${esc(r)}</li>`; });
+          reasonsHtml += '</ul>';
+        }
+        if (suggestion) {
+          reasonsHtml += `<p style="margin-top:.5rem;font-weight:600;">💡 修正建议：</p><p>${esc(suggestion)}</p>`;
+          $('logicCorrectionForm').style.display = 'block';
+          $('logicCorrectionInput').value = suggestion;
+          currentLogicCorrection = suggestion;
+        } else {
+          $('logicCorrectionForm').style.display = 'none';
+        }
+        $('logicReasons').innerHTML = reasonsHtml;
+      } else {
+        $('logicSuggestions').style.display = 'none';
+      }
+
+      // Prompt
+      if (data.system_prompt) {
+        $('logicPrompt').style.display = 'block';
+        $('logicPromptContent').textContent = data.system_prompt;
+      } else {
+        $('logicPrompt').style.display = 'none';
+      }
+    }
+
+    async function retryWithCorrection() {
+      const correction = $('logicCorrectionInput').value.trim();
+      if (!correction) {
+        $('msg').innerHTML = '<div class="errbox">请输入修正建议</div>';
+        return;
+      }
+
+      // 将修正建议补充到指标描述中，重新开始分析
+      currentMissingInfo = correction;
+      hideLogicCheckPanel();
+      hideUnderstandPanel();
+
+      // 清空结果
+      $('sqlNum').value = '';
+      $('sqlDen').value = '';
+      $('sqlSingle').value = '';
+      $('stats').style.display = 'none';
+
+      // 更新指标描述
+      const type = getActiveType();
+      if (type === '分子分母比值型') {
+        const formula = $('indFormula').value.trim();
+        const num = $('numDesc').value.trim();
+        const den = $('denDesc').value.trim();
+        $('indFormula').value = formula + '\n\n【用户补充】：' + correction;
+      } else {
+        const desc = $('indDesc').value.trim();
+        $('indDesc').value = desc + '\n\n【用户补充】：' + correction;
+      }
+
+      updateUnderstandStatus('正在根据修正建议重新分析...');
+      currentLogicCorrection = null;
+      currentMissingInfo = correction;
+
+      await startUnderstand();
+    }
+
+    function onNewTypeChange() {
+      const type = $('newType').value;
+      updateFieldVisibility(type);
+      updateResultLayout();
+    }
+
+    async function loadAllTables() {
+      try {
+        const r = await fetch('/api/tables_list');
+        const j = await r.json();
+        allTables = j.tables || [];
+        renderTableSelectGrid();
+      } catch (e) {
+        $('tableSelectGrid').innerHTML = `<p class="errbox">${esc(e)}</p>`;
+      }
+    }
+
+    function renderTableSelectGrid() {
+      $('tableSelectGrid').innerHTML = allTables.map(t => {
+        const name = t['表名'] || '';
+        const comment = t['业务定义'] || '';
+        const short = comment.length > 40 ? comment.slice(0, 40) + '…' : comment;
+        return `<label class="table-select-item"><input type="checkbox" value="${esc(name)}" /><span class="tname">${esc(name)}</span><span class="tcomment">${esc(short)}</span></label>`;
+      }).join('');
+    }
+
+    function getSelectedNewTables() {
+      const checks = $('tableSelectGrid').querySelectorAll('input[type=checkbox]:checked');
+      return Array.from(checks).map(c => c.value);
+    }
+
+    async function refreshTables() {
+      $('btnRefreshTables').disabled = true;
+      $('btnRefreshTables').textContent = '刷新中…';
+      try {
+        const r = await fetch('/api/refresh_tables', { method: 'POST' });
+        const j = await r.json();
+        if (j.ok) {
+          await loadAllTables();
+          await loadTablesCatalog();
+          await loadColumnMeanings();
+          $('msg').innerHTML = '<div class="okbox">表结构已刷新</div>';
+        } else {
+          $('msg').innerHTML = `<div class="errbox">刷新失败: ${esc(j.stderr || '')}</div>`;
+        }
+      } catch (e) {
+        $('msg').innerHTML = `<div class="errbox">${esc(e)}</div>`;
+      } finally {
+        $('btnRefreshTables').disabled = false;
+        $('btnRefreshTables').textContent = '刷新数据库表结构';
+      }
+    }
+
+    // ====== Prompt 预览 ======
+    async function loadPromptPreview() {
+      const body = buildPromptPreviewBody();
+      try {
+        const r = await fetch('/api/prompt_preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        _origSysPrompt = j.system_prompt || '';
+        _origUserMsg = j.user_message || '';
+        $('sysPrompt').value = _origSysPrompt;
+        $('userMsg').value = _origUserMsg;
+        if (j.error) $('msg').innerHTML = `<div class="errbox">Prompt 预览错误: ${esc(j.error)}</div>`;
+      } catch (e) {
+        $('msg').innerHTML = `<div class="errbox">${esc(e)}</div>`;
+      }
+    }
+
+    function buildPromptPreviewBody() {
+      const type = getActiveType();
+      if (currentMode === 'select') {
+        const ind = indicators[selectedIndex];
+        return {
+          indicator_index: selectedIndex,
+          indicator_type: type,
+          selected_tables: ind ? ind['涉及到表'] : [],
+          indicator_formula: type === '分子分母比值型' ? $('indFormula').value : undefined,
+          numerator_desc: type === '分子分母比值型' ? $('numDesc').value : undefined,
+          denominator_desc: type === '分子分母比值型' ? $('denDesc').value : undefined,
+          indicator_desc: type !== '分子分母比值型' ? $('indDesc').value : undefined,
+        };
+      }
+      // create 和 edit 共用同一套表单
+      const base = {
+        indicator_type: type,
+        indicator_name: $('newName').value,
+        selected_tables: getSelectedNewTables(),
+        indicator_formula: type === '分子分母比值型' ? $('indFormula').value : undefined,
+        numerator_desc: type === '分子分母比值型' ? $('numDesc').value : undefined,
+        denominator_desc: type === '分子分母比值型' ? $('denDesc').value : undefined,
+        indicator_desc: type !== '分子分母比值型' ? $('indDesc').value : undefined,
+      };
+      if (currentMode === 'edit' && editingIndex >= 0) {
+        base.indicator_index = editingIndex;
+      }
+      return base;
+    }
+
+    // ====== 构建请求体 ======
+    function buildRunBody(regen) {
+      const type = getActiveType();
+      const body = { indicator_type: type, mode: currentMode };
+
+      if (currentMode === 'select') {
+        body.indicator_index = selectedIndex;
+        const ind = indicators[selectedIndex];
+        body.selected_tables = ind ? ind['涉及到表'] : [];
+      } else if (currentMode === 'edit' && editingIndex >= 0) {
+        body.indicator_index = editingIndex;
+        body.indicator_name = $('newName').value;
+        body.selected_tables = getSelectedNewTables();
+      } else {
+        body.indicator_name = $('newName').value;
+        body.selected_tables = getSelectedNewTables();
+      }
+
+      if (type === '分子分母比值型') {
+        body.indicator_formula = $('indFormula').value;
+        body.numerator_desc = $('numDesc').value;
+        body.denominator_desc = $('denDesc').value;
+      } else {
+        body.indicator_desc = $('indDesc').value;
+      }
+
+      const sp = $('sysPrompt').value.trim();
+      const um = $('userMsg').value.trim();
+      const sysModified = sp !== _origSysPrompt.trim();
+      const userModified = um !== _origUserMsg.trim();
+      if (sysModified) body.custom_system_prompt = sp;
+      if (userModified) body.custom_user_message = um;
+      body.prompt_modified = sysModified || userModified;
+
+      if (regen && conversationId) {
+        const feedback = $('regenFeedback').value.trim() || '';
+        const prevErr = lastResult ? lastResult.error : null;
+        body.conversation_id = conversationId;
+
+        if (conversationRounds.length > 0) {
+          conversationRounds[conversationRounds.length - 1].user_feedback = feedback;
+        }
+        body.conversation_history = conversationRounds;
+
+        const prevNumSql = lastResult ? lastResult.numerator_sql : $('sqlNum').value || null;
+        const prevDenSql = lastResult ? lastResult.denominator_sql : $('sqlDen').value || null;
+        const prevSql = lastResult ? lastResult.sql : $('sqlSingle').value || null;
+        if (type === '分子分母比值型') {
+          body.regenerate = {
+            previous_numerator_sql: prevNumSql,
+            previous_denominator_sql: prevDenSql,
+            numerator_error: prevErr,
+            denominator_error: null,
+            user_feedback: feedback,
+          };
+        } else {
+          body.regenerate = {
+            previous_sql: prevSql,
+            sql_error: prevErr,
+            user_feedback: feedback,
+          };
+        }
+      } else if (regen) {
+        const feedback = $('regenFeedback').value.trim() || null;
+        const prevNumSql = lastResult ? lastResult.numerator_sql : $('sqlNum').value || null;
+        const prevDenSql = lastResult ? lastResult.denominator_sql : $('sqlDen').value || null;
+        const prevSql = lastResult ? lastResult.sql : $('sqlSingle').value || null;
+        const prevErr = lastResult ? lastResult.error : null;
+        if (type === '分子分母比值型') {
+          body.regenerate = { previous_numerator_sql: prevNumSql, previous_denominator_sql: prevDenSql, numerator_error: prevErr, user_feedback: feedback };
+        } else {
+          body.regenerate = { previous_sql: prevSql, sql_error: prevErr, user_feedback: feedback };
+        }
+      }
+      return body;
+    }
+
+    // ====== 清空 & 渲染 ======
+    function clearResultPanels() {
+      $('msg').innerHTML = '';
+      $('stats').style.display = 'none';
+      $('stats').innerHTML = '';
+      $('sqlNum').value = '';
+      $('sqlDen').value = '';
+      $('sqlSingle').value = '';
+      $('tableWrapNum').innerHTML = '<p class="empty-hint">等待执行结果…</p>';
+      $('tableWrapDen').innerHTML = '<p class="empty-hint">等待执行结果…</p>';
+      $('tableWrapSingle').innerHTML = '<p class="empty-hint">等待执行结果…</p>';
+      $('testResultNum').innerHTML = '';
+      $('testResultDen').innerHTML = '';
+      $('testResultSingle').innerHTML = '';
+      $('analysisBox').classList.add('hidden');
+      $('streamPanel').style.display = 'none';
+      $('llmStreamOut').textContent = '';
+      $('streamMeta').textContent = '—';
+    }
+
+    function renderTable(cols, rows, wrapId) {
+      const el = $(wrapId);
+      if (!cols || !cols.length || !rows || !rows.length) {
+        el.innerHTML = '<p class="empty-hint">暂无数据行</p>';
+        return;
+      }
+      const th = cols.map(c => colHeaderTh(c)).join('');
+      const tr = rows.map(row => {
+        const tds = cols.map(c => `<td title="${esc(row[c])}">${esc(row[c])}</td>`).join('');
+        return `<tr>${tds}</tr>`;
+      }).join('');
+      el.innerHTML = `<div class="table-scroll"><table class="data"><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`;
+    }
+
+    function applyRunResult(data) {
+      lastResult = data;
+
+      if (data.conversation_id) {
+        conversationId = data.conversation_id;
+      }
+      const rawResp = data.numerator_llm_raw || data.llm_raw || '';
+      if (rawResp) {
+        conversationRounds.push({ assistant_raw: rawResp });
+        lastRawResponse = rawResp;
+      }
+
+      const type = data.indicator_type || '分子分母比值型';
+      updateResultLayout();
+
+      const st = $('stats');
+      st.style.display = 'flex';
+
+      if (type === '分子分母比值型') {
+        $('sqlNum').value = data.numerator_sql || '';
+        $('sqlDen').value = data.denominator_sql || '';
+        $('testResultNum').innerHTML = '';
+        $('testResultDen').innerHTML = '';
+        const formula = data.rate_formula != null ? data.rate_formula : '—';
+        st.innerHTML = `
+          <div><span>分母计数</span> <strong>${data.denominator_count ?? '—'}</strong></div>
+          <div><span>分子计数</span> <strong>${data.numerator_count ?? '—'}</strong></div>
+          <div class="formula"><span>指标结果</span> <strong>${esc(String(formula))}</strong></div>
+          <div><span>状态</span> <strong>${data.ok ? 'OK' : '失败'}</strong></div>
+        `;
+        renderTable(data.preview_columns, data.preview_rows, 'tableWrapNum');
+        renderTable(data.denominator_preview_columns, data.denominator_preview_rows, 'tableWrapDen');
+      } else {
+        $('sqlSingle').value = data.sql || '';
+        $('testResultSingle').innerHTML = '';
+        st.innerHTML = `
+          <div><span>记录数</span> <strong>${data.count ?? '—'}</strong></div>
+          <div><span>状态</span> <strong>${data.ok ? 'OK' : '失败'}</strong></div>
+        `;
+        if (data.analysis) {
+          $('analysisBox').classList.remove('hidden');
+          $('analysisBox').innerHTML = `<div class="analysis-box"><strong>分析解读：</strong>\n${esc(data.analysis)}</div>`;
+        }
+        renderTable(data.preview_columns, data.preview_rows, 'tableWrapSingle');
+      }
+
+      if (data.error && !data.ok) {
+        $('msg').innerHTML = `<div class="errbox">${esc(data.error)}</div>`;
+      }
+    }
+
+    // ====== 流式消费 ======
+    function appendStreamChunk(role, text) {
+      const pre = $('llmStreamOut');
+      if (role === 'reasoning') {
+        const span = document.createElement('span');
+        span.className = 'reasoning';
+        span.textContent = text;
+        pre.appendChild(span);
+      } else {
+        pre.appendChild(document.createTextNode(text));
+      }
+      pre.scrollTop = pre.scrollHeight;
+    }
+
+    async function consumeRunSse(response) {
+      const reader = response.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      let donePayload = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        buf += dec.decode(value || new Uint8Array(), { stream: !done });
+        let sep;
+        while ((sep = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, sep);
+          buf = buf.slice(sep + 2);
+          let ev = 'message', dataStr = null;
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) ev = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataStr = line.slice(5).trim();
+          }
+          if (!dataStr) continue;
+          let data;
+          try { data = JSON.parse(dataStr); } catch { continue; }
+
+          if (ev === 'start') {
+            $('streamMeta').textContent = 'request_id: ' + (data.request_id || '') + ' · 等待模型 token…';
+          } else if (ev === 'phase') {
+            const labels = { cache: '缓存命中', mysql_count: '正在 MySQL COUNT…', mysql_preview: '拉取预览行…' };
+            $('streamMeta').textContent = labels[data.phase] || data.phase;
+          } else if (ev === 'attempt_start') {
+            $('streamMeta').textContent = `第 ${data.attempt}/${data.max_attempts} 轮 · 模型生成中…`;
+          } else if (ev === 'llm_delta') {
+            appendStreamChunk(data.role || 'content', data.text || '');
+          } else if (ev === 'llm_end') {
+            $('streamMeta').textContent = `第 ${data.attempt} 轮 LLM 完成（${data.llm_seconds ?? '—'}s），执行 SQL…`;
+          } else if (ev === 'parse_retry') {
+            $('streamMeta').textContent = 'JSON 解析失败，将重试… ' + (data.message || '');
+          } else if (ev === 'error') {
+            $('msg').innerHTML = `<div class="errbox">${esc(data.message || '流式错误')}</div>`;
+          } else if (ev === 'done') {
+            donePayload = data;
+          }
+        }
+        if (done) break;
+      }
+      return donePayload;
+    }
+
+    // ====== 运行 ======
+    async function run(regen) {
+      $('btnRun').disabled = true;
+      $('btnRegen').disabled = true;
+      clearResultPanels();
+
+      if (!regen) {
+        resetConversation();
+      }
+
+      const body = buildRunBody(regen);
+      const streaming = $('useStream').checked;
+
+      try {
+        if (streaming) {
+          $('streamPanel').style.display = 'block';
+          const r = await fetch('/api/run/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+            body: JSON.stringify(body),
+          });
+          if (!r.ok) {
+            let detail = 'HTTP ' + r.status;
+            try { const j = await r.json(); detail = j.detail || JSON.stringify(j); } catch { detail = await r.text() || detail; }
+            $('msg').innerHTML = `<div class="errbox">${esc(detail)}</div>`;
+            return;
+          }
+          const data = await consumeRunSse(r);
+          if (!data) { $('msg').innerHTML = '<div class="errbox">流结束但未收到 done 事件</div>'; return; }
+          applyRunResult(data);
+        } else {
+          const r = await fetch('/api/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await r.json();
+          if (!r.ok) {
+            $('msg').innerHTML = `<div class="errbox">${esc(data.detail || JSON.stringify(data))}</div>`;
+            return;
+          }
+          applyRunResult(data);
+        }
+      } catch (e) {
+        $('msg').innerHTML = `<div class="errbox">${esc(e)}</div>`;
+      } finally {
+        $('btnRun').disabled = false;
+        $('btnRegen').disabled = false;
+      }
+    }
+
+    // ====== 测试 SQL ======
+    const _testWrapMap = {
+      testResultNum: 'tableWrapNum',
+      testResultDen: 'tableWrapDen',
+      testResultSingle: 'tableWrapSingle',
+    };
+    async function testSql(textareaId, resultDivId) {
+      const sql = $(textareaId).value.trim();
+      if (!sql) { $(resultDivId).innerHTML = '<div class="errbox">SQL 为空</div>'; return; }
+      // 清空模型生成的旧预览，只保留本次测试结果
+      const wrapId = _testWrapMap[resultDivId];
+      if (wrapId) $(wrapId).innerHTML = '';
+      $(resultDivId).innerHTML = '<p class="empty-hint">测试中…</p>';
+      try {
+        const r = await fetch('/api/test_sql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql, limit: 200 }),
+        });
+        const j = await r.json();
+        if (j.error) {
+          $(resultDivId).innerHTML = `<div class="errbox">执行错误: ${esc(j.error)}</div>`;
+        } else {
+          let html = `<div class="okbox">执行成功 · 记录数: ${j.count ?? '—'}</div>`;
+          if (j.columns && j.columns.length && j.rows && j.rows.length) {
+            const th = j.columns.map(c => colHeaderTh(c)).join('');
+            const trs = j.rows.slice(0, 50).map(row => {
+              return '<tr>' + j.columns.map(c => `<td>${esc(row[c] == null ? '' : row[c])}</td>`).join('') + '</tr>';
+            }).join('');
+            html += `<div class="table-scroll" style="margin-top:.5rem;max-height:300px;"><table class="data"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`;
+          }
+          $(resultDivId).innerHTML = html;
+        }
+      } catch (e) {
+        $(resultDivId).innerHTML = `<div class="errbox">${esc(e)}</div>`;
+      }
+    }
+
+    // ====== 保存 SQL 到已有指标（选择模式） ======
+    async function saveSqlToIndicator() {
+      const ind = indicators[selectedIndex];
+      if (!ind) { alert('请先选择指标'); return; }
+      const type = ind['类型'] || '分子分母比值型';
+      const body = {
+        '指标名': ind['指标名'],
+        '类型': type,
+        '涉及到表': ind['涉及到表'] || [],
+        'system_prompt': $('sysPrompt').value || '',
+        'user_message': $('userMsg').value || '',
+      };
+      if (type === '分子分母比值型') {
+        body['指标计算公式'] = $('indFormula').value;
+        body['分子描述'] = $('numDesc').value;
+        body['分母描述'] = $('denDesc').value;
+        body['numerator_sql'] = $('sqlNum').value;
+        body['denominator_sql'] = $('sqlDen').value;
+      } else {
+        body['指标描述'] = $('indDesc').value;
+        body['sql'] = $('sqlSingle').value;
+      }
+      try {
+        const r = await fetch(`/api/indicators/${selectedIndex}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (j.ok) {
+          $('msg').innerHTML = `<div class="okbox">SQL 已保存到「${esc(ind['指标名'])}」</div>`;
+          await loadIndicators();
+        } else {
+          $('msg').innerHTML = `<div class="errbox">保存失败: ${esc(j.detail || '')}</div>`;
+        }
+      } catch (e) {
+        $('msg').innerHTML = `<div class="errbox">${esc(e)}</div>`;
+      }
+    }
+
+    // ====== 保存指标（新增模式） ======
+    async function saveIndicator() {
+      const type = $('newType').value;
+      const name = $('newName').value.trim();
+      if (!name) { alert('请输入指标名称'); return; }
+      const tables = getSelectedNewTables();
+      if (!tables.length) { alert('请至少选择一张表'); return; }
+
+      const body = {
+        '指标名': name,
+        '类型': type,
+        '涉及到表': tables,
+        'system_prompt': $('sysPrompt').value || '',
+        'user_message': $('userMsg').value || '',
+      };
+      if (type === '分子分母比值型') {
+        body['指标计算公式'] = $('indFormula').value;
+        body['分子描述'] = $('numDesc').value;
+        body['分母描述'] = $('denDesc').value;
+        body['numerator_sql'] = $('sqlNum').value;
+        body['denominator_sql'] = $('sqlDen').value;
+      } else {
+        body['指标描述'] = $('indDesc').value;
+        body['sql'] = $('sqlSingle').value;
+      }
+
+      try {
+        const r = await fetch('/api/indicators/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (j.ok) {
+          $('msg').innerHTML = `<div class="okbox">指标「${esc(name)}」已保存（序号 ${j.index}）</div>`;
+          await loadIndicators();
+          switchMode('select');
+          selectedIndex = j.index;
+          renderIndicatorList();
+          fillFieldsFromIndicator();
+        } else {
+          $('msg').innerHTML = `<div class="errbox">保存失败</div>`;
+        }
+      } catch (e) {
+        $('msg').innerHTML = `<div class="errbox">${esc(e)}</div>`;
+      }
+    }
+
+    // ====== 加载 tables catalog (带注释) ======
+    async function loadTablesCatalog() {
+      try {
+        const r = await fetch('/api/tables_list');
+        const j = await r.json();
+        window._tablesCatalog = { tables: (j.tables || []).map(t => ({ '表名': t['表名'], '业务定义': t['业务定义'] })) };
+      } catch { window._tablesCatalog = { tables: [] }; }
+    }
+
+    async function loadColumnMeanings() {
+      try {
+        const r = await fetch('/api/column_meanings');
+        const j = await r.json();
+        window._columnMeanings = j.meanings && typeof j.meanings === 'object' ? j.meanings : {};
+      } catch { window._columnMeanings = {}; }
+    }
+
+    // ====== 初始化 ======
+    (async function init() {
+      await loadTablesCatalog();
+      await loadColumnMeanings();
+      await loadIndicators();
+    })().catch(e => {
+      $('msg').innerHTML = `<div class="errbox">加载失败: ${esc(e)}</div>`;
+    });
+  </script>
+</body>
+</html>
