@@ -2,7 +2,7 @@
 from app.models.indicator import Indicator, IndicatorExecution, TableMetadata, ColumnMetadata
 from app.models.core18 import Core18Indicator, Core18ExecutionLog
 from app.models.monitoring import (
-    Hospital, Department, FourElementsMonitoringRecord,
+    Hospital, FourElementsMonitoringRecord,
     PersonnelViolation, InstitutionAnomaly, TechnologyWarning, EquipmentAnomaly,
 )
 from app.models.dashboard import DashboardAlert, DashboardStatistics

@@ -31,19 +31,19 @@ class HttpClient {
     url: string,
     options: RequestOptions = {}
   ): Promise<T> {
-    const { params, body, ...rest } = options
+    const { params, body, ...fetchOptions } = options
     const finalUrl = this.buildUrl(url.replace(/\/$/, ''), params)
 
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-      ...rest.headers,
+      ...fetchOptions.headers,
     }
 
     const config: RequestInit = {
       method,
       headers,
       redirect: 'follow',
-      ...rest,
+      ...fetchOptions,
     }
 
     if (body && method !== 'GET') {

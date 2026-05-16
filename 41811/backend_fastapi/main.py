@@ -1,4 +1,7 @@
 """FastAPI 应用入口"""
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
@@ -24,18 +27,45 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# 允许的源列表（与 CORSMiddleware 保持一致）
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:8002",
+    "http://127.0.0.1:8002",
+]
+
+
+class CORSMiddlewareFix(BaseHTTPMiddleware):
+    """
+    确保所有响应（包括 307 重定向）都带上 CORS 头。
+    FastAPI 的 CORSMiddleware 不处理由路由产生的重定向响应，
+    导致浏览器跨域请求失败。
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        origin = request.headers.get("origin", "")
+        if origin and origin in ALLOWED_ORIGINS:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
+
+app.add_middleware(CORSMiddlewareFix)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from app.routers import dashboard, monitoring, indicators, core18, system, report
 
 app.include_router(dashboard.router, prefix="/api/dashboard")
 app.include_router(monitoring.router, prefix="/api/monitoring")

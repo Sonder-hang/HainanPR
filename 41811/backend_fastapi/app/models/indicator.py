@@ -35,6 +35,7 @@ class Indicator(Base):
     regex_match = Column(Boolean, default=False)
     regex_rule = Column(Text, default="")
     calc_type = Column(String(20), default="ratio")
+    date_field = Column(String(20), default="discharge")  # discharge=出院时间, admission=入院时间
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -77,6 +78,13 @@ class IndicatorExecution(Base):
     status = Column(String(20), default="pending")
     execution_time = Column(DateTime, server_default=func.now())
     duration_seconds = Column(Float, nullable=True)
+    # 批量执行相关字段
+    hospital_codes = Column(JSON, default=list)  # 执行时选中的医院代码列表
+    time_mode = Column(String(20), nullable=True)  # monthly=月度, quarterly=季度
+    time_value = Column(String(20), nullable=True)  # 如 "2026-04" 或 "2026-Q1"
+    date_field = Column(String(20), nullable=True)  # discharge=出院时间, admission=入院时间
+    group_by_hospital = Column(Boolean, default=False)  # 是否按医院分组执行
+    hospital_results = Column(JSON, default=list)  # 各医院执行结果列表
 
     indicator = relationship("Indicator", back_populates="executions")
 

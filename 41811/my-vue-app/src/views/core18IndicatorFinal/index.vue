@@ -270,7 +270,7 @@ function generateRateData(indicator: string) {
   const hash = hashString(indicator)
   const base = 70 + (hash % 30)
   const trend = hash % 3
-  const years = [2022, 2023, 2024, 2025, 2026]
+  const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   const actual: Record<number, number> = {}
   const estimated: Record<number, number> = {}
   years.forEach((year, index) => {
@@ -296,7 +296,7 @@ function generateRateHospitalData(indicator: string) {
   const hash = hashString(indicator)
   const base = 70 + (hash % 30)
   const hospitals = ['hospitalA', 'hospitalB', 'hospitalC', 'hospitalD', 'hospitalE']
-  const years = [2022, 2023, 2024, 2025, 2026]
+  const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   const actual: Record<string, Record<number, number>> = {}
   const estimated: Record<string, Record<number, number>> = {}
   hospitals.forEach((hospital, hospitalIndex) => {
@@ -416,7 +416,7 @@ function generateRateRatioData(indicator: string) {
   const hash = hashString(indicator)
   const base = 1.5 + (hash % 150) / 100
   const trend = hash % 3
-  const years = [2022, 2023, 2024, 2025, 2026]
+  const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   const actual: Record<number, number> = {}
   const estimated: Record<number, number> = {}
   years.forEach((year, index) => {
@@ -442,7 +442,7 @@ function generateRateRatioHospitalData(indicator: string) {
   const hash = hashString(indicator)
   const base = 1.5 + (hash % 150) / 100
   const hospitals = ['hospitalA', 'hospitalB', 'hospitalC', 'hospitalD', 'hospitalE']
-  const years = [2022, 2023, 2024, 2025, 2026]
+  const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   const actual: Record<string, Record<number, number>> = {}
   const estimated: Record<string, Record<number, number>> = {}
   hospitals.forEach((hospital, hospitalIndex) => {
@@ -512,7 +512,7 @@ const mortalityHospitalComparisonData = (() => {
   const hospitals = ['hospitalA', 'hospitalB', 'hospitalC', 'hospitalD', 'hospitalE']
   const bases = { hospitalA: { inpatient: 2.9, neonatal: 2.2, surgical: 3.6, post24h: 1.1, post48h: 1.9 }, hospitalB: { inpatient: 2.7, neonatal: 2.0, surgical: 3.4, post24h: 0.9, post48h: 1.7 }, hospitalC: { inpatient: 3.0, neonatal: 2.3, surgical: 3.7, post24h: 1.2, post48h: 2.0 }, hospitalD: { inpatient: 2.8, neonatal: 2.1, surgical: 3.5, post24h: 1.1, post48h: 1.9 }, hospitalE: { inpatient: 2.7, neonatal: 2.0, surgical: 3.4, post24h: 1.0, post48h: 1.8 } }
   const estBases = { hospitalA: { inpatient: 3.2, neonatal: 2.4, surgical: 3.9, post24h: 1.2, post48h: 2.1 }, hospitalB: { inpatient: 3.0, neonatal: 2.2, surgical: 3.7, post24h: 1.0, post48h: 1.9 }, hospitalC: { inpatient: 3.3, neonatal: 2.5, surgical: 4.0, post24h: 1.3, post48h: 2.2 }, hospitalD: { inpatient: 3.1, neonatal: 2.3, surgical: 3.8, post24h: 1.2, post48h: 2.1 }, hospitalE: { inpatient: 3.0, neonatal: 2.2, surgical: 3.7, post24h: 1.1, post48h: 2.0 } }
-  const years = [2022, 2023, 2024, 2025, 2026]
+  const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   const actual: Record<string, Record<number, typeof bases.hospitalA>> = {}
   const estimated: Record<string, Record<number, typeof bases.hospitalA>> = {}
   hospitals.forEach(h => {
@@ -573,7 +573,7 @@ const rehospitalizationHospitalComparisonData = (() => {
     hospitalD: { sameDay: 0.5, twoToFifteenDays: 2.4, zeroToThirtyOneDays: 5.0 },
     hospitalE: { sameDay: 0.6, twoToFifteenDays: 2.5, zeroToThirtyOneDays: 5.2 },
   }
-  const years = [2022, 2023, 2024, 2025, 2026]
+  const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   const actual: Record<string, Record<number, typeof bases.hospitalA>> = {}
   const estimated: Record<string, Record<number, typeof bases.hospitalA>> = {}
   hospitals.forEach(h => {
@@ -627,7 +627,7 @@ const returnToOrHospitalComparisonData = (() => {
     hospitalC: { sameAdmission: 1.5, sameAdmission48h: 1.1 }, hospitalD: { sameAdmission: 1.2, sameAdmission48h: 0.8 },
     hospitalE: { sameAdmission: 1.3, sameAdmission48h: 0.9 },
   }
-  const years = [2022, 2023, 2024, 2025, 2026]
+  const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   const actual: Record<string, Record<number, typeof bases.hospitalA>> = {}
   const estimated: Record<string, Record<number, typeof bases.hospitalA>> = {}
   hospitals.forEach(h => {
@@ -684,7 +684,7 @@ const perioperativeMortalityHospitalComparisonData = (() => {
     hospitalC: { sameDay: 0.8, post24h: 1.1, post48h: 1.5 }, hospitalD: { sameDay: 0.5, post24h: 0.8, post48h: 1.2 },
     hospitalE: { sameDay: 0.6, post24h: 0.9, post48h: 1.3 },
   }
-  const years = [2022, 2023, 2024, 2025, 2026]
+  const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
   const actual: Record<string, Record<number, typeof bases.hospitalA>> = {}
   const estimated: Record<string, Record<number, typeof bases.hospitalA>> = {}
   hospitals.forEach(h => {

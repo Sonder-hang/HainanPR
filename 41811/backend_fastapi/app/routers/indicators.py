@@ -2,13 +2,14 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
-from typing import Optional
+from typing import Optional, List
 
 from app.database import get_db
 from app.models.indicator import Indicator, IndicatorExecution, TableMetadata
 from app.schemas.indicator import (
     IndicatorCreate, IndicatorUpdate, IndicatorResponse,
     IndicatorExecutionResponse, ExecuteRequest, TestSqlRequest,
+    PreviewPageRequest, PreviewPageResponse,
 )
 from app.services.text2sql import Text2SQLService
 
@@ -19,6 +20,44 @@ router = APIRouter(tags=["指标管理"])
 
 def _obj_to_dict(obj) -> dict:
     return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
+
+
+# ---- 医院列表 ----
+
+@router.get("/hospitals/", response_model=List[dict])
+def list_hospitals(db: Session = Depends(get_db)):
+    """获取医疗机构列表（优先从本地 hospital 表读取，备用从远程 DIM_MDC_ORG 查询）"""
+    # 优先从本地 hospital 表读取
+    from app.models.monitoring import Hospital as LocalHospital
+    local_hospitals = db.query(LocalHospital).filter(LocalHospital.is_active == 1).order_by(LocalHospital.name).all()
+    if local_hospitals:
+        return [
+            {"MDC_ORG_CD": h.hospital_code or h.id, "MDC_ORG_NM": h.name}
+            for h in local_hospitals
+        ]
+
+    # 备用：从远程数据库查询
+    import sys
+    from pathlib import Path
+    runner_path = Path(__file__).parent.parent.parent / "Hainan_SQL-main" / "text2sql_app" / "sql_runner.py"
+    if runner_path.exists():
+        sys.path.insert(0, str(runner_path.parent))
+        try:
+            from sql_runner import execute_full
+            sql = "SELECT MDC_ORG_CD, MDC_ORG_NM FROM DIM_MDC_ORG ORDER BY MDC_ORG_NM"
+            cols, rows, err = execute_full(sql)
+            if err:
+                logger.error(f"获取医院列表失败: {err}")
+                return []
+            # rows 已经是字典列表（使用 DictCursor），直接返回
+            return rows
+        except Exception as e:
+            logger.error(f"获取医院列表异常: {e}")
+            return []
+        finally:
+            if str(runner_path.parent) in sys.path:
+                sys.path.remove(str(runner_path.parent))
+    return []
 
 
 # ---- 四要素指标 CRUD ----
@@ -137,16 +176,76 @@ def delete_core18(pk: int, db: Session = Depends(get_db)):
 
 # ---- 执行相关 ----
 
-@router.get("/execution/", response_model=list[IndicatorExecutionResponse])
-def list_executions(indicator_id: Optional[int] = None, db: Session = Depends(get_db)):
+def _list_executions(
+    indicator_id: Optional[int] = None,
+    keyword: Optional[str] = None,
+    status: Optional[str] = None,
+    kind: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    获取执行历史记录列表，支持搜索、筛选
+    
+    - keyword: 按指标名称模糊搜索
+    - status: 按状态筛选 (pending/running/success/failed)
+    - kind: 按类型筛选 (four/core18)
+    - offset: 跳过数量
+    """
     q = db.query(IndicatorExecution).options(joinedload(IndicatorExecution.indicator))
     if indicator_id:
         q = q.filter(IndicatorExecution.indicator_id == indicator_id)
-    rows = q.order_by(IndicatorExecution.execution_time.desc()).limit(100).all()
+    if keyword:
+        q = q.filter(IndicatorExecution.indicator_name.contains(keyword))
+    if status and status != 'all':
+        q = q.filter(IndicatorExecution.status == status)
+    if kind:
+        q = q.filter(IndicatorExecution.kind == kind)
+    
+    # 获取总数（用于分页信息）
+    total = q.count()
+    
+    # 不限制返回数量
+    limit = None
+    
+    if offset is None:
+        offset = 0
+    
+    rows = q.order_by(IndicatorExecution.execution_time.desc()).offset(offset)
+    if limit is not None:
+        rows = rows.limit(limit)
+    rows = rows.all()
     for row in rows:
         if not row.indicator_name and row.indicator:
             row.indicator_name = row.indicator.name
     return rows
+
+
+@router.get("/execution/", response_model=list[IndicatorExecutionResponse])
+def list_executions(
+    indicator_id: Optional[int] = None,
+    keyword: Optional[str] = None,
+    status: Optional[str] = None,
+    kind: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    return _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
+
+
+@router.get("/execution", response_model=list[IndicatorExecutionResponse])
+def list_executions_no_slash(
+    indicator_id: Optional[int] = None,
+    keyword: Optional[str] = None,
+    status: Optional[str] = None,
+    kind: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    return _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
 
 
 @router.delete("/execution/{execution_id}", status_code=204)
@@ -173,6 +272,13 @@ def execute_indicator(data: ExecuteRequest, db: Session = Depends(get_db)):
         ind_data["time_range"] = data.time_range or "全量"
         ind_data["result_type"] = data.result_type or "ratio"
         ind_data["calc_method"] = data.calc_method or "SQL录入"
+        # 补充医院和时间筛选参数
+        ind_data["hospital_codes"] = data.hospital_codes
+        ind_data["time_mode"] = data.time_mode
+        ind_data["time_value"] = data.time_value
+        ind_data["date_field"] = data.date_field or "discharge"
+        ind_data["group_by_hospital"] = data.group_by_hospital if data.group_by_hospital is not None else True
+        logger.info(f"[Execute] 接收到的请求数据: hospital_codes={data.hospital_codes}, time_mode={data.time_mode}, time_value={data.time_value}, date_field={ind_data['date_field']}, group_by_hospital={ind_data['group_by_hospital']}")
     else:
         ind_data = {"id": None, **req_dict}
 
@@ -203,3 +309,17 @@ def column_meanings():
 def prompt_preview(data: dict):
     service = Text2SQLService()
     return service.prompt_preview(data)
+
+
+@router.post("/execution/preview-page", response_model=PreviewPageResponse)
+def get_preview_page(data: PreviewPageRequest, db: Session = Depends(get_db)):
+    """根据执行记录 ID 获取指定页的预览数据（分子/分母），支持翻页"""
+    service = Text2SQLService()
+    result = service.fetch_preview_page(
+        execution_id=data.execution_id,
+        target=data.target,
+        page=data.page,
+        page_size=data.page_size,
+        db_session=db,
+    )
+    return result

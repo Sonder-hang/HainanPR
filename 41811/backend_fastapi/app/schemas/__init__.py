@@ -9,7 +9,7 @@ from app.schemas.core18 import (
     Core18IndicatorResponse, Core18ExecutionLogResponse,
 )
 from app.schemas.monitoring import (
-    HospitalResponse, DepartmentResponse, AlertCategoryResponse,
+    HospitalResponse, AlertCategoryResponse,
 )
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.schemas.admission import (

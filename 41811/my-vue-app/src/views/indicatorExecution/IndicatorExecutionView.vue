@@ -1,524 +1,578 @@
 <template>
   <div class="flex h-full min-h-0 flex-col bg-white">
-    <!-- 执行发起区 -->
+    <!-- 顶部区域：执行表单 + 历史记录按钮 -->
     <div class="shrink-0 border-b border-emerald-100 p-5">
-      <h3 class="mb-4 flex items-center text-[13px] font-semibold text-[#1F264D]">
-        <Zap class="mr-2 h-4 w-4 text-emerald-500" />
-        指标执行
-      </h3>
-      <div class="flex flex-wrap items-end gap-3">
-        <!-- 指标类型 -->
-        <label class="flex flex-col gap-1 text-[12px]">
-          <span class="text-[#596080]">指标类别</span>
-          <select
-            v-model="runKind"
-            class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-          >
-            <option value="four">四要素监管指标</option>
-            <option value="core18">十八项核心制度指标</option>
-          </select>
-        </label>
-
-        <!-- 执行范围 -->
-        <label class="flex flex-col gap-1 text-[12px]">
-          <span class="text-[#596080]">执行范围</span>
-          <select
-            v-model="runScope"
-            class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-          >
-            <option value="">全省</option>
-            <option value="hospital_a">医院 A</option>
-            <option value="hospital_b">医院 B</option>
-            <option value="hospital_c">医院 C</option>
-          </select>
-        </label>
-
-        <!-- 指标名称 -->
-        <label class="flex flex-col gap-1 text-[12px]">
-          <span class="text-[#596080]">指标名称</span>
-          <select
-            v-model="runIndicatorId"
-            class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-          >
-            <option value="">全部</option>
-            <option
-              v-for="ind in currentIndicatorOptions"
-              :key="ind.id"
-              :value="ind.id"
-            >{{ ind.label }}</option>
-          </select>
-        </label>
-
-        <!-- 执行频率 -->
-        <label class="flex flex-col gap-1 text-[12px]">
-          <span class="text-[#596080]">执行频率</span>
-          <div class="flex gap-1">
-            <button
-              v-for="mode in RUN_MODE_OPTIONS"
-              :key="mode.value"
-              type="button"
-              class="rounded-[2px] border px-3 py-2 text-[12px] transition-colors"
-              :class="runMode === mode.value
-                ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-medium'
-                : 'border-[#b8c9e8] bg-white text-[#596080] hover:border-emerald-200'"
-              @click="runMode = mode.value"
-            >{{ mode.label }}</button>
-          </div>
-        </label>
-
-        <!-- 时间范围（按月 / 按季度时显示） -->
-        <label v-if="runMode !== 'immediate'" class="flex flex-col gap-1 text-[12px]">
-          <span class="text-[#596080]">{{ runMode === 'monthly' ? '执行月份' : '执行季度' }}</span>
-          <input
-            v-if="runMode === 'monthly'"
-            v-model="runTimeRange"
-            type="month"
-            class="rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-          />
-          <select
-            v-else
-            v-model="runTimeRange"
-            class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-          >
-            <option value="2025-Q4">2025年 Q4</option>
-            <option value="2025-Q3">2025年 Q3</option>
-            <option value="2025-Q2">2025年 Q2</option>
-            <option value="2025-Q1">2025年 Q1</option>
-          </select>
-        </label>
-
-        <!-- 执行按钮 -->
-        <button
-          type="button"
-          class="flex items-center gap-1.5 rounded-[2px] bg-emerald-600 px-5 py-2 text-[12px] text-white transition-colors hover:bg-emerald-700"
-          @click="handleRun"
-        >
-          <PlayCircle class="h-4 w-4" />
-          {{ runMode === 'immediate' ? '立即执行' : '发起执行' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- 执行历史列表 -->
-    <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-4">
-      <div class="mb-3 flex items-center justify-between">
-        <h3 class="flex items-center text-[13px] font-semibold text-[#1F264D]">
-          <Clock class="mr-2 h-4 w-4 text-[#596080]" />
-          执行记录
-          <span class="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-600">{{ records.length }}</span>
-        </h3>
-        <div class="flex items-center gap-2">
-          <!-- 状态筛选 -->
-          <div class="flex gap-1">
-            <button
-              v-for="f in STATUS_FILTERS"
-              :key="f.value"
-              type="button"
-              class="rounded-[2px] border px-2 py-1 text-[11px] transition-colors"
-              :class="statusFilter === f.value
-                ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                : 'border-[#b8c9e8] bg-white text-[#596080] hover:border-emerald-200'"
-              @click="statusFilter = f.value"
-            >{{ f.label }}</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="min-h-0 flex-1 overflow-hidden rounded-[2px] border border-[#b8c9e8]/60 bg-white shadow-sm">
-        <div class="h-full min-h-0 overflow-auto">
-          <table class="w-full min-w-[880px] border-collapse text-left">
-            <thead class="sticky top-0 z-10 border-b border-emerald-100 bg-emerald-50/95 backdrop-blur-sm">
-              <tr>
-                <th class="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">指标名称</th>
-                <th class="w-24 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">执行范围</th>
-                <th class="w-28 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">类别</th>
-                <th class="w-24 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">频率</th>
-                <th class="w-24 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">时间范围</th>
-                <th class="w-24 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">状态</th>
-                <th class="w-24 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">耗时</th>
-                <th class="w-32 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">产出结果</th>
-                <th class="w-48 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">开始时间</th>
-                <th class="w-20 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">操作</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-[#b8c9e8]/30">
-              <tr
-                v-for="row in filteredRecords"
-                :key="row.id"
-                class="transition-colors hover:bg-emerald-50/30"
+      <div class="flex items-start gap-6">
+        <!-- 左侧：执行表单 -->
+        <div class="flex-1">
+          <h3 class="mb-4 flex items-center text-[13px] font-semibold text-[#1F264D]">
+            <Zap class="mr-2 h-4 w-4 text-emerald-500" />
+            指标执行
+          </h3>
+          <div class="flex flex-wrap items-end gap-3">
+            <!-- 指标类别 -->
+            <label class="flex flex-col gap-1 text-[12px]">
+              <span class="text-[#596080]">指标类别</span>
+              <select
+                v-model="runKind"
+                class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
               >
-                <td class="max-w-[240px] px-3 py-2.5 text-[12px] font-medium text-[#1F264D]">
-                  <span class="line-clamp-1" :title="row.indicatorName">{{ row.indicatorName }}</span>
-                </td>
-                <td class="w-24 px-3 py-2.5 text-[12px] text-[#596080]">{{ row.scope || '全省' }}</td>
-                <td class="w-28 px-3 py-2.5 text-[12px]">
-                  <span
-                    class="inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium"
-                    :class="row.kind === 'four' ? 'border-blue-200 bg-blue-50 text-blue-600' : 'border-purple-200 bg-purple-50 text-purple-600'"
-                  >
-                    {{ row.kind === 'four' ? '四要素' : '十八项' }}
-                  </span>
-                </td>
-                <td class="w-24 px-3 py-2.5 text-[12px] text-[#596080]">{{ RUN_MODE_MAP[row.runMode] }}</td>
-                <td class="w-24 px-3 py-2.5 text-[12px] text-[#596080]">{{ row.timeRange }}</td>
-                <td class="w-24 px-3 py-2.5">
-                  <span
-                    v-if="row.status === 'pending'"
-                    class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
-                  >
-                    <span class="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                    等待中
-                  </span>
-                  <span
-                    v-else-if="row.status === 'running'"
-                    class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600"
-                  >
-                    <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
-                    运行中
-                  </span>
-                  <span
-                    v-else-if="row.status === 'success'"
-                    class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600"
-                  >
-                    <CheckCircle2 class="h-3 w-3" />
-                    完成
-                  </span>
-                  <span
-                    v-else-if="row.status === 'failed'"
-                    class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-500"
-                  >
-                    <XCircle class="h-3 w-3" />
-                    失败
-                  </span>
-                  <span
-                    v-else
-                    class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500"
-                  >待执行</span>
-                </td>
-                <td class="w-24 px-3 py-2.5 text-[12px]" :class="row.status === 'failed' ? 'text-red-500' : 'text-[#596080]'">
-                  <span v-if="row.duration > 0">{{ row.duration }}s</span>
-                  <span v-else class="text-[#B8BCCC]">—</span>
-                </td>
-                <td class="w-32 px-3 py-2.5 text-[12px]">
-                  <!-- 比值型：显示比率 + 分子/分母 -->
-                  <template v-if="row.resultType === 'ratio' && row.outputCount > 0">
-                    <div class="font-medium text-emerald-600">{{ row.ratioPercent != null ? row.ratioPercent.toFixed(2) + '%' : '—' }}</div>
-                    <div class="text-[10px] text-[#B8BCCC]">{{ row.outputCount.toLocaleString() }} 条 / {{ row.denominatorCount?.toLocaleString() ?? '—' }} 条</div>
-                  </template>
-                  <!-- 计数型：显示条数 -->
-                  <span v-else-if="row.outputCount > 0" class="font-medium text-emerald-600">{{ row.outputCount.toLocaleString() }} 条</span>
-                  <span v-else class="text-[#B8BCCC]">—</span>
-                </td>
-                <td class="w-48 whitespace-nowrap px-3 py-2.5 text-[12px] text-[#596080]">{{ row.startTime }}</td>
-                <td class="w-20 px-3 py-2.5">
-                  <div class="flex items-center gap-2">
-                    <button
-                      type="button"
-                      class="text-[11px] text-emerald-600 hover:text-emerald-800"
-                      @click="openDetail(row)"
-                    >
-                      查看
-                    </button>
-                    <button
-                      type="button"
-                      class="text-[11px] text-red-500 hover:text-red-700"
-                      @click="deleteRecord(row)"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="filteredRecords.length === 0">
-                <td colspan="9" class="py-12 text-center text-[13px] text-[#B8BCCC]">暂无执行记录</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+                <option value="four">四要素监管指标</option>
+                <option value="core18">十八项核心制度指标</option>
+              </select>
+            </label>
 
-    <!-- 详情抽屉 -->
-    <Transition name="drawer-slide">
-      <div
-        v-if="detailRecord"
-        class="fixed inset-0 z-50 flex justify-end bg-gray-900/50 backdrop-blur-sm"
-        @click.self="detailRecord = null"
-      >
-        <div class="flex h-full w-[min(640px,100vw)] flex-col border-l border-emerald-100 bg-white shadow-2xl">
-          <!-- 抽屉头部 -->
-          <div class="flex items-center justify-between border-b border-emerald-100 bg-emerald-50 px-5 py-3.5">
-            <h2 class="flex items-center text-[14px] font-bold text-[#1F264D]">
-              <Activity class="mr-2 h-4 w-4 text-emerald-500" />
-              执行详情
-            </h2>
+            <!-- 执行范围 -->
+            <label class="flex flex-col gap-1 text-[12px]">
+              <span class="text-[#596080]">执行范围</span>
+              <MultiSelectDropdown
+                v-model="runScopes"
+                :options="hospitalOptions"
+                placeholder="全省（全部医院）"
+              />
+            </label>
+
+            <!-- 指标名称 -->
+            <label class="flex flex-col gap-1 text-[12px]">
+              <span class="text-[#596080]">指标名称</span>
+              <select
+                v-model="runIndicatorId"
+                class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+              >
+                <option value="">全部</option>
+                <option
+                  v-for="ind in currentIndicatorOptions"
+                  :key="ind.id"
+                  :value="ind.id"
+                >{{ ind.label }}</option>
+              </select>
+            </label>
+
+            <!-- 执行方式 -->
+            <label class="flex flex-col gap-1 text-[12px]">
+              <span class="text-[#596080]">执行方式</span>
+              <div class="flex gap-1">
+                <button
+                  v-for="mode in RUN_MODE_OPTIONS"
+                  :key="mode.value"
+                  type="button"
+                  class="rounded-[2px] border px-3 py-2 text-[12px] transition-colors"
+                  :class="runMode === mode.value
+                    ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-medium'
+                    : 'border-[#b8c9e8] bg-white text-[#596080] hover:border-emerald-200'"
+                  @click="runMode = mode.value"
+                >{{ mode.label }}</button>
+              </div>
+            </label>
+
+            <!-- 月份选择 -->
+            <label v-if="runMode === 'monthly'" class="flex flex-col gap-1 text-[12px]">
+              <span class="text-[#596080]">选择月份</span>
+              <div class="flex gap-1">
+                <select
+                  v-model="selectedMonthYear"
+                  class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-2 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                >
+                  <option v-for="y in monthYearOptions" :key="y" :value="y">{{ y }}年</option>
+                </select>
+                <select
+                  v-model="selectedMonthNum"
+                  class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-2 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                >
+                  <option v-for="m in MONTH_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+                </select>
+              </div>
+            </label>
+
+            <!-- 季度选择 -->
+            <template v-else-if="runMode === 'quarterly'">
+              <label class="flex flex-col gap-1 text-[12px]">
+                <span class="text-[#596080]">选择年份</span>
+                <select
+                  v-model="selectedQuarterYear"
+                  class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                >
+                  <option v-for="y in quarterYearOptions" :key="y" :value="y">{{ y }}年</option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-[12px]">
+                <span class="text-[#596080]">选择季度</span>
+                <select
+                  v-model="selectedQuarterNum"
+                  class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                >
+                  <option v-for="q in quarterOptionsOfYear" :key="q.value" :value="q.value">{{ q.label }}</option>
+                </select>
+              </label>
+            </template>
+
+            <!-- 执行按钮 -->
             <button
               type="button"
-              class="rounded-full p-1.5 text-[#596080] transition-colors hover:bg-emerald-100"
-              @click="detailRecord = null"
+              class="flex items-center gap-1.5 rounded-[2px] bg-emerald-600 px-5 py-2 text-[12px] text-white transition-colors hover:bg-emerald-700"
+              @click="handleRun"
             >
-              <X class="h-4 w-4" />
+              <PlayCircle class="h-4 w-4" />
+              {{ runMode === 'immediate' ? '全量执行' : '发起执行' }}
             </button>
           </div>
+        </div>
 
-          <!-- 概览卡片 -->
-          <div class="shrink-0 border-b border-[#b8c9e8]/30 bg-[#f8faff] p-4">
-            <div class="mb-2 text-[13px] font-semibold text-[#1F264D]">{{ detailRecord.indicatorName }}</div>
-            <div class="grid grid-cols-4 gap-3 text-[12px]">
-              <div class="rounded-[2px] bg-white p-2 text-center border border-[#b8c9e8]/40">
-                <div class="text-[11px] text-[#596080]">状态</div>
-                <div
-                  class="mt-0.5 font-semibold"
-                  :class="
-                    detailRecord.status === 'success'
-                      ? 'text-emerald-600'
-                      : detailRecord.status === 'failed'
-                        ? 'text-red-500'
-                        : detailRecord.status === 'pending'
-                          ? 'text-amber-700'
-                          : 'text-blue-600'
-                  "
-                >
-                  {{
-                    detailRecord.status === 'pending'
-                      ? '等待中'
-                      : detailRecord.status === 'running'
-                        ? '运行中'
-                        : detailRecord.status === 'success'
-                          ? '完成'
-                          : detailRecord.status === 'failed'
-                            ? '失败'
-                            : '待执行'
-                  }}
+        <!-- 右侧：历史执行记录按钮 -->
+        <div class="relative shrink-0">
+          <button
+            type="button"
+            class="flex items-center gap-2 rounded-[2px] border border-emerald-200 bg-emerald-50 px-4 py-2 text-[12px] text-emerald-700 transition-colors hover:bg-emerald-100"
+            @click="historyOpen = !historyOpen"
+          >
+            <Clock class="h-4 w-4" />
+            历史执行记录
+            <span class="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[11px] font-medium text-white">{{ records.length }}</span>
+            <ChevronDown class="h-3.5 w-3.5 transition-transform" :class="historyOpen ? 'rotate-180' : ''" />
+          </button>
+
+          <!-- 历史记录下拉面板 -->
+          <Transition name="dropdown">
+            <div
+              v-if="historyOpen"
+              class="absolute right-0 top-full z-50 mt-2 max-h-[440px] w-[920px] overflow-hidden rounded-[2px] border border-[#b8c9e8]/60 bg-white shadow-xl"
+            >
+              <!-- 状态筛选 -->
+              <div class="flex items-center justify-between border-b border-[#b8c9e8]/30 bg-emerald-50/80 px-4 py-2.5">
+                <div class="flex items-center gap-3">
+                  <span class="text-[12px] font-medium text-[#1F264D]">执行记录</span>
+                  <!-- 搜索输入框 -->
+                  <div class="relative">
+                    <input
+                      v-model="searchKeyword"
+                      type="text"
+                      placeholder="搜索指标名称..."
+                      class="w-48 rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-1.5 pr-8 text-[12px] text-[#1F264D] placeholder-[#B8BCCC] focus:border-emerald-400 focus:outline-none"
+                      @keyup.enter="handleSearch"
+                    />
+                    <button
+                      type="button"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer text-[#B8BCCC] hover:text-[#596080]"
+                      @click="handleSearch"
+                    >
+                      <Search class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div class="flex gap-1">
+                  <button
+                    v-for="f in STATUS_FILTERS"
+                    :key="f.value"
+                    type="button"
+                    class="rounded-[2px] border px-2 py-1 text-[11px] transition-colors"
+                    :class="statusFilter === f.value
+                      ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                      : 'border-[#b8c9e8] bg-white text-[#596080] hover:border-emerald-200'"
+                    @click="statusFilter = f.value"
+                  >{{ f.label }}</button>
                 </div>
               </div>
-              <div class="rounded-[2px] bg-white p-2 text-center border border-[#b8c9e8]/40">
-                <div class="text-[11px] text-[#596080]">耗时</div>
-                <div class="mt-0.5 font-semibold text-[#1F264D]">{{ detailRecord.duration > 0 ? `${detailRecord.duration}s` : '—' }}</div>
-              </div>
-              <div class="rounded-[2px] bg-white p-2 text-center border border-[#b8c9e8]/40">
-                <div class="text-[11px] text-[#596080]">产出条数</div>
-                <div class="mt-0.5 font-semibold text-emerald-600">{{ detailRecord.outputCount > 0 ? detailRecord.outputCount.toLocaleString() : '—' }}</div>
-              </div>
-              <div class="rounded-[2px] bg-white p-2 text-center border border-[#b8c9e8]/40">
-                <div class="text-[11px] text-[#596080]">结果类型</div>
-                <div class="mt-0.5 font-semibold" :class="detailRecord.resultType === 'ratio' ? 'text-emerald-600' : 'text-blue-600'">
-                  {{ detailRecord.resultType === 'ratio' ? '比值型' : '计数型' }}
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <!-- 详情内容 -->
-          <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-          <!-- 分子结果 -->
-          <div>
-            <h4 class="mb-2 flex items-center text-[12px] font-semibold text-[#1F264D]">
-              <Code2 class="mr-1.5 h-3.5 w-3.5 text-[#596080]" />
-              分子预览数据
-            </h4>
-
-            <div v-if="detailRecord.resultData && detailRecord.resultData.length > 0"
-              class="rounded-[2px] border border-[#b8c9e8]/60 overflow-hidden">
-              <div class="max-h-64 overflow-auto">
-                <table class="w-full min-w-[500px] border-collapse text-left text-[11px]">
-                  <thead class="sticky top-0 z-10 border-b border-[#b8c9e8]/60 bg-[#f0f4ff]">
+              <!-- 记录列表 -->
+              <div class="overflow-auto" style="max-height: 360px;">
+                <table class="w-full min-w-[880px] border-collapse text-left">
+                  <thead class="sticky top-0 z-10 border-b border-[#b8c9e8]/30 bg-[#f8faff]">
                     <tr>
-                      <th
-                        v-for="col in detailRecord.resultColumns"
-                        :key="col"
-                        class="px-3 py-2 font-semibold text-[#596080]"
-                      >{{ col }}</th>
+                      <th class="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">指标名称</th>
+                      <th class="w-20 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">执行范围</th>
+                      <th class="w-24 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">类别</th>
+                      <th class="w-20 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">频率</th>
+                      <th class="w-20 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">时间范围</th>
+                      <th class="w-20 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">状态</th>
+                      <th class="w-16 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">耗时</th>
+                      <th class="w-32 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">产出结果</th>
+                      <th class="w-40 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">开始时间</th>
+                      <th class="w-16 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-[#596080]">操作</th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-[#b8c9e8]/30">
+                  <tbody class="divide-y divide-[#b8c9e8]/20">
                     <tr
-                      v-for="(row, rIdx) in paginatedNumRows"
-                      :key="rIdx"
-                      class="hover:bg-emerald-50/30"
+                      v-for="row in filteredRecords"
+                      :key="row.id"
+                      class="cursor-pointer transition-colors hover:bg-emerald-50/30"
+                      :class="selectedRecord?.id === row.id ? 'bg-emerald-50/60' : ''"
+                      @click="selectRecord(row)"
                     >
-                      <td
-                        v-for="col in detailRecord.resultColumns"
-                        :key="col"
-                        class="max-w-[200px] truncate px-3 py-2 text-[#334155]"
-                        :title="String(row[col] ?? '—')"
-                      >{{ row[col] ?? '—' }}</td>
+                      <td class="max-w-[200px] px-3 py-2.5 text-[12px] font-medium text-[#1F264D]">
+                        <span class="line-clamp-1" :title="row.indicatorName">{{ row.indicatorName }}</span>
+                      </td>
+                      <td class="px-3 py-2.5 text-[12px] text-[#596080]">{{ row.scope || '全省' }}</td>
+                      <td class="px-3 py-2.5 text-[12px]">
+                        <span
+                          class="inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium"
+                          :class="row.kind === 'four' ? 'border-blue-200 bg-blue-50 text-blue-600' : 'border-purple-200 bg-purple-50 text-purple-600'"
+                        >
+                          {{ row.kind === 'four' ? '四要素' : '十八项' }}
+                        </span>
+                      </td>
+                      <td class="px-3 py-2.5 text-[12px] text-[#596080]">{{ RUN_MODE_MAP[row.runMode] }}</td>
+                      <td class="px-3 py-2.5 text-[12px] text-[#596080]">{{ row.timeRange }}</td>
+                      <td class="px-3 py-2.5">
+                        <span
+                          v-if="row.status === 'pending'"
+                          class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                        >
+                          <span class="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          等待中
+                        </span>
+                        <span
+                          v-else-if="row.status === 'running'"
+                          class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600"
+                        >
+                          <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+                          运行中
+                        </span>
+                        <span
+                          v-else-if="row.status === 'success'"
+                          class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600"
+                        >
+                          <CheckCircle2 class="h-3 w-3" />
+                          完成
+                        </span>
+                        <span
+                          v-else-if="row.status === 'failed'"
+                          class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-500"
+                        >
+                          <XCircle class="h-3 w-3" />
+                          失败
+                        </span>
+                        <span
+                          v-else
+                          class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500"
+                        >待执行</span>
+                      </td>
+                      <td class="px-3 py-2.5 text-[12px]" :class="row.status === 'failed' ? 'text-red-500' : 'text-[#596080]'">
+                        <span v-if="row.duration > 0">{{ row.duration }}s</span>
+                        <span v-else class="text-[#B8BCCC]">—</span>
+                      </td>
+                      <td class="px-3 py-2.5 text-[12px]">
+                        <template v-if="row.resultType === 'ratio' && row.outputCount > 0">
+                          <div class="font-medium text-emerald-600">{{ row.ratioPercent != null ? row.ratioPercent.toFixed(2) + '%' : '—' }}</div>
+                          <div class="text-[10px] text-[#B8BCCC]">{{ row.outputCount.toLocaleString() }} 条 / {{ row.denominatorCount?.toLocaleString() ?? '—' }} 条</div>
+                        </template>
+                        <span v-else-if="row.outputCount > 0" class="font-medium text-emerald-600">{{ row.outputCount.toLocaleString() }} 条</span>
+                        <span v-else class="text-[#B8BCCC]">—</span>
+                      </td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-[12px] text-[#596080]">{{ row.startTime }}</td>
+                      <td class="px-3 py-2.5" @click.stop>
+                        <div class="flex items-center gap-2">
+                          <button
+                            type="button"
+                            class="text-[11px] text-emerald-600 hover:text-emerald-800"
+                            @click="selectRecord(row)"
+                          >
+                            查看
+                          </button>
+                          <button
+                            type="button"
+                            class="text-[11px] text-red-500 hover:text-red-700"
+                            @click="deleteRecord(row)"
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-if="filteredRecords.length === 0">
+                      <td colspan="10" class="py-10 text-center text-[13px] text-[#B8BCCC]">暂无执行记录</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <div class="border-t border-[#b8c9e8]/60 bg-[#f8faff] px-3 py-1.5 text-[11px] text-[#596080] flex items-center justify-between gap-2">
-                <span>共 {{ detailRecord.numeratorCount?.toLocaleString() ?? '—' }} 条记录（分子全量），当前页预览 50 条</span>
-                <div class="flex items-center gap-1">
-                  <button
-                    class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
-                    :class="numPage <= 1 ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-[#596080] hover:bg-[#d0daeb]/40'"
-                    :disabled="numPage <= 1"
-                    @click="numPage = Math.max(1, numPage - 1)"
-                  >&lt;</button>
-                  <span class="min-w-[60px] text-center">{{ numPage }} / {{ numTotalPages }}</span>
-                  <button
-                    class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
-                    :class="numPage >= numTotalPages ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-[#596080] hover:bg-[#d0daeb]/40'"
-                    :disabled="numPage >= numTotalPages"
-                    @click="numPage = Math.min(numTotalPages, numPage + 1)"
-                  >&gt;</button>
-                </div>
-              </div>
             </div>
-            <div v-else
-              class="rounded-[2px] border border-[#b8c9e8]/60 bg-[#f8faff] p-4 text-center text-[12px] text-[#B8BCCC]">
-              暂无分子结果数据
-            </div>
-          </div>
+          </Transition>
+        </div>
+      </div>
+    </div>
 
-          <!-- 分母结果（仅比值型显示） -->
-          <div v-if="detailRecord.resultType === 'ratio' && detailRecord.denominatorPreviewData?.rows?.length > 0">
-            <h4 class="mb-2 flex items-center text-[12px] font-semibold text-[#1F264D]">
-              <Code2 class="mr-1.5 h-3.5 w-3.5 text-[#596080]" />
-              分母预览数据
-            </h4>
-
-            <div class="rounded-[2px] border border-[#b8c9e8]/60 overflow-hidden">
-              <div class="max-h-64 overflow-auto">
-                <table class="w-full min-w-[500px] border-collapse text-left text-[11px]">
-                  <thead class="sticky top-0 z-10 border-b border-[#b8c9e8]/60 bg-[#f0f4ff]">
-                    <tr>
-                      <th
-                        v-for="col in detailRecord.denominatorPreviewColumns"
-                        :key="col"
-                        class="px-3 py-2 font-semibold text-[#596080]"
-                      >{{ col }}</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-[#b8c9e8]/30">
-                    <tr
-                      v-for="(row, rIdx) in paginatedDenRows"
-                      :key="rIdx"
-                      class="hover:bg-blue-50/30"
-                    >
-                      <td
-                        v-for="col in detailRecord.denominatorPreviewColumns"
-                        :key="col"
-                        class="max-w-[200px] truncate px-3 py-2 text-[#334155]"
-                        :title="String(row[col] ?? '—')"
-                      >{{ row[col] ?? '—' }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="border-t border-[#b8c9e8]/60 bg-[#f8faff] px-3 py-1.5 text-[11px] text-[#596080] flex items-center justify-between gap-2">
-                <span>共 {{ detailRecord.denominatorCount?.toLocaleString() ?? '—' }} 条记录（分母全量），当前页预览 50 条</span>
-                <div class="flex items-center gap-1">
-                  <button
-                    class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
-                    :class="denPage <= 1 ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-[#596080] hover:bg-[#d0daeb]/40'"
-                    :disabled="denPage <= 1"
-                    @click="denPage = Math.max(1, denPage - 1)"
-                  >&lt;</button>
-                  <span class="min-w-[60px] text-center">{{ denPage }} / {{ denTotalPages }}</span>
-                  <button
-                    class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
-                    :class="denPage >= denTotalPages ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-[#596080] hover:bg-[#d0daeb]/40'"
-                    :disabled="denPage >= denTotalPages"
-                    @click="denPage = Math.min(denTotalPages, denPage + 1)"
-                  >&gt;</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-            <!-- 执行日志 -->
-            <div>
-              <h4 class="mb-2 flex items-center text-[12px] font-semibold text-[#1F264D]">
-                <ScrollText class="mr-1.5 h-3.5 w-3.5 text-[#596080]" />
-                执行日志
-              </h4>
-              <div class="rounded-[2px] border border-[#b8c9e8]/60 bg-[#1a1f2e] p-3 font-mono text-[11px]">
-                <div
-                  v-for="(log, idx) in detailRecord.logs"
-                  :key="idx"
-                  class="flex gap-3 leading-7"
-                >
-                  <span class="shrink-0 text-[#4b6080]">{{ log.time }}</span>
-                  <span
-                    class="shrink-0 w-12 text-right"
-                    :class="{
-                      'text-emerald-400': log.level === 'info',
-                      'text-amber-400': log.level === 'warn',
-                      'text-red-400': log.level === 'error',
-                    }"
-                  >{{ log.level === 'info' ? '[INFO]' : log.level === 'warn' ? '[WARN]' : '[ERR!]' }}</span>
-                  <span
-                    :class="{
-                      'text-[#d1d5db]': log.level === 'info',
-                      'text-amber-300': log.level === 'warn',
-                      'text-red-300': log.level === 'error',
-                    }"
-                  >{{ log.message }}</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- 错误信息 -->
-            <div v-if="detailRecord.errorMessage">
-              <h4 class="mb-2 flex items-center text-[12px] font-semibold text-red-500">
-                <AlertCircle class="mr-1.5 h-3.5 w-3.5" />
-                错误信息
-              </h4>
-              <div class="rounded-[2px] border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{{ detailRecord.errorMessage }}</div>
-            </div>
-          </div>
-
-          <!-- 底部操作 -->
-          <div class="shrink-0 flex justify-end gap-2 border-t border-emerald-100 bg-white px-5 py-3">
+    <!-- 主内容区：选中记录的详情 -->
+    <div ref="detailContainer" class="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
+      <!-- 有选中记录时显示详情 -->
+      <template v-if="selectedRecord">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="flex items-center text-[13px] font-semibold text-[#1F264D]">
+            <Activity class="mr-2 h-4 w-4 text-emerald-500" />
+            执行详情
+            <span class="ml-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+              {{ selectedRecord.indicatorName }}
+            </span>
+          </h3>
+          <div class="flex items-center gap-2">
             <button
               type="button"
-              class="rounded-[2px] border border-[#b8c9e8]/60 px-4 py-2 text-[12px] text-[#596080] hover:bg-slate-50"
-              @click="detailRecord = null"
-            >关闭</button>
+              class="flex items-center gap-1.5 rounded-[2px] border border-[#b8c9e8] px-3 py-1.5 text-[12px] text-[#596080] transition-colors hover:bg-slate-50"
+              @click="selectedRecord = null"
+            >
+              <X class="h-3.5 w-3.5" />
+              关闭详情
+            </button>
             <button
               type="button"
-              class="flex items-center gap-1.5 rounded-[2px] bg-emerald-600 px-4 py-2 text-[12px] text-white hover:bg-emerald-700"
-              @click="rerun(detailRecord)"
+              class="flex items-center gap-1.5 rounded-[2px] bg-emerald-600 px-3 py-1.5 text-[12px] text-white transition-colors hover:bg-emerald-700"
+              @click="rerun(selectedRecord)"
             >
               <RotateCcw class="h-3.5 w-3.5" />
               重新执行
             </button>
           </div>
         </div>
+
+        <!-- 概览卡片 -->
+        <div class="mb-4 shrink-0 rounded-[2px] border border-[#b8c9e8]/40 bg-[#f8faff] p-4">
+          <div class="grid grid-cols-5 gap-3 text-[12px]">
+            <div class="rounded-[2px] bg-white p-2.5 text-center border border-[#b8c9e8]/40">
+              <div class="text-[11px] text-[#596080]">状态</div>
+              <div
+                class="mt-1 font-semibold"
+                :class="
+                  selectedRecord.status === 'success'
+                    ? 'text-emerald-600'
+                    : selectedRecord.status === 'failed'
+                      ? 'text-red-500'
+                      : selectedRecord.status === 'pending'
+                        ? 'text-amber-700'
+                        : 'text-blue-600'
+                "
+              >
+                {{
+                  selectedRecord.status === 'pending'
+                    ? '等待中'
+                    : selectedRecord.status === 'running'
+                      ? '运行中'
+                      : selectedRecord.status === 'success'
+                        ? '完成'
+                        : selectedRecord.status === 'failed'
+                          ? '失败'
+                          : '待执行'
+                }}
+              </div>
+            </div>
+            <div class="rounded-[2px] bg-white p-2.5 text-center border border-[#b8c9e8]/40">
+              <div class="text-[11px] text-[#596080]">耗时</div>
+              <div class="mt-1 font-semibold text-[#1F264D]">{{ selectedRecord.duration > 0 ? `${selectedRecord.duration}s` : '—' }}</div>
+            </div>
+            <div class="rounded-[2px] bg-white p-2.5 text-center border border-[#b8c9e8]/40">
+              <div class="text-[11px] text-[#596080]">分子条数</div>
+              <div class="mt-1 font-semibold text-emerald-600">{{ selectedRecord.numeratorCount != null ? selectedRecord.numeratorCount.toLocaleString() : '—' }}</div>
+            </div>
+            <div class="rounded-[2px] bg-white p-2.5 text-center border border-[#b8c9e8]/40">
+              <div class="text-[11px] text-[#596080]">分母条数</div>
+              <div class="mt-1 font-semibold text-emerald-600">{{ selectedRecord.denominatorCount != null ? selectedRecord.denominatorCount.toLocaleString() : '—' }}</div>
+            </div>
+            <div class="rounded-[2px] bg-white p-2.5 text-center border border-[#b8c9e8]/40">
+              <div class="text-[11px] text-[#596080]">指标结果</div>
+              <div class="mt-1 font-semibold" :class="selectedRecord.resultType === 'ratio' ? 'text-emerald-600' : 'text-blue-600'">
+                {{ selectedRecord.resultType === 'ratio' ? '比值型' : '计数型' }}
+                <span v-if="selectedRecord.ratioPercent != null" class="ml-1">{{ selectedRecord.ratioPercent.toFixed(2) }}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 按医院分组显示 -->
+        <div v-if="selectedRecord?.groupByHospital && selectedRecord?.hospitalResults?.length" class="mb-4 shrink-0 rounded-[2px] border border-[#b8c9e8]/40 bg-[#f8faff] p-4">
+          <h4 class="mb-3 flex items-center text-[12px] font-semibold text-[#1F264D]">
+            <Building2 class="mr-1.5 h-3.5 w-3.5 text-[#596080]" />
+            各医院执行结果
+          </h4>
+          <div class="overflow-hidden rounded-[2px] border border-[#b8c9e8]/40">
+            <table class="w-full border-collapse text-left text-[12px]">
+              <thead class="bg-[#f8faff]">
+                <tr>
+                  <th class="px-3 py-2 font-semibold text-[#596080]">医院名称</th>
+                  <th class="px-3 py-2 w-24 font-semibold text-[#596080] text-center">状态</th>
+                  <th class="px-3 py-2 w-28 font-semibold text-[#596080] text-right">分子条数</th>
+                  <th class="px-3 py-2 w-28 font-semibold text-[#596080] text-right">分母条数</th>
+                  <th class="px-3 py-2 w-28 font-semibold text-[#596080] text-right">指标结果</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#b8c9e8]/20">
+                <tr v-for="h in selectedRecord.hospitalResults" :key="h.hospitalCode" class="hover:bg-emerald-50/30">
+                  <td class="px-3 py-2.5 font-medium text-[#1F264D]">{{ h.hospitalName }}</td>
+                  <td class="px-3 py-2.5 text-center">
+                    <span
+                      v-if="h.status === 'success'"
+                      class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600"
+                    >
+                      <CheckCircle2 class="h-3 w-3" />
+                      完成
+                    </span>
+                    <span
+                      v-else-if="h.status === 'failed'"
+                      class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-500"
+                    >
+                      <XCircle class="h-3 w-3" />
+                      失败
+                    </span>
+                    <span
+                      v-else-if="h.status === 'running'"
+                      class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600"
+                    >
+                      <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+                      运行中
+                    </span>
+                    <span v-else class="text-[#B8BCCC]">—</span>
+                  </td>
+                  <td class="px-3 py-2.5 text-right font-medium text-emerald-600">{{ h.numeratorCount?.toLocaleString() ?? '—' }}</td>
+                  <td class="px-3 py-2.5 text-right font-medium text-emerald-600">{{ h.denominatorCount?.toLocaleString() ?? '—' }}</td>
+                  <td class="px-3 py-2.5 text-right font-medium" :class="h.ratioPercent != null ? 'text-emerald-600' : 'text-[#596080]'">
+                    {{ h.ratioPercent != null ? h.ratioPercent.toFixed(2) + '%' : (h.numeratorCount != null ? h.numeratorCount.toLocaleString() + ' 条' : '—') }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 详情内容 -->
+        <div class="flex min-h-0 flex-1 gap-4 rounded-[2px] border border-[#b8c9e8]/40 bg-white">
+          <!-- 左侧：分子/分母数据 -->
+          <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+            <!-- 分子结果 -->
+            <div>
+              <h4 class="mb-2 flex items-center text-[12px] font-semibold text-[#1F264D]">
+                <Code2 class="mr-1.5 h-3.5 w-3.5 text-[#596080]" />
+                分子预览数据
+              </h4>
+              <div v-if="selectedRecord.resultData && selectedRecord.resultData.length > 0"
+                class="rounded-[2px] border border-[#b8c9e8]/60 overflow-hidden">
+                <VirtualTable
+                  v-if="paginatedNumRows.length > 0"
+                  :columns="selectedRecord.resultColumns"
+                  :rows="paginatedNumRows"
+                  row-height="36"
+                  :overscan="8"
+                  max-height="300px"
+                />
+                <!-- 加载骨架 -->
+                <div v-else-if="numRowsLoading" class="p-4 space-y-2">
+                  <div v-for="i in 5" :key="i" class="h-8 bg-[#f0f4ff] rounded animate-pulse" />
+                </div>
+                <div class="border-t border-[#b8c9e8]/60 bg-[#f8faff] px-3 py-1.5 text-[11px] text-[#596080] flex items-center justify-between gap-2">
+                  <span>共 {{ selectedRecord.numeratorCount?.toLocaleString() ?? '—' }} 条记录</span>
+                  <div class="flex items-center gap-1">
+                    <button
+                      class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
+                      :class="numPage <= 1 ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-[#596080] hover:bg-[#d0daeb]/40'"
+                      :disabled="numPage <= 1 || numRowsLoading"
+                      @click="loadNumPage(Math.max(1, numPage - 1))"
+                    >&lt;</button>
+                    <span class="min-w-[60px] text-center">{{ numPage }} / {{ numTotalPages }}<span v-if="numRowsLoading" class="ml-1 text-amber-500">加载中</span></span>
+                    <button
+                      class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
+                      :class="numPage >= numTotalPages ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-[#596080] hover:bg-[#d0daeb]/40'"
+                      :disabled="numPage >= numTotalPages || numRowsLoading"
+                      @click="loadNumPage(Math.min(numTotalPages, numPage + 1))"
+                    >&gt;</button>
+                  </div>
+                </div>
+              </div>
+              <div v-else
+                class="rounded-[2px] border border-[#b8c9e8]/60 bg-[#f8faff] p-4 text-center text-[12px] text-[#B8BCCC]">
+                暂无分子结果数据
+              </div>
+            </div>
+
+            <!-- 分母结果（仅比值型显示） -->
+            <div v-if="selectedRecord.resultType === 'ratio' && selectedRecord.denominatorPreviewData?.rows?.length > 0">
+              <h4 class="mb-2 flex items-center text-[12px] font-semibold text-[#1F264D]">
+                <Code2 class="mr-1.5 h-3.5 w-3.5 text-[#596080]" />
+                分母预览数据
+              </h4>
+              <div class="rounded-[2px] border border-[#b8c9e8]/60 overflow-hidden">
+                <VirtualTable
+                  v-if="paginatedDenRows.length > 0"
+                  :columns="selectedRecord.denominatorPreviewColumns"
+                  :rows="paginatedDenRows"
+                  row-height="36"
+                  :overscan="8"
+                  max-height="300px"
+                />
+                <!-- 加载骨架 -->
+                <div v-else-if="denRowsLoading" class="p-4 space-y-2">
+                  <div v-for="i in 5" :key="i" class="h-8 bg-[#f0f4ff] rounded animate-pulse" />
+                </div>
+                <div class="border-t border-[#b8c9e8]/60 bg-[#f8faff] px-3 py-1.5 text-[11px] text-[#596080] flex items-center justify-between gap-2">
+                  <span>共 {{ selectedRecord.denominatorCount?.toLocaleString() ?? '—' }} 条记录</span>
+                  <div class="flex items-center gap-1">
+                    <button
+                      class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
+                      :class="denPage <= 1 ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-[#596080] hover:bg-[#d0daeb]/40'"
+                      :disabled="denPage <= 1 || denRowsLoading"
+                      @click="loadDenPage(Math.max(1, denPage - 1))"
+                    >&lt;</button>
+                    <span class="min-w-[60px] text-center">{{ denPage }} / {{ denTotalPages }}<span v-if="denRowsLoading" class="ml-1 text-amber-500">加载中</span></span>
+                    <button
+                      class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
+                      :class="denPage >= denTotalPages ? 'cursor-not-allowed text-gray-300' : 'cursor-pointer text-[#596080] hover:bg-[#d0daeb]/40'"
+                      :disabled="denPage >= denTotalPages || denRowsLoading"
+                      @click="loadDenPage(Math.min(denTotalPages, denPage + 1))"
+                    >&gt;</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 错误信息 -->
+            <div v-if="selectedRecord.errorMessage">
+              <h4 class="mb-2 flex items-center text-[12px] font-semibold text-red-500">
+                <AlertCircle class="mr-1.5 h-3.5 w-3.5" />
+                错误信息
+              </h4>
+              <div class="rounded-[2px] border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{{ selectedRecord.errorMessage }}</div>
+            </div>
+          </div>
+
+          <!-- 右侧：执行日志 -->
+        </div>
+      </template>
+
+      <!-- 无选中记录时显示空状态 -->
+      <div v-else class="flex h-full flex-col items-center justify-center rounded-[2px] border border-dashed border-[#b8c9e8]/60 bg-[#f8faff]">
+        <Clock class="mb-3 h-12 w-12 text-[#B8BCCC]" />
+        <p class="text-[13px] text-[#B8BCCC]">点击右上角历史记录，查看执行详情</p>
+        <p class="mt-1 text-[12px] text-[#C8D0E0]">或选择指标后发起新的执行任务</p>
       </div>
-    </Transition>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import {
   Activity,
   AlertCircle,
+  Building2,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Code2,
   PlayCircle,
   RotateCcw,
+  Search,
   X,
   XCircle,
   Zap,
 } from 'lucide-vue-next'
+import VirtualTable from '@/components/VirtualTable.vue'
+import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown.vue'
 import { indicatorsApi, type Indicator } from '@/api/indicators'
-import { DEFAULT_CORE18 } from '@/data/indicatorManagementDefaults'
+import { DEFAULT_CORE18, DEFAULT_FOUR_ELEMENTS } from '@/data/indicatorManagementDefaults'
 import { MOCK_RECORDS, type ExecutionRecord, type RunMode, type RunStatus } from '@/data/indicatorExecutionDefaults'
 
 const RUN_MODE_OPTIONS: { value: RunMode; label: string }[] = [
-  { value: 'immediate', label: '立即执行' },
+  { value: 'immediate', label: '全量执行' },
   { value: 'monthly', label: '按月执行' },
   { value: 'quarterly', label: '按季度执行' },
 ]
 
 const RUN_MODE_MAP: Record<RunMode, string> = {
-  immediate: '立即执行',
+  immediate: '全量执行',
   monthly: '按月执行',
   quarterly: '按季度执行',
 }
@@ -532,27 +586,176 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
 ]
 
 const runKind = ref<'four' | 'core18'>('core18')
-const runScope = ref('')
+const runScopes = ref<string[]>([])
 const runIndicatorId = ref('')
 const runMode = ref<RunMode>('immediate')
-const runTimeRange = ref('')
-const statusFilter = ref('all')
-const records = ref<ExecutionRecord[]>([])
-const detailRecord = ref<ExecutionRecord | null>(null)
-const executingIds = ref<Set<string>>(new Set())
 
-// 详情抽屉表格分页
+const MONTH_OPTIONS = [
+  { value: '01', label: '1月' }, { value: '02', label: '2月' }, { value: '03', label: '3月' },
+  { value: '04', label: '4月' }, { value: '05', label: '5月' }, { value: '06', label: '6月' },
+  { value: '07', label: '7月' }, { value: '08', label: '8月' }, { value: '09', label: '9月' },
+  { value: '10', label: '10月' }, { value: '11', label: '11月' }, { value: '12', label: '12月' },
+]
+const monthYearOptions = computed(() => {
+  const now = new Date()
+  const cur = now.getFullYear()
+  return [cur - 1, cur, cur + 1]
+})
+const selectedMonthYear = ref(new Date().getFullYear())
+const selectedMonthNum = ref('01')
+
+const quarterYearOptions = computed(() => {
+  const now = new Date()
+  const cur = now.getFullYear()
+  return [cur - 3, cur - 2, cur - 1, cur, cur + 1]
+})
+const selectedQuarterYear = ref(new Date().getFullYear())
+const selectedQuarterNum = ref('1')
+const quarterOptionsOfYear = computed(() => [
+  { value: '1', label: 'Q1（一季度）' },
+  { value: '2', label: 'Q2（二季度）' },
+  { value: '3', label: 'Q3（三季度）' },
+  { value: '4', label: 'Q4（四季度）' },
+])
+const statusFilter = ref('all')
+const searchKeyword = ref('')
+const records = ref<ExecutionRecord[]>([])
+const historyOpen = ref(false)
+const selectedRecord = ref<ExecutionRecord | null>(null)
+const executingIds = ref<Set<string>>(new Set())
+const detailContainer = ref<HTMLElement | null>(null)
+
+// 状态筛选变化时，如果有搜索关键词则重新加载
+watch(statusFilter, async () => {
+  if (searchKeyword.value) {
+    await loadRecords()
+  }
+})
+
 const PAGE_SIZE = 50
 const numPage = ref(1)
 const denPage = ref(1)
 
-// 真实指标列表
+// 分页缓存（key = `${executionId}_${target}_${page}`）
+const numRowsCache = new Map<string, Record<string, unknown>[]>()
+const denRowsCache = new Map<string, Record<string, unknown>[]>()
+const numRowsLoading = ref(false)
+const denRowsLoading = ref(false)
+
+async function loadNumPage(page: number) {
+  const rec = selectedRecord.value
+  if (!rec?.id) return
+  if (rec.status === 'running' || rec.status === 'pending') return
+  // 优先使用数据库记录ID（执行后返回），否则降级到前端临时ID
+  const apiId: number | string = rec.dbRecordId ?? rec.id
+  const cacheKey = `${rec.id}_numerator_${page}`
+  if (numRowsCache.has(cacheKey)) {
+    numPage.value = page
+    return
+  }
+  numRowsLoading.value = true
+  try {
+    const res = await indicatorsApi.getPreviewPage({
+      execution_id: apiId,
+      target: 'numerator',
+      page,
+      page_size: PAGE_SIZE,
+    })
+    if (res.ok && res.rows) {
+      numRowsCache.set(cacheKey, res.rows)
+      numPage.value = page
+    } else {
+      console.warn('loadNumPage failed:', res.error)
+    }
+  } catch (e) {
+    console.error('loadNumPage error:', e)
+  } finally {
+    numRowsLoading.value = false
+  }
+}
+
+async function loadDenPage(page: number) {
+  const rec = selectedRecord.value
+  if (!rec?.id) return
+  if (rec.status === 'running' || rec.status === 'pending') return
+  // 优先使用数据库记录ID（执行后返回），否则降级到前端临时ID
+  const apiId: number | string = rec.dbRecordId ?? rec.id
+  const cacheKey = `${rec.id}_denominator_${page}`
+  if (denRowsCache.has(cacheKey)) {
+    denPage.value = page
+    return
+  }
+  denRowsLoading.value = true
+  try {
+    const res = await indicatorsApi.getPreviewPage({
+      execution_id: apiId,
+      target: 'denominator',
+      page,
+      page_size: PAGE_SIZE,
+    })
+    if (res.ok && res.rows) {
+      denRowsCache.set(cacheKey, res.rows)
+      denPage.value = page
+    } else {
+      console.warn('loadDenPage failed:', res.error)
+    }
+  } catch (e) {
+    console.error('loadDenPage error:', e)
+  } finally {
+    denRowsLoading.value = false
+  }
+}
+
+const numTotalPages = computed(() =>
+  selectedRecord.value?.numeratorCount
+    ? Math.max(1, Math.ceil(selectedRecord.value.numeratorCount / PAGE_SIZE))
+    : 1
+)
+
+const denTotalPages = computed(() =>
+  selectedRecord.value?.denominatorCount
+    ? Math.max(1, Math.ceil(selectedRecord.value.denominatorCount / PAGE_SIZE))
+    : 1
+)
+
+const canPaginateByApi = computed(() => !!selectedRecord.value?.id)
+
+const paginatedNumRows = computed(() => {
+  const data = selectedRecord.value?.resultData ?? []
+  if (data.length > 0) return data
+  const cacheKey = `${selectedRecord.value?.id}_numerator_${numPage.value}`
+  return numRowsCache.get(cacheKey) ?? []
+})
+
+const paginatedDenRows = computed(() => {
+  const data = selectedRecord.value?.denominatorPreviewData?.rows ?? []
+  if (data.length > 0) return data
+  const cacheKey = `${selectedRecord.value?.id}_denominator_${denPage.value}`
+  return denRowsCache.get(cacheKey) ?? []
+})
+
 const allIndicators = ref<Indicator[]>([])
+const hospitalList = ref<{ MDC_ORG_CD: string; MDC_ORG_NM: string }[]>([])
+
+// 医院选项（多选下拉框）
+const hospitalOptions = computed(() => [
+  { value: '__all__', label: '全省（全部医院）' },
+  ...hospitalList.value.map((h) => ({ value: h.MDC_ORG_CD, label: h.MDC_ORG_NM })),
+])
 
 onMounted(async () => {
-  await loadRecords()
-  await loadIndicators()
+  await Promise.all([loadRecords(), loadIndicators(), loadHospitals()])
 })
+
+async function loadHospitals() {
+  try {
+    const res = await indicatorsApi.getHospitals()
+    hospitalList.value = res || []
+  } catch (e) {
+    console.error('加载医院列表失败:', e)
+    hospitalList.value = []
+  }
+}
 
 async function loadIndicators() {
   try {
@@ -568,7 +771,20 @@ async function loadIndicators() {
 
 async function loadRecords() {
   try {
-    const history = await indicatorsApi.getExecutionHistory()
+    const params: any = {}
+    if (runIndicatorId.value) {
+      params.indicator_id = Number(runIndicatorId.value)
+    }
+    if (searchKeyword.value) {
+      params.keyword = searchKeyword.value
+    }
+    if (statusFilter.value !== 'all') {
+      params.status = statusFilter.value
+    }
+    if (runKind.value) {
+      params.kind = runKind.value
+    }
+    const history = await indicatorsApi.getExecutionHistory(params)
     if (history && history.length > 0) {
       records.value = history.map((exec: any) => {
         const ind = allIndicators.value.find((i: any) => i.id === exec.indicator)
@@ -578,11 +794,16 @@ async function loadRecords() {
         const outputCount = isCount
           ? (exec.count ?? exec.numerator_count ?? 0)
           : (exec.numerator_count ?? exec.denominator_count ?? 0)
-        const resultColumns = exec.preview_data?.columns
+        const isGroupByHospital = exec.group_by_hospital || false
+        const hospitalResults = exec.hospital_results || []
+        const firstHospWithData = hospitalResults.find((h: any) => h.preview_data && h.preview_data.length > 0)
+        const execPreviewData = exec.preview_data || {}
+        const resultColumns = execPreviewData.columns
           ?? exec.preview_columns
           ?? (exec.result_data ? Object.keys(exec.result_data?.[0] ?? {}) : undefined)
-        const resultData = exec.preview_data?.rows ?? exec.preview_rows ?? exec.result_data
-        // 分母预览数据
+          ?? (isGroupByHospital && firstHospWithData && firstHospWithData.preview_data?.length ? Object.keys(firstHospWithData.preview_data[0] || {}) : undefined)
+        const resultData = execPreviewData.rows ?? exec.preview_rows ?? exec.result_data
+          ?? (isGroupByHospital && firstHospWithData ? firstHospWithData.preview_data : undefined)
         const denominatorPreviewColumns = exec.denominator_preview_columns
           ?? exec.denominator_preview_data?.columns
           ?? (exec.denominator_preview_data?.rows?.length ? Object.keys(exec.denominator_preview_data.rows[0]) : undefined)
@@ -597,6 +818,8 @@ async function loadRecords() {
           status: (exec.status || 'pending') as RunStatus,
           startTime: exec.execution_time || '—',
           duration: exec.duration_seconds || 0,
+          scope: exec.scope || '',
+          dateField: exec.indicator?.date_field ?? ind?.date_field ?? 'discharge',
           outputCount,
           ratioPercent: isCount ? undefined : (exec.rate_percent ?? undefined),
           denominatorCount: isCount ? undefined : (exec.denominator_count ?? undefined),
@@ -614,6 +837,8 @@ async function loadRecords() {
                 : (exec.sql || '')),
           errorMessage: exec.error || undefined,
           logs: exec.logs?.length ? exec.logs : buildLogs(exec, isCount),
+          groupByHospital: exec.group_by_hospital || false,
+          hospitalResults: exec.hospital_results || undefined,
         }
       })
     } else {
@@ -623,6 +848,10 @@ async function loadRecords() {
     console.error('加载执行记录失败:', e)
     records.value = JSON.parse(JSON.stringify(MOCK_RECORDS))
   }
+}
+
+async function handleSearch() {
+  await loadRecords()
 }
 
 function buildLogs(exec: any, isCount: boolean = false): { time: string; level: 'info' | 'warn' | 'error'; message: string }[] {
@@ -676,6 +905,7 @@ const currentIndicatorOptions = computed(() => {
     denominator_sql: x.denominator_sql,
     sql: x.sql_content,
     calc_type: x.calc_type ?? 'ratio',
+    date_field: x.date_field ?? 'discharge',
   }))
 })
 
@@ -686,9 +916,18 @@ const filteredRecords = computed(() => {
 
 async function handleRun() {
   const selectedInd = currentIndicatorOptions.value.find((x: any) => x.id == runIndicatorId.value)
+  if (!runIndicatorId.value) {
+    window.alert('请先选择要执行的指标')
+    return
+  }
   const scheduled = runMode.value !== 'immediate'
-  const initialStatus: RunStatus = scheduled ? 'pending' : 'running'
-  const rangeLabel = runTimeRange.value || '全量'
+  let rangeLabel = '全量'
+  if (runMode.value === 'monthly') {
+    rangeLabel = `${selectedMonthYear.value}年${Number(selectedMonthNum.value)}月`
+  } else if (runMode.value === 'quarterly') {
+    const qmap: Record<string, string> = { '1': '一', '2': '二', '3': '三', '4': '四' }
+    rangeLabel = `${selectedQuarterYear.value}年${qmap[selectedQuarterNum.value]}季度`
+  }
   const execId = `exec-${Date.now()}`
   const newRecord: ExecutionRecord = {
     id: execId,
@@ -697,38 +936,27 @@ async function handleRun() {
     indicatorId: runIndicatorId.value,
     runMode: runMode.value,
     timeRange: rangeLabel,
-    status: initialStatus,
-    startTime: scheduled ? '—' : new Date().toLocaleString('zh-CN'),
+    status: 'running',
+    startTime: new Date().toLocaleString('zh-CN'),
     duration: 0,
     outputCount: 0,
+    scope: runScopes.value.includes('__all__') ? '' : runScopes.value.join(','),
+    dateField: selectedInd?.date_field ?? 'discharge',
     calcMethod: 'SQL录入',
     resultType: (selectedInd?.calc_type as 'ratio' | 'count') || 'ratio',
-    usedScript: scheduled
-      ? '-- 已排程，到达计划时间后自动执行。\nSELECT * FROM ...;'
-      : selectedInd?.resultType === 'count'
+    groupByHospital: true,
+    usedScript: selectedInd?.resultType === 'count'
         ? (selectedInd?.sql || selectedInd?.numerator_sql || selectedInd?.denominator_sql || '-- 正在执行，请稍候...')
         : selectedInd?.numerator_sql
           ? `【分子 SQL】\n${selectedInd.numerator_sql}\n\n【分母 SQL】\n${selectedInd.denominator_sql || '—'}`
           : selectedInd?.sql || '-- 正在执行，请稍候...\nSELECT * FROM ...;',
-    logs: scheduled
-      ? [{ time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `任务已排程，状态：等待中。统计周期：${rangeLabel}，将在计划时间点由调度自动启动。` }]
-      : buildLogs({}, selectedInd?.calc_type === 'count'),
+    logs: buildLogs({}, selectedInd?.calc_type === 'count'),
   }
   records.value = [newRecord, ...records.value]
-
-  if (scheduled) {
-    window.alert('定时任务已记录，排程功能开发中')
-    return
-  }
-
-  // 真实执行
-  if (!runIndicatorId.value) {
-    window.alert('请先选择要执行的指标')
-    return
-  }
+  selectedRecord.value = newRecord
   executingIds.value.add(execId)
   try {
-    const result = await indicatorsApi.executeIndicator({
+    const reqData: any = {
       business_type: runKind.value,
       indicator_id: Number(runIndicatorId.value),
       kind: runKind.value,
@@ -736,8 +964,21 @@ async function handleRun() {
       time_range: rangeLabel,
       result_type: (selectedInd?.calc_type as 'ratio' | 'count') || 'ratio',
       calc_method: 'SQL录入',
-      scope: runScope.value,
-    })
+      scope: runScopes.value.includes('__all__') ? '' : runScopes.value.join(','),
+      group_by_hospital: true,
+    }
+    reqData.hospital_codes = runScopes.value.includes('__all__') ? [] : runScopes.value
+    console.log('发送请求 - runScopes:', runScopes.value, 'hospital_codes:', reqData.hospital_codes, 'group_by_hospital:', reqData.group_by_hospital)
+    if (runMode.value === 'monthly' || runMode.value === 'quarterly') {
+      reqData.time_mode = runMode.value
+      reqData.time_value = runMode.value === 'monthly'
+        ? `${selectedMonthYear.value}-${selectedMonthNum.value}`
+        : `${selectedQuarterYear.value}-Q${selectedQuarterNum.value}`
+    }
+    if (selectedInd?.date_field) {
+      reqData.date_field = selectedInd.date_field
+    }
+    const result = await indicatorsApi.executeIndicator(reqData)
     const idx = records.value.findIndex((r) => r.id === execId)
     if (idx < 0) return
     const exec = result as any
@@ -761,7 +1002,7 @@ async function handleRun() {
       const isRatio = rawCalcType !== 'count'
       const resultType: 'ratio' | 'count' = isRatio ? 'ratio' : 'count'
       const countVal = isRatio ? numCnt : (exec.count ?? 0)
-      records.value[idx] = {
+      const updatedRecord = {
         ...records.value[idx],
         status: 'success',
         duration: exec.duration_seconds || 0,
@@ -794,13 +1035,19 @@ async function handleRun() {
                 { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `SQL 执行完成：${countVal} 条记录。` },
               ]),
         ],
+        dbRecordId: exec.db_record_id ?? null,
+        groupByHospital: exec.group_by_hospital || false,
+        hospitalResults: exec.hospital_results || undefined,
+      }
+      console.log('[DEBUG] runIndicator resultColumns:', updatedRecord.resultColumns, 'resultData length:', updatedRecord.resultData?.length)
+      console.log('[DEBUG] runIndicator raw exec.preview_data:', exec.preview_data, 'preview_rows:', exec.preview_rows)
+      records.value[idx] = updatedRecord
+      if (selectedRecord.value?.id === execId) {
+        selectedRecord.value = updatedRecord
       }
       window.alert(isRatio
         ? `执行成功！指标值：${rate ?? '—'}%`
         : `执行成功！共 ${countVal} 条记录。`)
-    }
-    if (detailRecord.value?.id === execId) {
-      detailRecord.value = records.value[idx]
     }
   } catch (e: any) {
     const idx = records.value.findIndex((r) => r.id === execId)
@@ -821,48 +1068,41 @@ async function handleRun() {
   }
 }
 
-function openDetail(row: ExecutionRecord) {
+function selectRecord(row: ExecutionRecord) {
   numPage.value = 1
   denPage.value = 1
-  detailRecord.value = row
+  selectedRecord.value = row
+  historyOpen.value = false
+  nextTick(() => {
+    detailContainer.value?.scrollTo({ top: 0, behavior: 'smooth' })
+  })
+  // 预填第1页缓存（执行时已返回）
+  const hasNum = row.resultData?.length
+  const hasDen = row.denominatorPreviewData?.rows?.length
+  if (row.id && !isNaN(Number(row.id))) {
+    const numKey = `${row.id}_numerator_1`
+    const denKey = `${row.id}_denominator_1`
+    if (hasNum) numRowsCache.set(numKey, row.resultData)
+    if (hasDen) denRowsCache.set(denKey, row.denominatorPreviewData.rows)
+    // 预加载第2页（仅当记录已持久化且数据量超过一页时）
+    if (!executingIds.value.has(String(row.id))) {
+      if (hasNum && (row.numeratorCount ?? 0) > PAGE_SIZE) {
+        loadNumPage(2)
+      }
+      if (hasDen && (row.denominatorCount ?? 0) > PAGE_SIZE) {
+        loadDenPage(2)
+      }
+    }
+  }
 }
-
-// 分子分页数据
-const paginatedNumRows = computed(() => {
-  if (!detailRecord.value?.resultData) return []
-  const all = detailRecord.value.resultData
-  const total = all.length
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const p = Math.min(numPage.value, totalPages)
-  return all.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)
-})
-const numTotalPages = computed(() =>
-  detailRecord.value?.resultData
-    ? Math.max(1, Math.ceil(detailRecord.value.resultData.length / PAGE_SIZE))
-    : 1
-)
-
-// 分母分页数据
-const paginatedDenRows = computed(() => {
-  const rows = detailRecord.value?.denominatorPreviewData?.rows ?? []
-  const total = rows.length
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const p = Math.min(denPage.value, totalPages)
-  return rows.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)
-})
-const denTotalPages = computed(() =>
-  detailRecord.value?.denominatorPreviewData?.rows
-    ? Math.max(1, Math.ceil(detailRecord.value.denominatorPreviewData.rows.length / PAGE_SIZE))
-    : 1
-)
 
 async function deleteRecord(row: ExecutionRecord) {
   if (!window.confirm(`确定删除执行记录「${row.indicatorName}」吗？`)) return
   try {
     await indicatorsApi.deleteExecution(Number(row.id))
     records.value = records.value.filter((r) => r.id !== row.id)
-    if (detailRecord.value?.id === row.id) {
-      detailRecord.value = null
+    if (selectedRecord.value?.id === row.id) {
+      selectedRecord.value = null
     }
   } catch (e) {
     window.alert(`删除失败：${e}`)
@@ -872,13 +1112,12 @@ async function deleteRecord(row: ExecutionRecord) {
 async function rerun(row: ExecutionRecord) {
   const idx = records.value.findIndex((r) => r.id === row.id)
   if (idx < 0) return
-  const scheduled = row.runMode !== 'immediate'
   const execId = `exec-${Date.now()}`
   const copy: ExecutionRecord = {
     ...JSON.parse(JSON.stringify(row)),
     id: execId,
-    status: scheduled ? 'pending' : 'running',
-    startTime: scheduled ? '—' : new Date().toLocaleString('zh-CN'),
+    status: 'running',
+    startTime: new Date().toLocaleString('zh-CN'),
     duration: 0,
     outputCount: 0,
     ratioPercent: undefined,
@@ -886,22 +1125,30 @@ async function rerun(row: ExecutionRecord) {
     numeratorCount: undefined,
     resultColumns: undefined,
     resultData: undefined,
-    logs: scheduled
-      ? [
-          { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `重新排程，等待中。统计周期：${row.timeRange}。` },
-        ]
-      : [{ time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: '任务已重新提交...' }],
+    scope: row.scope,
+    logs: [{ time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: '任务已重新提交...' }],
   }
   records.value = [copy, ...records.value]
-  detailRecord.value = copy
-
-  if (scheduled) {
-    window.alert('定时任务已记录，排程功能开发中')
-    return
-  }
+  selectedRecord.value = copy
 
   executingIds.value.add(execId)
   try {
+    let timeMode: string | undefined
+    let timeValue: string | undefined
+    if (copy.runMode === 'monthly') {
+      const match = copy.timeRange.match(/^(\d+)年(\d+)月/)
+      if (match) {
+        timeMode = 'monthly'
+        timeValue = `${match[1]}-${match[2].padStart(2, '0')}`
+      }
+    } else if (copy.runMode === 'quarterly') {
+      const match = copy.timeRange.match(/^(\d+)年(.)季度/)
+      if (match) {
+        timeMode = 'quarterly'
+        const qmap: Record<string, string> = { '一': '1', '二': '2', '三': '3', '四': '4' }
+        timeValue = `${match[1]}-Q${qmap[match[2]] || '1'}`
+      }
+    }
     const result = await indicatorsApi.executeIndicator({
       business_type: copy.kind,
       indicator_id: Number(copy.indicatorId) || undefined,
@@ -911,6 +1158,9 @@ async function rerun(row: ExecutionRecord) {
       result_type: copy.resultType,
       calc_method: copy.calcMethod,
       scope: copy.scope || '',
+      hospital_codes: copy.scope ? [copy.scope] : [],
+      time_mode: timeMode,
+      time_value: timeValue,
     })
     const i = records.value.findIndex((r) => r.id === execId)
     if (i < 0) return
@@ -931,7 +1181,7 @@ async function rerun(row: ExecutionRecord) {
     } else {
       const rawCalcType = row.resultType
       const isRatio = rawCalcType !== 'count'
-        const countVal = isRatio ? numCnt : ((exec.count ?? numCnt) || 0)
+      const countVal = isRatio ? numCnt : ((exec.count ?? numCnt) || 0)
       records.value[i] = {
         ...records.value[i],
         status: 'success',
@@ -966,8 +1216,8 @@ async function rerun(row: ExecutionRecord) {
         ],
       }
     }
-    if (detailRecord.value?.id === execId) {
-      detailRecord.value = records.value[i]
+    if (selectedRecord.value?.id === execId) {
+      selectedRecord.value = records.value[i]
     }
   } catch (e: any) {
     const i = records.value.findIndex((r) => r.id === execId)
@@ -989,20 +1239,13 @@ async function rerun(row: ExecutionRecord) {
 </script>
 
 <style scoped>
-.drawer-slide-enter-active,
-.drawer-slide-leave-active {
-  transition: opacity 0.2s ease;
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
-.drawer-slide-enter-active > :last-child,
-.drawer-slide-leave-active > :last-child {
-  transition: transform 0.25s ease;
-}
-.drawer-slide-enter-from,
-.drawer-slide-leave-to {
+.dropdown-enter-from,
+.dropdown-leave-to {
   opacity: 0;
-}
-.drawer-slide-enter-from > :last-child,
-.drawer-slide-leave-to > :last-child {
-  transform: translateX(100%);
+  transform: translateY(-8px);
 }
 </style>
