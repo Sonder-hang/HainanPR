@@ -120,6 +120,7 @@ export interface ExecuteRequest {
   calc_method?: string
   scope?: string
   logs?: ExecutionLog[]
+  group_by_hospital?: boolean
 }
 
 export interface RegenerateContext {
@@ -172,6 +173,17 @@ export interface ExecuteResponse {
   // 新增字段
   logs: ExecutionLog[]
   duration_seconds: number | null
+  group_by_hospital?: boolean
+  hospital_results?: Array<{
+    hospital_code: string
+    hospital_name: string
+    numerator_count: number | null
+    denominator_count: number | null
+    ratio_percent: number | null
+    status: string
+    error?: string
+    preview_data?: Record<string, unknown>[]
+  }>
 }
 
 export interface TestSqlRequest {
@@ -192,6 +204,20 @@ export interface TableInfo {
   table_name: string
   business_definition: string
   field_count: number
+}
+
+export interface PreviewPageRequest {
+  execution_id: number
+  target: 'numerator' | 'denominator'
+  page: number
+  page_size: number
+}
+
+export interface PreviewPageResponse {
+  ok: boolean
+  error?: string | null
+  columns: string[]
+  rows: Record<string, unknown>[]
 }
 
 export interface PromptPreviewResponse {
@@ -271,8 +297,16 @@ export const indicatorsApi = {
 
   /**
    * 获取执行历史
+   * @param params 支持 indicator_id, keyword, status, kind, limit, offset
    */
-  getExecutionHistory: (params?: { indicator_id?: number }) =>
+  getExecutionHistory: (params?: { 
+    indicator_id?: number
+    keyword?: string
+    status?: string
+    kind?: string
+    limit?: number
+    offset?: number
+  }) =>
     httpClient.get<IndicatorExecution[]>(API_ENDPOINTS.indicatorExecution, { params }),
 
   /**
@@ -286,6 +320,18 @@ export const indicatorsApi = {
    */
   executeIndicator: (data: ExecuteRequest) =>
     httpClient.post<ExecuteResponse>(API_ENDPOINTS.executeIndicator, data),
+
+  /**
+   * 获取预览数据分页（分子/分母）
+   */
+  getPreviewPage: (data: PreviewPageRequest) =>
+    httpClient.post<PreviewPageResponse>(API_ENDPOINTS.previewPage, data),
+
+  /**
+   * 获取医院列表
+   */
+  getHospitals: () =>
+    httpClient.get<Array<{ MDC_ORG_CD: string; MDC_ORG_NM: string }>>(API_ENDPOINTS.hospitals),
 
   /**
    * 测试 SQL

@@ -1,7 +1,7 @@
 """Pydantic Schema - 指标管理"""
-from pydantic import BaseModel, model_serializer
+from pydantic import BaseModel, Field, model_serializer
 from datetime import datetime as dt
-from typing import Optional
+from typing import Optional, Union
 
 
 class IndicatorBase(BaseModel):
@@ -31,6 +31,7 @@ class IndicatorBase(BaseModel):
     regex_match: bool = False
     regex_rule: str = ""
     calc_type: str = "ratio"
+    date_field: str = "discharge"  # discharge=出院时间, admission=入院时间
 
 
 class IndicatorCreate(IndicatorBase):
@@ -61,6 +62,7 @@ class IndicatorUpdate(BaseModel):
     priority: Optional[str] = None
     remark: Optional[str] = None
     calc_type: Optional[str] = None
+    date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间
 
 
 class IndicatorResponse(IndicatorBase):
@@ -103,8 +105,29 @@ class IndicatorExecutionResponse(BaseModel):
     status: str = "pending"
     execution_time: Optional[dt] = None
     duration_seconds: Optional[float] = None
+    # 批量执行相关字段
+    hospital_codes: Optional[list] = None  # 执行时选中的医院代码
+    time_mode: Optional[str] = None  # monthly=月度, quarterly=季度
+    time_value: Optional[str] = None  # 如 "2026-04" 或 "2026-Q1"
+    date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间
+    group_by_hospital: Optional[bool] = False  # 是否按医院分组执行
+    hospital_results: Optional[list] = []  # 各医院执行结果列表
 
     model_config = {"from_attributes": True}
+
+
+class PreviewPageRequest(BaseModel):
+    execution_id: Union[int, str] = Field(description="执行记录 ID（数据库整数 ID 或前端临时字符串 ID）")
+    target: str = "numerator"  # "numerator" | "denominator"
+    page: int = 1
+    page_size: int = 50
+
+
+class PreviewPageResponse(BaseModel):
+    ok: bool = True
+    error: Optional[str] = None
+    columns: list = []
+    rows: list = []
 
 
 class ExecuteRequest(BaseModel):
@@ -135,6 +158,12 @@ class ExecuteRequest(BaseModel):
     calc_method: Optional[str] = "SQL录入"
     scope: Optional[str] = ""
     logs: Optional[list] = None
+    # 批量执行相关字段
+    hospital_codes: Optional[list[str]] = None  # 选中的医院代码列表
+    time_mode: Optional[str] = None  # monthly=月度, quarterly=季度
+    time_value: Optional[str] = None  # 如 "2026-04" 或 "2026-Q1"
+    date_field: Optional[str] = "discharge"  # discharge=出院时间(DSCG_DT_TM), admission=入院时间(ADMN_DT_TM)
+    group_by_hospital: Optional[bool] = True  # 是否按医院分组执行
 
 
 class TestSqlRequest(BaseModel):

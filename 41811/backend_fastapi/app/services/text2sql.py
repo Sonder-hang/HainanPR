@@ -1,7 +1,7 @@
 """Text-to-SQL 服务集成层"""
 import httpx
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 import sys
 from pathlib import Path
 
@@ -82,6 +82,24 @@ class Text2SQLService:
         def _exec_sql(sql: str, include_rows: bool = True, fetch_all: bool = False):
             if not (sql and sql.strip()):
                 return None, "SQL 为空", [], []
+            # 标准化：MySQL 列名大小写不敏感，但已知 LLM 生成的 SQL 大写列名与实际 DB 不匹配
+            # 将大写列名（不在引号内）替换为小写
+            import re
+            known_cols = [
+                "DSCG_DT_TM", "ADMN_DT_TM", "PRM_KEY", "MDC_ORG_CD", "MDC_ORG_NM",
+                "ADMN_MDC_HTR_RCD_NO", "INHOS_NO", "PTT_NM", "CHF_COMPLNT",
+                "PST_ILLNS_HST", "DSES_HST", "ODNR_HLTH_CDT_CD", "ADMN_DT_TM",
+                "OPRT_SQNC_NO", "OPRT_CD", "OPRT_NM", "OPRT_DT", "PLN_IMPLMT_OPRT_CD",
+                "PLN_IMPLMT_OPRT_NM", "DIAG_CD", "DIAG_NM", "MAIN_DIAG_FLG",
+                "MDC_RCD_NO", "INHOS_TMS", "GDR_CD", "GDR_NM", "BTH_DT", "AGE",
+                "AGE_UNT", "NATN_CD", "NATN_NM", "HLTH_CRD_NO", "MDC_PAY_WAY_CD",
+                "MDC_PAY_WAY_NM", "INHOS_MDC_TP_CD", "INHOS_MDC_TP_NM", "NM",
+                "ID_CRD_NO", "DTH_DT_TM", "DSCG_WAY_CD", "DSCG_WAY_NM",
+                "TNOVR_CDT_CD", "TNOVR_CDT_NM", "INVLD_FLG", "OPRT_TP_CD",
+                "OPRT_TP_NM", "DAY31_DSCG_AGN_INHOS_FLG", "MDC_RCD_NO",
+            ]
+            for col in known_cols:
+                sql = re.sub(r'(?<![`"\w])' + col + r'(?![`"\w])', col.lower(), sql)
             runner_path = Path(__file__).parent.parent.parent / "Hainan_SQL-main" / "text2sql_app" / "sql_runner.py"
             if runner_path.exists():
                 sys.path.insert(0, str(runner_path.parent))
@@ -118,27 +136,42 @@ class Text2SQLService:
         indicator_name = indicator_data.get("name") or indicator_data.get("indicator_name") or ""
 
         def _to_serializable_rows(rows: list) -> list:
-            """将 rows 中的 Decimal/非 JSON 类型转为可序列化类型"""
+            """将 rows 中的 Decimal/datetime 等非 JSON 类型转为可序列化类型"""
             result = []
             for row in rows:
                 clean = {}
                 for k, v in row.items():
-                    if hasattr(v, '__float__') and not isinstance(v, (int, str, bool, type(None))):
+                    if hasattr(v, 'strftime'):  # datetime 对象
+                        clean[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+                    elif hasattr(v, '__float__') and not isinstance(v, (int, str, bool, type(None))):
                         clean[k] = float(v)
                     else:
                         clean[k] = v
                 result.append(clean)
             return result
 
-        def _save(result: Dict) -> None:
-            """统一保存执行记录到数据库"""
+        def _to_serializable_logs(logs: list) -> list:
+            """将 logs 中的 datetime 类型转为字符串"""
+            result = []
+            for log in logs:
+                clean = {}
+                for k, v in log.items():
+                    if hasattr(v, 'strftime'):
+                        clean[k] = v.strftime("%H:%M:%S")
+                    else:
+                        clean[k] = v
+                result.append(clean)
+            return result
+
+        def _save(result: Dict) -> Optional[int]:
+            """统一保存执行记录到数据库，返回记录ID"""
             if not db_session:
-                return
+                return None
             try:
+                from datetime import datetime
                 from app.models.indicator import IndicatorExecution
                 indicator_id = indicator_data.get("indicator_id") or indicator_data.get("id")
-                if indicator_id:
-                    db_session.add(IndicatorExecution(
+                exec_record = IndicatorExecution(
                         indicator_id=indicator_id,
                         indicator_name=indicator_name,
                         kind=kind,
@@ -165,15 +198,317 @@ class Text2SQLService:
                         request_id=result.get("request_id", ""),
                         conversation_id=result.get("conversation_id", ""),
                         status="success" if result.get("ok") else "failed",
-                        logs=result.get("logs", []),
+                        logs=_to_serializable_logs(result.get("logs", [])),
                         duration_seconds=result.get("duration_seconds"),
-                    ))
-                    db_session.commit()
+                        execution_time=datetime.now(),
+                        # 批量执行相关字段
+                        hospital_codes=indicator_data.get("hospital_codes"),
+                        time_mode=indicator_data.get("time_mode"),
+                        time_value=indicator_data.get("time_value"),
+                        date_field=indicator_data.get("date_field"),
+                        group_by_hospital=result.get("group_by_hospital", False),
+                        hospital_results=result.get("hospital_results", []),
+                    )
+                db_session.add(exec_record)
+                db_session.commit()
+                db_session.refresh(exec_record)
+                return exec_record.id
             except Exception as e:
                 logger.error(f"保存执行记录失败: {e}")
                 db_session.rollback()
+                return None
+
+        def _inject_hospital_filter(sql: str, hospital_codes: list = None) -> str:
+            """向 SQL 注入医院筛选条件 - 识别子查询并正确注入"""
+            if not sql or not hospital_codes:
+                logger.info(f"[医院过滤] SQL或hospital_codes为空，跳过过滤 - sql_exists={bool(sql)}, codes={hospital_codes}")
+                return sql
+            
+            import re
+            
+            codes_str = "','".join(hospital_codes)
+            
+            sql_clean = sql.strip().rstrip(';').strip()
+            
+            # 找主表别名 (跳过子查询内的 FROM/JOIN)
+            table_aliases = set()
+            # 排除关键字
+            keywords = {'SELECT', 'WHERE', 'AND', 'OR', 'ON', 'AS', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'JOIN', 'FROM'}
+            # 先找 AS 别名
+            for m in re.finditer(r'(?:FROM|JOIN)\s+(\w+)\s+AS\s+(\w+)', sql_clean, re.IGNORECASE):
+                alias = m.group(2)
+                if alias.upper() not in keywords:
+                    table_aliases.add(alias)
+            # 再找隐式别名 (FROM table alias 或 JOIN table alias)
+            # 关键：确保别名后面有空白或结束，而不是紧跟 WHERE
+            for m in re.finditer(r'(?:FROM|JOIN)\s+(\w+)\s+(\w+)\b', sql_clean, re.IGNORECASE):
+                alias = m.group(2)
+                if alias.upper() not in keywords:
+                    table_aliases.add(alias)
+            
+            main_alias = list(table_aliases)[0] if table_aliases else None
+            
+            # 检查外层 SELECT 是否已经有无别名的 MDC_ORG_CD 字段
+            # 移除注释后检查
+            outer_select_match = re.search(r'\bSELECT\s+(.*?)\s+FROM\s*\(', sql_clean, re.IGNORECASE | re.DOTALL)
+            has_outer_mdc_org = False
+            if outer_select_match:
+                outer_cols_raw = outer_select_match.group(1)
+                # 移除行内注释和块注释
+                outer_cols = re.sub(r'--[^\n]*', '', outer_cols_raw)
+                outer_cols = re.sub(r'/\*.*?\*/', '', outer_cols, flags=re.DOTALL)
+                # 检查是否有不带表别名的 MDC_ORG_CD 列
+                # 例如: "MDC_ORG_CD," 或 "MDC_ORG_CD\n" 或 "(MDC_ORG_CD" 等
+                if re.search(r'(?<!\w\.)\bMDC_ORG_CD\b(?!\s*=)', outer_cols):
+                    has_outer_mdc_org = True
+            
+            if has_outer_mdc_org:
+                hospital_filter = f" AND MDC_ORG_CD IN ('{codes_str}')"
+            elif main_alias:
+                hospital_filter = f" AND {main_alias}.MDC_ORG_CD IN ('{codes_str}')"
+            else:
+                hospital_filter = f" AND MDC_ORG_CD IN ('{codes_str}')"
+            
+            logger.info(f"[医院过滤] 表别名/表名: {table_aliases}, 使用: {main_alias}, 外层有MDC: {has_outer_mdc_org}")
+            
+            # 找到最外层的 WHERE
+            outer_pattern = r'\)\s+(?:AS\s+)?\w+\s+WHERE\b'
+            all_matches = list(re.finditer(outer_pattern, sql_clean, re.IGNORECASE | re.DOTALL))
+            
+            # 找到主 FROM 子句开始的位置
+            main_from_pos = sql_clean.upper().find('FROM')
+            
+            # 从后往前找最近的外层 WHERE
+            outer_where_pos = -1
+            for m in reversed(all_matches):
+                paren_pos = m.start()
+                if paren_pos >= main_from_pos:
+                    outer_where_pos = m.start()
+                    break
+            
+            if outer_where_pos >= 0:
+                # 找到 WHERE 关键字位置
+                where_start = outer_where_pos + sql_clean[outer_where_pos:].upper().find('WHERE')
+                after_where_raw = sql_clean[where_start + 5:]
+                after_where = after_where_raw.strip()
+                
+                clause_match = re.search(r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION)\b', after_where, re.IGNORECASE)
+                
+                if clause_match:
+                    insert_pos = where_start + 5 + clause_match.start()
+                    new_sql = sql_clean[:insert_pos] + hospital_filter + " " + after_where
+                else:
+                    new_sql = sql_clean[:where_start + 5] + after_where_raw + hospital_filter
+                logger.info(f"[医院过滤] 在外层WHERE后注入")
+            else:
+                # 没有子查询，在 ORDER BY 等关键字前追加
+                clause_pattern = r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION\b)'
+                match = re.search(clause_pattern, sql_clean, re.IGNORECASE)
+                
+                if match:
+                    before = sql_clean[:match.start()].rstrip().rstrip(';').strip()
+                    after = sql_clean[match.start():]
+                    if before.upper().endswith(('AND', 'OR')):
+                        before = before[:-3].strip()
+                    new_sql = before + " " + hospital_filter + " " + after
+                else:
+                    sql_clean = sql_clean.rstrip().rstrip(';').strip()
+                    if sql_clean.upper().endswith(('AND', 'OR')):
+                        sql_clean = sql_clean[:-3].strip()
+                    new_sql = sql_clean + " " + hospital_filter
+                logger.info(f"[医院过滤] 无子查询，在ORDER BY前追加")
+            
+            logger.info(f"[医院过滤] 过滤后SQL: {new_sql[:300]}...")
+            return new_sql
+
+        def _inject_time_filter(sql: str, time_mode: str = None, time_value: str = None, date_field: str = "discharge") -> str:
+            """向 SQL 注入时间筛选条件 - 在外层 WHERE 之后追加"""
+            if not sql or not time_mode or not time_value:
+                return sql
+            
+            import re
+            
+            dt_field = "dscg_dt_tm" if date_field == "discharge" else "admn_dt_tm"
+            
+            if time_mode == "monthly":
+                year, month = time_value.split("-")
+                start_date = f"{year}-{month}-01"
+                import calendar
+                last_day = calendar.monthrange(int(year), int(month))[1]
+                end_date = f"{year}-{month}-{last_day:02d}"
+            elif time_mode == "quarterly":
+                year, quarter = time_value.split("-Q")
+                q = int(quarter)
+                start_month = (q - 1) * 3 + 1
+                end_month = q * 3
+                start_date = f"{year}-{start_month:02d}-01"
+                import calendar
+                last_day = calendar.monthrange(int(year), end_month)[1]
+                end_date = f"{year}-{end_month:02d}-{last_day:02d}"
+            else:
+                return sql
+            
+            time_filter = f"AND DATE({dt_field}) BETWEEN '{start_date}' AND '{end_date}'"
+            
+            sql_clean = sql.strip().rstrip(';').strip()
+            
+            # 找到子查询结束后的外层 WHERE
+            outer_pattern = r'\)\s+(?:AS\s+)?\w+\s+WHERE\b'
+            all_matches = list(re.finditer(outer_pattern, sql_clean, re.IGNORECASE | re.DOTALL))
+            
+            if all_matches:
+                last_match = all_matches[-1]
+                where_start = last_match.start() + sql_clean[last_match.start():].upper().find('WHERE')
+                after_where_raw = sql_clean[where_start + 5:]
+                
+                clause_match = re.search(r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION)\b', after_where_raw, re.IGNORECASE)
+                
+                if clause_match:
+                    insert_pos = where_start + 5 + clause_match.start()
+                    return sql_clean[:insert_pos] + " " + time_filter + " " + after_where_raw.strip()
+                else:
+                    return sql_clean[:where_start + 5] + after_where_raw + " " + time_filter
+            
+            # 没有子查询，在 ORDER BY 等关键字前追加
+            clause_pattern = r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION\b)'
+            match = re.search(clause_pattern, sql_clean, re.IGNORECASE)
+            
+            if match:
+                before_clause = sql_clean[:match.start()].rstrip().rstrip(';').strip()
+                after_clause = sql_clean[match.start():]
+                
+                if before_clause.upper().endswith(('AND', 'OR')):
+                    before_clause = before_clause[:-3].strip()
+                
+                return before_clause + " " + time_filter + " " + after_clause
+            else:
+                sql_clean = sql_clean.rstrip().rstrip(';').strip()
+                if sql_clean.upper().endswith(('AND', 'OR')):
+                    sql_clean = sql_clean[:-3].strip()
+                return sql_clean + " " + time_filter
 
         # --- 有已保存 SQL，直接执行 ---
+        # 应用医院和时间筛选
+        hospital_codes = indicator_data.get("hospital_codes")
+        time_mode = indicator_data.get("time_mode")
+        time_value = indicator_data.get("time_value")
+        date_field = indicator_data.get("date_field", "discharge")
+        group_by_hospital = indicator_data.get("group_by_hospital", False)
+        
+        logger.info(f"[医院过滤] hospital_codes={hospital_codes}, time_mode={time_mode}, time_value={time_value}, group_by_hospital={group_by_hospital}")
+        
+        # 获取医院名称映射
+        hospital_names = {}
+        try:
+            from sql_runner import get_hospitals
+            all_hospitals = get_hospitals()
+            for h in all_hospitals:
+                hospital_names[h.get("MDC_ORG_CD")] = h.get("MDC_ORG_NM", h.get("MDC_ORG_CD"))
+        except Exception:
+            pass
+        
+        # 如果需要按医院分组执行
+        if group_by_hospital and hospital_codes and len(hospital_codes) > 1:
+            hospital_results = []
+            total_num_cnt = 0
+            total_den_cnt = 0
+            all_ok = True
+            all_logs = []
+            
+            for i, hosp_code in enumerate(hospital_codes):
+                hosp_name = hospital_names.get(hosp_code, hosp_code)
+                hosp_logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 开始执行..."}]
+                
+                # 为当前医院构造筛选后的SQL
+                hosp_num_sql = _inject_hospital_filter(numerator_sql, [hosp_code]) if numerator_sql else ""
+                hosp_num_sql = _inject_time_filter(hosp_num_sql, time_mode, time_value, date_field) if hosp_num_sql else ""
+                hosp_den_sql = _inject_hospital_filter(denominator_sql, [hosp_code]) if denominator_sql else ""
+                hosp_den_sql = _inject_time_filter(hosp_den_sql, time_mode, time_value, date_field) if hosp_den_sql else ""
+                
+                hosp_num_cnt, hosp_num_err, hosp_num_cols, hosp_num_rows = _exec_sql(hosp_num_sql) if hosp_num_sql else (None, None, [], [])
+                hosp_den_cnt, hosp_den_err, hosp_den_cols, hosp_den_rows = _exec_sql(hosp_den_sql) if hosp_den_sql else (None, None, [], [])
+                
+                hosp_rate = round(hosp_num_cnt * 100.0 / hosp_den_cnt, 4) if (hosp_den_cnt and hosp_num_cnt is not None and hosp_den_cnt != 0) else None
+                hosp_ok = hosp_num_err is None and hosp_den_err is None and hosp_num_cnt is not None and hosp_den_cnt is not None
+                
+                if not hosp_ok:
+                    all_ok = False
+                
+                total_num_cnt += (hosp_num_cnt or 0)
+                total_den_cnt += (hosp_den_cnt or 0)
+                
+                hosp_logs.extend([
+                    {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 分子：{hosp_num_cnt} 条"},
+                    {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 分母：{hosp_den_cnt} 条"},
+                ])
+                if hosp_rate is not None:
+                    hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 指标值：{hosp_rate}%"})
+                if hosp_num_err:
+                    hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"[{hosp_name}] 分子执行出错：{hosp_num_err}"})
+                if hosp_den_err:
+                    hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"[{hosp_name}] 分母执行出错：{hosp_den_err}"})
+                
+                hospital_results.append({
+                    "hospital_code": hosp_code,
+                    "hospital_name": hosp_name,
+                    "numerator_count": hosp_num_cnt,
+                    "denominator_count": hosp_den_cnt,
+                    "ratio_percent": hosp_rate,
+                    "status": "success" if hosp_ok else "failed",
+                    "error": hosp_num_err or hosp_den_err,
+                    "preview_data": _to_serializable_rows(hosp_num_rows[:10]) if hosp_num_rows else [],
+                })
+                all_logs.extend(hosp_logs)
+            
+            # 计算总体指标值
+            total_rate = round(total_num_cnt * 100.0 / total_den_cnt, 4) if total_den_cnt != 0 else None
+            all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"汇总执行完成。总体指标值：{total_rate}%（{total_num_cnt}/{total_den_cnt}）"})
+            
+            # 聚合预览数据：使用第一个有数据的医院的预览
+            first_preview = []
+            first_cols = []
+            for hosp in hospital_results:
+                pd = hosp.get("preview_data", [])
+                if pd:
+                    first_preview = pd
+                    first_cols = list(pd[0].keys()) if pd else []
+                    break
+            result = {
+                "ok": all_ok,
+                "indicator_type": ind_type,
+                "numerator_sql": numerator_sql,
+                "denominator_sql": denominator_sql,
+                "numerator_count": total_num_cnt,
+                "denominator_count": total_den_cnt,
+                "rate_percent": total_rate,
+                "rate_formula": f"{total_num_cnt}/{total_den_cnt}={total_rate}%" if total_rate is not None else None,
+                "error": None if all_ok else "部分医院执行失败",
+                "preview_columns": first_cols,
+                "preview_rows": first_preview,
+                "preview_data": {"columns": first_cols, "rows": first_preview},
+                "denominator_preview_columns": [],
+                "denominator_preview_rows": [],
+                "denominator_preview_data": {"columns": [], "rows": []},
+                "request_id": "",
+                "conversation_id": "",
+                "cache_hit": False,
+                "logs": all_logs,
+                "duration_seconds": round(time.time() - start_time, 3),
+                "group_by_hospital": True,
+                "hospital_results": hospital_results,
+            }
+            db_record_id = _save(result)
+            if db_record_id is not None:
+                result["db_record_id"] = db_record_id
+            return result
+        
+        if numerator_sql:
+            numerator_sql = _inject_hospital_filter(numerator_sql, hospital_codes)
+            numerator_sql = _inject_time_filter(numerator_sql, time_mode, time_value, date_field)
+        if denominator_sql:
+            denominator_sql = _inject_hospital_filter(denominator_sql, hospital_codes)
+            denominator_sql = _inject_time_filter(denominator_sql, time_mode, time_value, date_field)
+        
         if numerator_sql and denominator_sql:
             # 比值型需要同时获取分子和分母的预览数据
             num_cnt, num_err, num_cols, num_rows = _exec_sql(numerator_sql)
@@ -224,7 +559,9 @@ class Text2SQLService:
                 "logs": logs,
                 "duration_seconds": duration,
             }
-            _save(result)
+            db_record_id = _save(result)
+            if db_record_id is not None:
+                result["db_record_id"] = db_record_id
             return result
 
         if single_sql:
@@ -268,7 +605,9 @@ class Text2SQLService:
                 "logs": logs,
                 "duration_seconds": duration,
             }
-            _save(result)
+            db_record_id = _save(result)
+            if db_record_id is not None:
+                result["db_record_id"] = db_record_id
             return result
 
         # --- 无保存 SQL，走 text2sql 服务生成 ---
@@ -307,9 +646,23 @@ class Text2SQLService:
             if "preview_data" not in result:
                 result["preview_data"] = {
                     "columns": result.get("preview_columns", []),
-                    "rows": result.get("preview_rows", []),
+                    "rows": _to_serializable_rows(result.get("preview_rows", [])),
                 }
-            _save(result)
+            else:
+                # 也要序列化 preview_data 中的 rows
+                if "rows" in result["preview_data"]:
+                    result["preview_data"]["rows"] = _to_serializable_rows(result["preview_data"]["rows"])
+            # 序列化 denominator_preview_rows
+            if "denominator_preview_data" in result and "rows" in result["denominator_preview_data"]:
+                result["denominator_preview_data"]["rows"] = _to_serializable_rows(result["denominator_preview_data"]["rows"])
+            elif result.get("denominator_preview_rows"):
+                result["denominator_preview_data"] = {
+                    "rows": _to_serializable_rows(result.get("denominator_preview_rows", [])),
+                    "columns": result.get("denominator_preview_columns", []),
+                }
+            db_record_id = _save(result)
+            if db_record_id is not None:
+                result["db_record_id"] = db_record_id
             return result
         except httpx.HTTPError as e:
             logger.error(f"执行指标失败 (HTTP): {e}")
@@ -355,4 +708,202 @@ class Text2SQLService:
         except Exception as e:
             logger.error(f"同步指标到 text2sql 失败: {e}")
             return {"ok": False, "error": str(e)}
+
+    def fetch_preview_page(
+        self,
+        execution_id: Union[int, str],
+        target: str = "numerator",  # "numerator" | "denominator"
+        page: int = 1,
+        page_size: int = 50,
+        db_session=None,
+    ) -> Dict[str, Any]:
+        """根据执行记录 ID 获取指定页的预览数据（支持前端临时ID和数据库整数ID）"""
+        import sys
+        from pathlib import Path
+        import time as time_mod
+
+        if not db_session:
+            return {"ok": False, "error": "数据库会话不可用", "columns": [], "rows": []}
+
+        try:
+            from app.models.indicator import IndicatorExecution
+            record = None
+            # 前端临时ID格式: "exec-1747401600123"
+            if isinstance(execution_id, str) and execution_id.startswith("exec-"):
+                exec_int = int(execution_id.split("-")[1])
+                # 通过 execution_time 范围查找最接近的记录
+                from datetime import datetime as dt
+                import time as time_mod
+                target_ts = exec_int / 1000
+                min_ts = target_ts - 2  # 前后2秒范围内
+                max_ts = target_ts + 2
+                records_found = db_session.query(IndicatorExecution).filter(
+                    IndicatorExecution.execution_time >= dt.fromtimestamp(min_ts),
+                    IndicatorExecution.execution_time <= dt.fromtimestamp(max_ts),
+                ).order_by(IndicatorExecution.execution_time.desc()).limit(5).all()
+                # 精确匹配 execution_time 秒级
+                for r in records_found:
+                    r_ts = r.execution_time.timestamp()
+                    if abs(r_ts - target_ts) < 2:
+                        record = r
+                        break
+            else:
+                record = db_session.query(IndicatorExecution).filter(
+                    IndicatorExecution.id == int(execution_id)
+                ).first()
+            if not record:
+                return {"ok": False, "error": f"执行记录不存在 (id={execution_id})", "columns": [], "rows": []}
+
+            if target == "numerator":
+                raw_sql = record.numerator_sql or record.sql or ""
+            elif target == "denominator":
+                raw_sql = record.denominator_sql or ""
+            else:
+                return {"ok": False, "error": f"未知 target: {target}", "columns": [], "rows": []}
+
+            if not raw_sql:
+                return {"ok": False, "error": "该执行记录无原始 SQL", "columns": [], "rows": []}
+
+            # 重新应用医院和时间过滤
+            def _inject_hospital_filter(sql: str, codes: list = None) -> str:
+                if not sql or not codes:
+                    return sql
+                import re
+                codes_str = "','".join(codes)
+                sql_clean = sql.strip().rstrip(';').strip()
+                table_aliases = set()
+                keywords = {'SELECT', 'WHERE', 'AND', 'OR', 'ON', 'AS', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'JOIN', 'FROM'}
+                for m in re.finditer(r'(?:FROM|JOIN)\s+(\w+)\s+AS\s+(\w+)', sql_clean, re.IGNORECASE):
+                    alias = m.group(2)
+                    if alias.upper() not in keywords:
+                        table_aliases.add(alias)
+                for m in re.finditer(r'(?:FROM|JOIN)\s+(\w+)\s+(\w+)\b', sql_clean, re.IGNORECASE):
+                    alias = m.group(2)
+                    if alias.upper() not in keywords:
+                        table_aliases.add(alias)
+                main_alias = list(table_aliases)[0] if table_aliases else None
+                outer_select_match = re.search(r'\bSELECT\s+(.*?)\s+FROM\s*\(', sql_clean, re.IGNORECASE | re.DOTALL)
+                has_outer_mdc = False
+                if outer_select_match:
+                    outer_cols = re.sub(r'--[^\n]*', '', outer_select_match.group(1))
+                    outer_cols = re.sub(r'/\*.*?\*/', '', outer_cols, flags=re.DOTALL)
+                    if re.search(r'(?<!\w\.)\bMDC_ORG_CD\b(?!\s*=)', outer_cols):
+                        has_outer_mdc = True
+                if has_outer_mdc:
+                    hospital_filter = f" AND MDC_ORG_CD IN ('{codes_str}')"
+                elif main_alias:
+                    hospital_filter = f" AND {main_alias}.MDC_ORG_CD IN ('{codes_str}')"
+                else:
+                    hospital_filter = f" AND MDC_ORG_CD IN ('{codes_str}')"
+                outer_pattern = r'\)\s+(?:AS\s+)?\w+\s+WHERE\b'
+                all_matches = list(re.finditer(outer_pattern, sql_clean, re.IGNORECASE | re.DOTALL))
+                main_from_pos = sql_clean.upper().find('FROM')
+                outer_where_pos = -1
+                for m in reversed(all_matches):
+                    if m.start() >= main_from_pos:
+                        outer_where_pos = m.start()
+                        break
+                if outer_where_pos >= 0:
+                    where_start = outer_where_pos + sql_clean[outer_where_pos:].upper().find('WHERE')
+                    after_where_raw = sql_clean[where_start + 5:]
+                    clause_match = re.search(r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION)\b', after_where_raw, re.IGNORECASE)
+                    if clause_match:
+                        insert_pos = where_start + 5 + clause_match.start()
+                        return sql_clean[:insert_pos] + hospital_filter + " " + after_where_raw
+                    else:
+                        return sql_clean[:where_start + 5] + after_where_raw + hospital_filter
+                else:
+                    clause_pattern = r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION\b)'
+                    match = re.search(clause_pattern, sql_clean, re.IGNORECASE)
+                    if match:
+                        before = sql_clean[:match.start()].rstrip().rstrip(';').strip()
+                        if before.upper().endswith(('AND', 'OR')):
+                            before = before[:-3].strip()
+                        return before + " " + hospital_filter + " " + sql_clean[match.start():]
+                    else:
+                        sql_clean2 = sql_clean.rstrip().rstrip(';').strip()
+                        if sql_clean2.upper().endswith(('AND', 'OR')):
+                            sql_clean2 = sql_clean2[:-3].strip()
+                        return sql_clean2 + " " + hospital_filter
+
+            def _inject_time_filter(sql: str, t_mode: str = None, t_value: str = None, d_field: str = "discharge") -> str:
+                if not sql or not t_mode or not t_value:
+                    return sql
+                import re, calendar
+                dt_field = "dscg_dt_tm" if d_field == "discharge" else "admn_dt_tm"
+                if t_mode == "monthly":
+                    year, month = t_value.split("-")
+                    start_date = f"{year}-{month}-01"
+                    last_day = calendar.monthrange(int(year), int(month))[1]
+                    end_date = f"{year}-{month}-{last_day:02d}"
+                elif t_mode == "quarterly":
+                    year, quarter = t_value.split("-Q")
+                    q = int(quarter)
+                    start_month = (q - 1) * 3 + 1
+                    end_month = q * 3
+                    start_date = f"{year}-{start_month:02d}-01"
+                    last_day = calendar.monthrange(int(year), end_month)[1]
+                    end_date = f"{year}-{end_month:02d}-{last_day:02d}"
+                else:
+                    return sql
+                time_filter = f"AND DATE({dt_field}) BETWEEN '{start_date}' AND '{end_date}'"
+                sql_clean = sql.strip().rstrip(';').strip()
+                outer_pattern = r'\)\s+(?:AS\s+)?\w+\s+WHERE\b'
+                all_matches = list(re.finditer(outer_pattern, sql_clean, re.IGNORECASE | re.DOTALL))
+                if all_matches:
+                    last_match = all_matches[-1]
+                    where_start = last_match.start() + sql_clean[last_match.start():].upper().find('WHERE')
+                    after_where_raw = sql_clean[where_start + 5:]
+                    clause_match = re.search(r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION)\b', after_where_raw, re.IGNORECASE)
+                    if clause_match:
+                        insert_pos = where_start + 5 + clause_match.start()
+                        return sql_clean[:insert_pos] + " " + time_filter + " " + after_where_raw.strip()
+                    else:
+                        return sql_clean[:where_start + 5] + after_where_raw + " " + time_filter
+                else:
+                    clause_pattern = r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION\b)'
+                    match = re.search(clause_pattern, sql_clean, re.IGNORECASE)
+                    if match:
+                        before_clause = sql_clean[:match.start()].rstrip().rstrip(';').strip()
+                        if before_clause.upper().endswith(('AND', 'OR')):
+                            before_clause = before_clause[:-3].strip()
+                        return before_clause + " " + time_filter + " " + sql_clean[match.start():]
+                    else:
+                        sql_clean2 = sql_clean.rstrip().rstrip(';').strip()
+                        if sql_clean2.upper().endswith(('AND', 'OR')):
+                            sql_clean2 = sql_clean2[:-3].strip()
+                        return sql_clean2 + " " + time_filter
+
+            sql = _inject_hospital_filter(raw_sql, record.hospital_codes or [])
+            sql = _inject_time_filter(sql, record.time_mode, record.time_value, record.date_field or "discharge")
+
+            # 执行分页查询
+            offset = (page - 1) * page_size
+            runner_path = Path(__file__).parent.parent.parent / "Hainan_SQL-main" / "text2sql_app" / "sql_runner.py"
+            if runner_path.exists():
+                sys.path.insert(0, str(runner_path.parent))
+                try:
+                    from sql_runner import fetch_preview_page as _fetch
+                    cols, rows, err = _fetch(sql, limit=page_size, offset=offset)
+                    if err:
+                        return {"ok": False, "error": err, "columns": [], "rows": []}
+                    def _to_serializable(r):
+                        clean = {}
+                        for k, v in r.items():
+                            if hasattr(v, 'strftime'):
+                                clean[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+                            elif hasattr(v, '__float__') and not isinstance(v, (int, str, bool, type(None))):
+                                clean[k] = float(v)
+                            else:
+                                clean[k] = v
+                        return clean
+                    return {"ok": True, "columns": cols, "rows": [_to_serializable(r) for r in rows]}
+                finally:
+                    if str(runner_path.parent) in sys.path:
+                        sys.path.remove(str(runner_path.parent))
+            else:
+                return {"ok": False, "error": "sql_runner 路径不存在", "columns": [], "rows": []}
+        except Exception as e:
+            logger.error(f"fetch_preview_page 失败: {e}")
+            return {"ok": False, "error": str(e), "columns": [], "rows": []}
 

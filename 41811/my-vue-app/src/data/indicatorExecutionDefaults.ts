@@ -2,6 +2,19 @@ export type IndicatorKind = 'four' | 'core18'
 export type RunMode = 'immediate' | 'monthly' | 'quarterly'
 export type RunStatus = 'running' | 'success' | 'failed' | 'pending'
 
+/** 单个医院的执行结果 */
+export interface HospitalResult {
+  hospitalCode: string
+  hospitalName: string
+  numeratorCount: number
+  denominatorCount?: number
+  ratioPercent?: number
+  status: RunStatus
+  error?: string
+  previewData?: Record<string, any>[]
+}
+
+/** 执行记录 */
 export type ExecutionRecord = {
   id: string
   /** 指标类型 */
@@ -45,6 +58,16 @@ export type ExecutionRecord = {
   errorMessage?: string
   /** 执行日志 */
   logs: { time: string; level: 'info' | 'warn' | 'error'; message: string }[]
+  /** 医院筛选范围 */
+  scope?: string
+  /** 日期字段：discharge=出院时间(DSCG_DT_TM)，admission=入院时间(ADMN_DT_TM) */
+  dateField?: string
+  /** 数据库中的执行记录ID（用于分页查询） */
+  dbRecordId?: number | null
+  /** 是否按医院分组显示 */
+  groupByHospital?: boolean
+  /** 按医院分组的详细结果 */
+  hospitalResults?: HospitalResult[]
 }
 
 const LOGS_SUCCESS = [

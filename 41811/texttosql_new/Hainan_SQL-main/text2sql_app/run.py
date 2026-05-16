@@ -8,4 +8,4 @@ if __name__ == "__main__":
     print("  打开浏览器: http://127.0.0.1:8000")
     print("  日志页面:   http://127.0.0.1:8000/log")
     print("=" * 50)
-    uvicorn.run("main:app", host="127.0.0.1", port=8003, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

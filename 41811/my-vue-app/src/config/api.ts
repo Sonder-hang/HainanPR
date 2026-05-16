@@ -42,7 +42,9 @@ export const API_ENDPOINTS = {
   deleteExecution: (id: number) => `${API_BASE_URL}/api/indicators/execution/${id}`,
   executeIndicator: `${API_BASE_URL}/api/indicators/execute/`,
   executeIndicatorStream: `${API_BASE_URL}/api/indicators/execute/stream/`,
+  previewPage: `${API_BASE_URL}/api/indicators/execution/preview-page/`,
   testSql: `${API_BASE_URL}/api/indicators/test-sql/`,
+  hospitals: `${API_BASE_URL}/api/indicators/hospitals/`,
 
   // 表结构
   tables: `${API_BASE_URL}/api/indicators/tables/`,

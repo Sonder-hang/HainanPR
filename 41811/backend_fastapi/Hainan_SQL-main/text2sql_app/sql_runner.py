@@ -92,6 +92,21 @@ def db_connect():
     )
 
 
+def get_hospitals() -> list[dict[str, Any]]:
+    """获取医院列表"""
+    try:
+        conn = db_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT MDC_ORG_CD, MDC_ORG_NM FROM DIM_MDC_ORG ORDER BY MDC_ORG_CD")
+                rows = cur.fetchall()
+                return list(rows)
+        finally:
+            conn.close()
+    except Exception as e:
+        return []
+
+
 def _clean_sql(sql: str) -> str:
     """去掉末尾空白和分号（可重复执行直到干净为止）。"""
     while True:
@@ -106,6 +121,7 @@ def execute_limited(
     sql: str,
     *,
     limit: int,
+    offset: int = 0,
 ) -> tuple[list[str], list[dict[str, Any]], Optional[str]]:
     if not sql.strip():
         return [], [], "SQL 为空"
@@ -116,7 +132,7 @@ def execute_limited(
     sql_no_limit = re.sub(r'\bLIMIT\s+[\d\s,+-]+\s*$', '', sql, flags=re.IGNORECASE).rstrip().rstrip(";").rstrip()
     sql_no_limit = _clean_sql(sql_no_limit)
 
-    wrapped = f"SELECT _inner.* FROM ({sql_no_limit}) AS _inner LIMIT {int(limit)}"
+    wrapped = f"SELECT _inner.* FROM ({sql_no_limit}) AS _inner LIMIT {int(limit)} OFFSET {int(offset)}"
     try:
         conn = db_connect()
         try:
@@ -175,14 +191,25 @@ def execute_limited_parallel(
     sql_den: str,
     *,
     limit: int,
+    offset: int = 0,
 ) -> tuple[
     tuple[list[str], list[dict[str, Any]], Optional[str]],
     tuple[list[str], list[dict[str, Any]], Optional[str]],
 ]:
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f1 = pool.submit(execute_limited, sql_num, limit=limit)
-        f2 = pool.submit(execute_limited, sql_den, limit=limit)
+        f1 = pool.submit(execute_limited, sql_num, limit=limit, offset=offset)
+        f2 = pool.submit(execute_limited, sql_den, limit=limit, offset=offset)
         return f1.result(), f2.result()
+
+
+def fetch_preview_page(
+    sql: str,
+    *,
+    limit: int,
+    offset: int = 0,
+) -> tuple[list[str], list[dict[str, Any]], Optional[str]]:
+    """根据页码分页获取预览数据，返回 (列名列表, 行列表, 错误信息)"""
+    return execute_limited(sql, limit=limit, offset=offset)
 
 
 # ---------------------------------------------------------------------------

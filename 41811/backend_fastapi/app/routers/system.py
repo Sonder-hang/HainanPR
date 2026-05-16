@@ -45,8 +45,10 @@ def system_config():
 
 @router.get("/hospitals/")
 def hospital_list(db: Session = Depends(get_db)):
+    """获取医疗机构列表（从本地 hospital 表）"""
+    from app.models.monitoring import Hospital
     hospitals = db.query(Hospital).filter(Hospital.is_active == 1).order_by(Hospital.name).all()
-    return [{"value": h.id, "label": h.name, "level": h.level, "type": h.hospital_type} for h in hospitals]
+    return [{"value": h.id, "label": h.name, "level": h.level, "type": h.hospital_type, "hospital_code": h.hospital_code} for h in hospitals]
 
 
 @router.post("/refresh-tables/")
