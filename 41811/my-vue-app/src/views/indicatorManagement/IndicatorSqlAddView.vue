@@ -42,8 +42,8 @@
           </select>
         </label>
 
-        <!-- 已有指标模板下拉（仅 core18 有模板列表） -->
-        <template v-if="form.kind === 'core18'">
+        <!-- 已有指标模板下拉（四要素和十八项核心制度指标均支持） -->
+        <template v-if="form.kind === 'four' || form.kind === 'core18'">
           <label class="block text-[12px]">
             <span class="mb-1 block font-medium text-[#596080]">
               选择已有指标（作为模板或更新 SQL）
@@ -58,8 +58,8 @@
           </label>
         </template>
 
-        <!-- 计算类型（仅十八项核心制度指标） -->
-        <template v-if="form.kind === 'core18'">
+        <!-- 计算类型（四要素和十八项核心制度指标均支持） -->
+        <template v-if="form.kind === 'core18' || form.kind === 'four'">
           <label class="block text-[12px]">
             <span class="mb-1 block font-medium text-[#596080]">计算类型</span>
             <div class="flex flex-wrap gap-3">
@@ -226,18 +226,15 @@
         <div class="rounded-[2px] border border-emerald-200 bg-emerald-50 p-3">
           <p class="mb-1.5 text-[11px] font-semibold text-emerald-700">计算结果预览说明</p>
           <p class="text-[11px] leading-relaxed text-emerald-600">
-            <template v-if="form.kind === 'core18' && form.calcType === 'ratio'">
+            <template v-if="(form.kind === 'core18' || form.kind === 'four') && form.calcType === 'ratio'">
               系统将执行分子 SQL 与分母 SQL，将两者 COUNT 结果相除并乘以 100% 作为指标值输出。SQL 中请仅写
               <code class="rounded bg-white/80 px-1 font-mono text-[10px] text-emerald-800">SELECT COUNT(*)</code>
               语句，查询返回的计数结果将参与比值计算。
             </template>
-            <template v-else-if="form.kind === 'core18' && form.calcType === 'count'">
+            <template v-else-if="(form.kind === 'core18' || form.kind === 'four') && form.calcType === 'count'">
               系统将执行 SQL 语句，直接输出 COUNT 查询的计数结果作为指标值。SQL 中请仅写
               <code class="rounded bg-white/80 px-1 font-mono text-[10px] text-emerald-800">SELECT COUNT(*)</code>
               语句。
-            </template>
-            <template v-else>
-              系统将执行分子 SQL 与分母 SQL，将两者 COUNT 结果相除并乘以 100% 作为指标值输出。
             </template>
           </p>
         </div>
@@ -252,9 +249,13 @@
             分子 SQL
             <span class="ml-2 text-[11px] font-normal text-[#596080]">返回计数，系统将作为分子参与比值计算</span>
           </template>
-          <template v-else>
+          <template v-else-if="form.kind === 'four' && form.calcType === 'ratio'">
             分子 SQL
             <span class="ml-2 text-[11px] font-normal text-[#596080]">返回计数，系统将作为分子参与比值计算</span>
+          </template>
+          <template v-else>
+            SQL 语句
+            <span class="ml-2 text-[11px] font-normal text-[#596080]">返回计数，直接输出计数结果</span>
           </template>
         </div>
           <div class="p-4">
@@ -317,8 +318,8 @@
           </div>
         </div>
 
-        <!-- 分母 SQL（仅比值型显示） -->
-        <div v-if="form.kind === 'core18' && form.calcType === 'ratio'" class="rounded-[2px] border border-[#b8c9e8]/60 bg-white shadow-sm">
+        <!-- 分母 SQL（比值型显示） -->
+        <div v-if="(form.kind === 'core18' || form.kind === 'four') && form.calcType === 'ratio'" class="rounded-[2px] border border-[#b8c9e8]/60 bg-white shadow-sm">
           <div class="border-b border-[#e8eef9] bg-sky-50/80 px-4 py-2.5 text-[13px] font-semibold text-[#1F264D]">
             分母 SQL
             <span class="ml-2 text-[11px] font-normal text-[#596080]">返回计数，系统将作为分母参与比值计算</span>
@@ -407,8 +408,6 @@ import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft } from 'lucide-vue-next'
 import {
-  DEFAULT_CORE18,
-  DEFAULT_FOUR_ELEMENTS,
   type Core18Indicator,
   type FourElementIndicator,
 } from '@/data/indicatorManagementDefaults'
@@ -447,9 +446,6 @@ const ALL_TABLES = [
 
 const router = useRouter()
 
-const STORAGE_FOUR = 'indicator-management-four-elements-v1'
-const STORAGE_CORE = 'indicator-management-core18-v1'
-
 const templateId = ref<string | number>('')
 const templateList = ref<Indicator[]>([])
 
@@ -476,7 +472,6 @@ const form = ref({
 })
 
 const templateOptions = computed(() => {
-  if (form.value.kind !== 'core18') return []
   return templateList.value.map((r) => ({
     value: String(r.id),
     label: r.name,
@@ -485,16 +480,14 @@ const templateOptions = computed(() => {
 })
 
 const isEditing = computed(() => {
-  return form.value.kind === 'core18' && templateId.value !== ''
+  return templateId.value !== ''
 })
 
 async function loadTemplateList() {
-  if (form.value.kind !== 'core18') {
-    templateList.value = []
-    return
-  }
   try {
-    const data = await indicatorsApi.getCore18Indicators()
+    const data = form.value.kind === 'core18'
+      ? await indicatorsApi.getCore18Indicators()
+      : await indicatorsApi.getFourIndicators()
     templateList.value = data || []
   } catch (e) {
     console.error('加载模板列表失败:', e)
@@ -504,20 +497,28 @@ async function loadTemplateList() {
 
 function onTemplateChange() {
   if (!templateId.value) {
-    // 重置为新建状态
     form.value.name = ''
-    form.value.calcType = 'ratio'
+    form.value.category = ''
+    form.value.seq = 1
+    form.value.scope = ''
+    form.value.workContent = ''
+    form.value.ruleLogic = ''
     form.value.description = ''
     form.value.denominator = ''
     form.value.numerator = ''
     form.value.formula = ''
-    form.value.computable = '是'
-    form.value.useLlm = '否'
     form.value.numeratorSql = ''
     form.value.denominatorSql = ''
     form.value.numInvolvedTables = []
     form.value.denInvolvedTables = []
     form.value.promptContent = ''
+    if (form.value.kind === 'core18') {
+      form.value.calcType = 'ratio'
+      form.value.computable = '是'
+      form.value.useLlm = '否'
+    } else {
+      form.value.calcType = 'ratio'
+    }
     return
   }
 
@@ -525,36 +526,62 @@ function onTemplateChange() {
   if (!selected) return
 
   form.value.name = selected.name || ''
-  form.value.description = selected.description || ''
-  form.value.numerator = selected.numerator_desc || ''
-  form.value.denominator = selected.denominator_desc || ''
-  form.value.formula = selected.formula || ''
-  form.value.numeratorSql = selected.numerator_sql || ''
-  form.value.denominatorSql = selected.denominator_sql || ''
-  form.value.promptContent = selected.prompt_content || ''
-
-  if (selected.calc_type === 'ratio') {
-    form.value.calcType = 'ratio'
-  } else if (selected.calc_type === 'count') {
-    form.value.calcType = 'count'
+  form.value.category = selected.category || ''
+  if (selected.seq) {
+    form.value.seq = selected.seq
   }
 
-  form.value.computable = selected.is_computable ? '是' : '否'
-  form.value.useLlm = selected.use_llm ? '是' : '否'
-  form.value.numInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
-  form.value.denInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
+  if (form.value.kind === 'core18') {
+    form.value.description = selected.description || ''
+    form.value.numerator = selected.numerator_desc || ''
+    form.value.denominator = selected.denominator_desc || ''
+    form.value.formula = selected.formula || ''
+    form.value.numeratorSql = selected.numerator_sql || ''
+    form.value.denominatorSql = selected.denominator_sql || ''
+    form.value.promptContent = selected.prompt_content || ''
+    if (selected.calc_type === 'ratio') {
+      form.value.calcType = 'ratio'
+    } else if (selected.calc_type === 'count') {
+      form.value.calcType = 'count'
+    }
+    form.value.computable = selected.is_computable ? '是' : '否'
+    form.value.useLlm = selected.use_llm ? '是' : '否'
+    form.value.numInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
+    form.value.denInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
+  } else {
+    form.value.scope = selected.scope || ''
+    form.value.workContent = selected.work_content || ''
+    form.value.ruleLogic = selected.rule_logic || ''
+    const combined = selected.sql_content || ''
+    if (combined) {
+      const parts = combined.split(/-- 分子 SQL|-- 分母 SQL|\n\n/)
+      if (parts.length >= 3) {
+        form.value.numeratorSql = (parts[1] || '').trim()
+        form.value.denominatorSql = (parts[2] || '').trim()
+      } else {
+        form.value.numeratorSql = combined
+      }
+    } else {
+      form.value.numeratorSql = selected.numerator_sql || ''
+      form.value.denominatorSql = selected.denominator_sql || ''
+    }
+    form.value.promptContent = selected.prompt_content || ''
+    form.value.numInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
+    form.value.denInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
+    // 四要素也读取计算类型
+    if (selected.calc_type === 'count') {
+      form.value.calcType = 'count'
+    } else {
+      form.value.calcType = 'ratio'
+    }
+  }
 }
 
 onMounted(async () => {
   await loadTemplateList()
-
-  // 为四要素自动填入下一个序号
-  try {
-    const f = localStorage.getItem(STORAGE_FOUR)
-    const list: FourElementIndicator[] = f ? JSON.parse(f) : JSON.parse(JSON.stringify(DEFAULT_FOUR_ELEMENTS))
-    form.value.seq = Math.max(0, ...list.map((x) => x.seq)) + 1
-  } catch {
-    form.value.seq = 1
+  if (form.value.kind === 'four') {
+    const list = templateList.value
+    form.value.seq = Math.max(0, ...list.map((x) => x.seq || 0)) + 1
   }
 })
 
@@ -638,7 +665,7 @@ async function saveIndicator() {
 
   saving.value = true
   try {
-    const isRatio = form.value.kind === 'core18' && form.value.calcType === 'ratio'
+    const isRatio = (form.value.kind === 'core18' || form.value.kind === 'four') && form.value.calcType === 'ratio'
     const combinedSql = isRatio
       ? `-- 分子 SQL\n${form.value.numeratorSql.trim()}\n\n-- 分母 SQL\n${form.value.denominatorSql.trim()}`
       : form.value.numeratorSql.trim()
@@ -671,30 +698,30 @@ async function saveIndicator() {
         alert('已保存到「十八项核心制度指标」列表')
       }
     } else {
-      // 四要素保存到 localStorage
-      const row: FourElementIndicator = {
-        id: `fe-${crypto.randomUUID()}`,
-        seq: form.value.seq || 1,
-        category: form.value.category.trim(),
+      // 四要素保存到后端数据库
+      const payload = {
         name: form.value.name.trim(),
-        scope: form.value.scope.trim() || '—',
-        workContent: form.value.workContent.trim() || '—',
-        ruleLogic: form.value.ruleLogic.trim() || '—',
-        calcMethod: 'sql',
-        sqlContent: combinedSql,
-        promptContent: form.value.promptContent.trim(),
+        category: form.value.category.trim(),
+        seq: form.value.seq || 1,
+        scope: form.value.scope.trim() || '',
+        work_content: form.value.workContent.trim() || '',
+        rule_logic: form.value.ruleLogic.trim() || '',
+        numerator_sql: form.value.numeratorSql.trim(),
+        denominator_sql: form.value.denominatorSql.trim(),
+        sql_content: combinedSql,
+        prompt_content: form.value.promptContent.trim(),
+        involved_tables: form.value.numInvolvedTables,
+        calc_method: 'sql',
+        calc_type: form.value.calcType,
       }
 
-      try {
-        const raw = localStorage.getItem(STORAGE_FOUR)
-        const list: FourElementIndicator[] = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(DEFAULT_FOUR_ELEMENTS))
-        const updated = [...list, row].sort((a, b) => a.seq - b.seq)
-        localStorage.setItem(STORAGE_FOUR, JSON.stringify(updated))
-      } catch {
-        localStorage.setItem(STORAGE_FOUR, JSON.stringify([row]))
+      if (isEditing.value && templateId.value) {
+        await indicatorsApi.updateFourIndicator(Number(templateId.value), payload)
+        alert('指标已更新')
+      } else {
+        await indicatorsApi.createFourIndicator(payload)
+        alert('已保存到「四要素监管指标」列表')
       }
-
-      alert('已保存到「四要素监管指标」列表')
     }
 
     goBack()

@@ -63,7 +63,7 @@ class Text2SQLService:
         if business_type == "core18":
             return "统计型" if calc_type == "count" else "分子分母比值型"
         if business_type == "four":
-            return "分子分母比值型"
+            return "统计型" if calc_type == "count" else "分子分母比值型"
         if business_type:
             return "分子分母比值型"
         return None
@@ -457,6 +457,7 @@ class Text2SQLService:
                     "status": "success" if hosp_ok else "failed",
                     "error": hosp_num_err or hosp_den_err,
                     "preview_data": _to_serializable_rows(hosp_num_rows[:10]) if hosp_num_rows else [],
+                    "denominator_preview_data": _to_serializable_rows(hosp_den_rows[:10]) if hosp_den_rows else [],
                 })
                 all_logs.extend(hosp_logs)
             
@@ -467,12 +468,17 @@ class Text2SQLService:
             # 聚合预览数据：使用第一个有数据的医院的预览
             first_preview = []
             first_cols = []
+            first_den_preview = []
+            first_den_cols = []
             for hosp in hospital_results:
                 pd = hosp.get("preview_data", [])
-                if pd:
+                if pd and not first_preview:
                     first_preview = pd
                     first_cols = list(pd[0].keys()) if pd else []
-                    break
+                dpd = hosp.get("denominator_preview_data", [])
+                if dpd and not first_den_preview:
+                    first_den_preview = dpd
+                    first_den_cols = list(dpd[0].keys()) if dpd else []
             result = {
                 "ok": all_ok,
                 "indicator_type": ind_type,
@@ -486,9 +492,9 @@ class Text2SQLService:
                 "preview_columns": first_cols,
                 "preview_rows": first_preview,
                 "preview_data": {"columns": first_cols, "rows": first_preview},
-                "denominator_preview_columns": [],
-                "denominator_preview_rows": [],
-                "denominator_preview_data": {"columns": [], "rows": []},
+                "denominator_preview_columns": first_den_cols,
+                "denominator_preview_rows": first_den_preview,
+                "denominator_preview_data": {"columns": first_den_cols, "rows": first_den_preview},
                 "request_id": "",
                 "conversation_id": "",
                 "cache_hit": False,
@@ -509,7 +515,12 @@ class Text2SQLService:
             denominator_sql = _inject_hospital_filter(denominator_sql, hospital_codes)
             denominator_sql = _inject_time_filter(denominator_sql, time_mode, time_value, date_field)
         
-        if numerator_sql and denominator_sql:
+        # 明确为计数型时，即使有分子分母 SQL 也走单 SQL 分支
+        calc_type_raw = indicator_data.get("calc_type") or "ratio"
+        is_count_type = calc_type_raw == "count"
+
+        # 仅当有分子分母 SQL 且非计数型时才走比值型分支
+        if numerator_sql and denominator_sql and not is_count_type:
             # 比值型需要同时获取分子和分母的预览数据
             num_cnt, num_err, num_cols, num_rows = _exec_sql(numerator_sql)
             den_cnt, den_err, den_cols, den_rows = _exec_sql(denominator_sql)
@@ -564,11 +575,16 @@ class Text2SQLService:
                 result["db_record_id"] = db_record_id
             return result
 
-        if single_sql:
-            cnt, err, cols, rows = _exec_sql(single_sql)
-            calc_type = indicator_data.get("calc_type") or "ratio"
-            duration = round(time.time() - start_time, 3)
+        # 计数型指标：优先用 single_sql；若无则用 numerator_sql（适用于四要素计数型）
+        sql_to_exec = single_sql if single_sql else (""
+            if not is_count_type else numerator_sql)
+        if sql_to_exec:
+            sql_to_exec = _inject_hospital_filter(sql_to_exec, hospital_codes)
+            sql_to_exec = _inject_time_filter(sql_to_exec, time_mode, time_value, date_field)
 
+        if sql_to_exec:
+            cnt, err, cols, rows = _exec_sql(sql_to_exec)
+            calc_type = indicator_data.get("calc_type") or "ratio"
             # 统计型指标：如果结果有 patient_cnt 列，加和得到最终指标值
             stat_count = cnt
             if cols and rows and "patient_cnt" in cols:
@@ -592,13 +608,13 @@ class Text2SQLService:
                 "indicator_type": ind_type,
                 "indicator": {"calc_type": calc_type},
                 "calc_type": calc_type,
-                "sql": single_sql,
+                "sql": sql_to_exec,
                 "count": stat_count,
                 "error": err,
                 "preview_columns": cols,
                 "preview_rows": _to_serializable_rows(rows),
                 "preview_data": {"columns": cols, "rows": _to_serializable_rows(rows)},
-                "attempts": [{"attempt": 1, "sql": single_sql, "count": stat_count, "error": err}],
+                "attempts": [{"attempt": 1, "sql": sql_to_exec, "count": stat_count, "error": err}],
                 "request_id": "",
                 "conversation_id": "",
                 "cache_hit": False,

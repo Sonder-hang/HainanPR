@@ -12,6 +12,7 @@ export interface HospitalResult {
   status: RunStatus
   error?: string
   previewData?: Record<string, any>[]
+  denominatorPreviewData?: Record<string, any>[]
 }
 
 /** 执行记录 */
