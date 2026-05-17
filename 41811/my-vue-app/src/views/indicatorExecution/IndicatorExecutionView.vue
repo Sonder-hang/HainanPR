@@ -28,7 +28,7 @@
               <MultiSelectDropdown
                 v-model="runScopes"
                 :options="hospitalOptions"
-                placeholder="全省（全部医院）"
+                placeholder="全省"
               />
             </label>
 
@@ -48,61 +48,88 @@
               </select>
             </label>
 
-            <!-- 执行方式 -->
-            <label class="flex flex-col gap-1 text-[12px]">
-              <span class="text-[#596080]">执行方式</span>
-              <div class="flex gap-1">
-                <button
-                  v-for="mode in RUN_MODE_OPTIONS"
-                  :key="mode.value"
-                  type="button"
-                  class="rounded-[2px] border px-3 py-2 text-[12px] transition-colors"
-                  :class="runMode === mode.value
-                    ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-medium'
-                    : 'border-[#b8c9e8] bg-white text-[#596080] hover:border-emerald-200'"
-                  @click="runMode = mode.value"
-                >{{ mode.label }}</button>
-              </div>
-            </label>
+            <!-- 执行方式 + 时间选择（按月/按季度时包裹在一个框内） -->
+            <div
+              v-if="runMode === 'monthly' || runMode === 'quarterly'"
+              class="rounded border border-[#b8c9e8]/40 bg-[#f8faff] p-3"
+            >
+              <div class="flex items-end gap-3">
+                <!-- 执行方式 -->
+                <label class="flex flex-col gap-1 text-[12px]">
+                  <span class="text-[#596080]">执行方式</span>
+                  <div class="flex gap-1">
+                    <button
+                      v-for="mode in RUN_MODE_OPTIONS"
+                      :key="mode.value"
+                      type="button"
+                      class="rounded-[2px] border px-3 py-2 text-[12px] transition-colors"
+                      :class="runMode === mode.value
+                        ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-medium'
+                        : 'border-[#b8c9e8] bg-white text-[#596080] hover:border-emerald-200'"
+                      @click="runMode = mode.value"
+                    >{{ mode.label }}</button>
+                  </div>
+                </label>
 
-            <!-- 月份选择 -->
-            <label v-if="runMode === 'monthly'" class="flex flex-col gap-1 text-[12px]">
-              <span class="text-[#596080]">选择月份</span>
-              <div class="flex gap-1">
-                <select
-                  v-model="selectedMonthYear"
-                  class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-2 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-                >
-                  <option v-for="y in monthYearOptions" :key="y" :value="y">{{ y }}年</option>
-                </select>
-                <select
-                  v-model="selectedMonthNum"
-                  class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-2 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-                >
-                  <option v-for="m in MONTH_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
-                </select>
-              </div>
-            </label>
+                <!-- 月份选择 -->
+                <label v-if="runMode === 'monthly'" class="flex flex-col gap-1 text-[12px]">
+                  <span class="text-[#596080]">选择月份</span>
+                  <div class="flex gap-1">
+                    <select
+                      v-model="selectedMonthYear"
+                      class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-2 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                    >
+                      <option v-for="y in monthYearOptions" :key="y" :value="y">{{ y }}年</option>
+                    </select>
+                    <select
+                      v-model="selectedMonthNum"
+                      class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-2 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                    >
+                      <option v-for="m in MONTH_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+                    </select>
+                  </div>
+                </label>
 
-            <!-- 季度选择 -->
-            <template v-else-if="runMode === 'quarterly'">
+                <!-- 季度选择 -->
+                <template v-else-if="runMode === 'quarterly'">
+                  <label class="flex flex-col gap-1 text-[12px]">
+                    <span class="text-[#596080]">选择年份</span>
+                    <select
+                      v-model="selectedQuarterYear"
+                      class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                    >
+                      <option v-for="y in quarterYearOptions" :key="y" :value="y">{{ y }}年</option>
+                    </select>
+                  </label>
+                  <label class="flex flex-col gap-1 text-[12px]">
+                    <span class="text-[#596080]">选择季度</span>
+                    <select
+                      v-model="selectedQuarterNum"
+                      class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                    >
+                      <option v-for="q in quarterOptionsOfYear" :key="q.value" :value="q.value">{{ q.label }}</option>
+                    </select>
+                  </label>
+                </template>
+              </div>
+            </div>
+
+            <!-- 执行方式（仅即时/全量模式，独立展示） -->
+            <template v-else>
               <label class="flex flex-col gap-1 text-[12px]">
-                <span class="text-[#596080]">选择年份</span>
-                <select
-                  v-model="selectedQuarterYear"
-                  class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-                >
-                  <option v-for="y in quarterYearOptions" :key="y" :value="y">{{ y }}年</option>
-                </select>
-              </label>
-              <label class="flex flex-col gap-1 text-[12px]">
-                <span class="text-[#596080]">选择季度</span>
-                <select
-                  v-model="selectedQuarterNum"
-                  class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-                >
-                  <option v-for="q in quarterOptionsOfYear" :key="q.value" :value="q.value">{{ q.label }}</option>
-                </select>
+                <span class="text-[#596080]">执行方式</span>
+                <div class="flex gap-1">
+                  <button
+                    v-for="mode in RUN_MODE_OPTIONS"
+                    :key="mode.value"
+                    type="button"
+                    class="rounded-[2px] border px-3 py-2 text-[12px] transition-colors"
+                    :class="runMode === mode.value
+                      ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-medium'
+                      : 'border-[#b8c9e8] bg-white text-[#596080] hover:border-emerald-200'"
+                    @click="runMode = mode.value"
+                  >{{ mode.label }}</button>
+                </div>
               </label>
             </template>
 
@@ -438,6 +465,16 @@
               <h4 class="mb-2 flex items-center text-[12px] font-semibold text-[#1F264D]">
                 <Code2 class="mr-1.5 h-3.5 w-3.5 text-[#596080]" />
                 分子预览数据
+                <!-- 分医院筛选 -->
+                <span v-if="selectedRecord?.groupByHospital && detailHospOptions.length" class="ml-3">
+                  <select
+                    v-model="selectedDetailHospCode"
+                    class="rounded border border-[#b8c9e8]/60 bg-white px-2 py-0.5 text-[11px] text-[#1F264D] focus:outline-none focus:ring-1 focus:ring-[#596080]"
+                  >
+                    <option value="">全部医院汇总</option>
+                    <option v-for="opt in detailHospOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                </span>
               </h4>
               <div v-if="selectedRecord.resultData && selectedRecord.resultData.length > 0"
                 class="rounded-[2px] border border-[#b8c9e8]/60 overflow-hidden">
@@ -636,6 +673,13 @@ const PAGE_SIZE = 50
 const numPage = ref(1)
 const denPage = ref(1)
 
+// 切换记录时重置医院筛选和分页
+watch(selectedRecord, () => {
+  selectedDetailHospCode.value = ''
+  numPage.value = 1
+  denPage.value = 1
+})
+
 // 分页缓存（key = `${executionId}_${target}_${page}`）
 const numRowsCache = new Map<string, Record<string, unknown>[]>()
 const denRowsCache = new Map<string, Record<string, unknown>[]>()
@@ -720,17 +764,40 @@ const denTotalPages = computed(() =>
 
 const canPaginateByApi = computed(() => !!selectedRecord.value?.id)
 
+// 详情区：按医院筛选
+const selectedDetailHospCode = ref<string>('')
+
+const detailHospOptions = computed(() => {
+  if (!selectedRecord.value?.groupByHospital || !selectedRecord.value?.hospitalResults?.length) return []
+  return selectedRecord.value.hospitalResults.map((h) => ({
+    value: h.hospitalCode,
+    label: h.hospitalName,
+  }))
+})
+
 const paginatedNumRows = computed(() => {
-  const data = selectedRecord.value?.resultData ?? []
+  const rec = selectedRecord.value
+  if (!rec) return []
+  if (rec.groupByHospital && selectedDetailHospCode.value && rec.hospitalResults?.length) {
+    const hosp = rec.hospitalResults.find((h) => h.hospitalCode === selectedDetailHospCode.value)
+    return hosp?.previewData ?? []
+  }
+  const data = rec.resultData ?? []
   if (data.length > 0) return data
-  const cacheKey = `${selectedRecord.value?.id}_numerator_${numPage.value}`
+  const cacheKey = `${rec.id}_numerator_${numPage.value}`
   return numRowsCache.get(cacheKey) ?? []
 })
 
 const paginatedDenRows = computed(() => {
-  const data = selectedRecord.value?.denominatorPreviewData?.rows ?? []
+  const rec = selectedRecord.value
+  if (!rec) return []
+  if (rec.groupByHospital && selectedDetailHospCode.value && rec.hospitalResults?.length) {
+    const hosp = rec.hospitalResults.find((h) => h.hospitalCode === selectedDetailHospCode.value)
+    return hosp?.denominatorPreviewData ?? []
+  }
+  const data = rec.denominatorPreviewData?.rows ?? []
   if (data.length > 0) return data
-  const cacheKey = `${selectedRecord.value?.id}_denominator_${denPage.value}`
+  const cacheKey = `${rec.id}_denominator_${denPage.value}`
   return denRowsCache.get(cacheKey) ?? []
 })
 
@@ -739,7 +806,7 @@ const hospitalList = ref<{ MDC_ORG_CD: string; MDC_ORG_NM: string }[]>([])
 
 // 医院选项（多选下拉框）
 const hospitalOptions = computed(() => [
-  { value: '__all__', label: '全省（全部医院）' },
+  { value: '__all__', label: '全省' },
   ...hospitalList.value.map((h) => ({ value: h.MDC_ORG_CD, label: h.MDC_ORG_NM })),
 ])
 
@@ -823,7 +890,7 @@ async function loadRecords() {
           outputCount,
           ratioPercent: isCount ? undefined : (exec.rate_percent ?? undefined),
           denominatorCount: isCount ? undefined : (exec.denominator_count ?? undefined),
-          numeratorCount: isCount ? undefined : (exec.numerator_count ?? undefined),
+          numeratorCount: isCount ? (exec.count ?? exec.numerator_count ?? 0) : (exec.numerator_count ?? undefined),
           resultType,
           resultColumns,
           resultData,
@@ -838,7 +905,17 @@ async function loadRecords() {
           errorMessage: exec.error || undefined,
           logs: exec.logs?.length ? exec.logs : buildLogs(exec, isCount),
           groupByHospital: exec.group_by_hospital || false,
-          hospitalResults: exec.hospital_results || undefined,
+          hospitalResults: (exec.hospital_results || []).map((h: any) => ({
+            hospitalCode: h.hospital_code ?? '',
+            hospitalName: h.hospital_name ?? '',
+            status: h.status ?? 'pending',
+            numeratorCount: h.numerator_count,
+            denominatorCount: h.denominator_count,
+            ratioPercent: h.ratio_percent,
+            previewData: h.preview_data || [],
+            denominatorPreviewData: h.denominator_preview_data || [],
+            error: h.error || undefined,
+          })),
         }
       })
     } else {
@@ -1009,7 +1086,7 @@ async function handleRun() {
         outputCount: countVal,
         ratioPercent: isRatio ? (rate ?? undefined) : undefined,
         denominatorCount: isRatio ? denCnt : undefined,
-        numeratorCount: isRatio ? numCnt : undefined,
+        numeratorCount: isRatio ? numCnt : (exec.count ?? numCnt ?? 0),
         resultType,
         resultColumns: exec.preview_data?.columns
           ?? exec.preview_columns
@@ -1037,7 +1114,17 @@ async function handleRun() {
         ],
         dbRecordId: exec.db_record_id ?? null,
         groupByHospital: exec.group_by_hospital || false,
-        hospitalResults: exec.hospital_results || undefined,
+        hospitalResults: (exec.hospital_results || []).map((h: any) => ({
+          hospitalCode: h.hospital_code ?? '',
+          hospitalName: h.hospital_name ?? '',
+          status: h.status ?? 'pending',
+          numeratorCount: h.numerator_count,
+          denominatorCount: h.denominator_count,
+          ratioPercent: h.ratio_percent,
+          previewData: h.preview_data || [],
+          denominatorPreviewData: h.denominator_preview_data || [],
+          error: h.error || undefined,
+        })),
       }
       console.log('[DEBUG] runIndicator resultColumns:', updatedRecord.resultColumns, 'resultData length:', updatedRecord.resultData?.length)
       console.log('[DEBUG] runIndicator raw exec.preview_data:', exec.preview_data, 'preview_rows:', exec.preview_rows)
@@ -1189,7 +1276,7 @@ async function rerun(row: ExecutionRecord) {
         outputCount: countVal,
         ratioPercent: isRatio ? (rate ?? undefined) : undefined,
         denominatorCount: isRatio ? denCnt : undefined,
-        numeratorCount: isRatio ? numCnt : undefined,
+        numeratorCount: isRatio ? numCnt : (exec.count ?? numCnt ?? 0),
         resultType: isRatio ? 'ratio' : 'count',
         resultColumns: exec.preview_data?.columns
           ?? exec.preview_columns
