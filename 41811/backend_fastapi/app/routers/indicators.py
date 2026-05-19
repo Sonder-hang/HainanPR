@@ -193,7 +193,7 @@ def _list_executions(
     - kind: 按类型筛选 (four/core18)
     - offset: 跳过数量
     """
-    q = db.query(IndicatorExecution).options(joinedload(IndicatorExecution.indicator))
+    q = db.query(IndicatorExecution)
     if indicator_id:
         q = q.filter(IndicatorExecution.indicator_id == indicator_id)
     if keyword:
@@ -203,22 +203,12 @@ def _list_executions(
     if kind:
         q = q.filter(IndicatorExecution.kind == kind)
     
-    # 获取总数（用于分页信息）
-    total = q.count()
-    
-    # 不限制返回数量
-    limit = None
-    
     if offset is None:
         offset = 0
+    if limit is None:
+        limit = 100
     
-    rows = q.order_by(IndicatorExecution.execution_time.desc()).offset(offset)
-    if limit is not None:
-        rows = rows.limit(limit)
-    rows = rows.all()
-    for row in rows:
-        if not row.indicator_name and row.indicator:
-            row.indicator_name = row.indicator.name
+    rows = q.order_by(IndicatorExecution.execution_time.desc()).offset(offset).limit(limit).all()
     return rows
 
 

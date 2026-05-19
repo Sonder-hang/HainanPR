@@ -15,7 +15,7 @@ class HttpClient {
   }
 
   private buildUrl(url: string, params?: Record<string, string | number | boolean | undefined>): string {
-    if (!params) return url.replace(/\/$/, '')
+    if (!params) return url
 
     const urlObj = new URL(url.replace(/\/$/, ''), this.baseUrl)
     Object.entries(params).forEach(([key, value]) => {
@@ -32,7 +32,7 @@ class HttpClient {
     options: RequestOptions = {}
   ): Promise<T> {
     const { params, body, ...fetchOptions } = options
-    const finalUrl = this.buildUrl(url.replace(/\/$/, ''), params)
+    const finalUrl = this.buildUrl(url, params)
 
     const headers: HeadersInit = {
       'Content-Type': 'application/json',

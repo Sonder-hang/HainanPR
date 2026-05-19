@@ -61,6 +61,8 @@ export type ExecutionRecord = {
   logs: { time: string; level: 'info' | 'warn' | 'error'; message: string }[]
   /** 医院筛选范围 */
   scope?: string
+  /** 完整的医院代码列表（用于重跑时保留全省的所有医院） */
+  hospitalCodes?: string[]
   /** 日期字段：discharge=出院时间(DSCG_DT_TM)，admission=入院时间(ADMN_DT_TM) */
   dateField?: string
   /** 数据库中的执行记录ID（用于分页查询） */
