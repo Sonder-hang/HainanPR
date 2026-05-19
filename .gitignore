@@ -1,0 +1,138 @@
+# ============================
+# macOS System Files
+# ============================
+.DS_Store
+.DS_Store?
+._*
+
+# ============================
+# Python
+# ============================
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+venv/
+ENV/
+.venv
+
+# ============================
+# Node.js
+# ============================
+node_modules/
+pnpm-lock.yaml
+yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-test.log*
+package-lock.json
+package.json.bak
+
+# ============================
+# Vue / Vite
+# ============================
+dist-ssr/
+dist/
+*.local
+
+# ============================
+# Database
+# ============================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# ============================
+# Logs
+# ============================
+logs/
+*.log
+*.pid
+*.sock
+*.err
+logs/*.txt
+
+# ============================
+# Environment & Secrets
+# ============================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.*.local
+secrets.json
+credentials.json
+config.local.py
+config.local.json
+
+# ============================
+# IDE & Editor
+# ============================
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+*.sublime-workspace
+*.sublime-project
+
+# ============================
+# Temporary Files
+# ============================
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+
+# ============================
+# Build artifacts
+# ============================
+*.o
+*.a
+*.lib
+*.dll
+*.dylib
+
+# ============================
+# FastAPI / Django specific
+# ============================
+*.pot
+*.mo
+db.sqlite3
+media/
+staticfiles/
+
+# ============================
+# Project specific
+# ============================
+text2sql_app/venv/
+text2sql_app/__pycache__/
+text2sql_app/logs/
+text2sql_app_old/
+
+# Keep requirements files but ignore lock files
+requirements.txt
+!requirements.txt
