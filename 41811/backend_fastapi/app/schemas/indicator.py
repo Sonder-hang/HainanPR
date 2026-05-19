@@ -62,7 +62,7 @@ class IndicatorUpdate(BaseModel):
     priority: Optional[str] = None
     remark: Optional[str] = None
     calc_type: Optional[str] = None
-    date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间
+    date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间, visit=就诊时间
 
 
 class IndicatorResponse(IndicatorBase):
@@ -109,7 +109,7 @@ class IndicatorExecutionResponse(BaseModel):
     hospital_codes: Optional[list] = None  # 执行时选中的医院代码
     time_mode: Optional[str] = None  # monthly=月度, quarterly=季度
     time_value: Optional[str] = None  # 如 "2026-04" 或 "2026-Q1"
-    date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间
+    date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间, visit=就诊时间
     group_by_hospital: Optional[bool] = False  # 是否按医院分组执行
     hospital_results: Optional[list] = []  # 各医院执行结果列表
 

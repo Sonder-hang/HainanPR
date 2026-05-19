@@ -13,7 +13,11 @@ class Text2SQLService:
         from app.config import settings
         self.base_url = settings.TEXT2SQL_BACKEND_URL.rstrip("/")
         self.timeout = httpx.Timeout(300.0, connect=10.0)
-        self.client = httpx.Client(timeout=self.timeout)
+        transport = httpx.HTTPTransport(local_address="127.0.0.1")
+        self.client = httpx.Client(
+            timeout=self.timeout,
+            transport=transport,
+        )
 
     def _make_url(self, path: str) -> str:
         return f"{self.base_url}{path}"
@@ -151,17 +155,31 @@ class Text2SQLService:
             return result
 
         def _to_serializable_logs(logs: list) -> list:
-            """将 logs 中的 datetime 类型转为字符串"""
+            """将 logs 中的 datetime/Decimal 类型转为可序列化类型"""
             result = []
             for log in logs:
                 clean = {}
                 for k, v in log.items():
                     if hasattr(v, 'strftime'):
                         clean[k] = v.strftime("%H:%M:%S")
+                    elif hasattr(v, '__float__') and not isinstance(v, (int, str, bool, type(None))):
+                        clean[k] = float(v)
                     else:
                         clean[k] = v
                 result.append(clean)
             return result
+
+        def _to_serializable_any(obj):
+            """将任意对象（dict/list/datetime/Decimal）递归转为 JSON 可序列化类型"""
+            if hasattr(obj, 'strftime'):
+                return obj.strftime("%Y-%m-%d %H:%M:%S")
+            elif hasattr(obj, '__float__') and not isinstance(obj, (int, str, bool, type(None), list, dict)):
+                return float(obj)
+            elif isinstance(obj, dict):
+                return {k: _to_serializable_any(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [_to_serializable_any(item) for item in obj]
+            return obj
 
         def _save(result: Dict) -> Optional[int]:
             """统一保存执行记录到数据库，返回记录ID"""
@@ -191,7 +209,7 @@ class Text2SQLService:
                         preview_data={"columns": result.get("preview_columns", []), "rows": _to_serializable_rows(result.get("preview_rows", []))},
                         denominator_preview_data={"columns": result.get("denominator_preview_columns", []), "rows": _to_serializable_rows(result.get("denominator_preview_rows", []))},
                         error=result.get("error", ""),
-                        attempts=result.get("numerator_attempts", []) or result.get("attempts", []),
+                        attempts=_to_serializable_any(result.get("numerator_attempts", []) or result.get("attempts", [])),
                         llm_thinking=result.get("numerator_llm_thinking", "") or result.get("llm_thinking", ""),
                         llm_raw=result.get("numerator_llm_raw", "") or result.get("llm_raw", ""),
                         cache_hit=result.get("cache_hit", False),
@@ -325,11 +343,28 @@ class Text2SQLService:
             """向 SQL 注入时间筛选条件 - 在外层 WHERE 之后追加"""
             if not sql or not time_mode or not time_value:
                 return sql
-            
+
             import re
-            
-            dt_field = "dscg_dt_tm" if date_field == "discharge" else "admn_dt_tm"
-            
+
+            sql_clean = sql.strip().rstrip(';').strip()
+
+            # 尝试从 SQL 中提取实际存在的时间字段
+            # 不同表使用的日期字段：dscg_dt_tm(出院), admn_dt_tm(入院), vst_dt_tm(就诊), rsc_dt_tm(抢救), oprt_dt_tm(手术)
+            possible_date_fields = [
+                "dscg_dt_tm", "admn_dt_tm", "vst_dt_tm", "rsc_dt_tm", "oprt_dt_tm",
+                "dth_dt_tm", "odr_opn_dt_tm", "dscs_dt_tm",
+            ]
+            found_field = None
+            for field in possible_date_fields:
+                # 检查 SQL 中是否已存在该字段（带或不带表别名前缀）
+                if re.search(r'(?<!\w)' + field + r'(?!\w)', sql_clean, re.IGNORECASE):
+                    found_field = field
+                    break
+
+            if not found_field:
+                logger.warning(f"[_inject_time_filter] SQL 中未找到已知时间字段，跳过时间过滤注入")
+                return sql
+
             if time_mode == "monthly":
                 year, month = time_value.split("-")
                 start_date = f"{year}-{month}-01"
@@ -347,8 +382,8 @@ class Text2SQLService:
                 end_date = f"{year}-{end_month:02d}-{last_day:02d}"
             else:
                 return sql
-            
-            time_filter = f"AND DATE({dt_field}) BETWEEN '{start_date}' AND '{end_date}'"
+
+            time_filter = f"AND DATE({found_field}) BETWEEN '{start_date}' AND '{end_date}'"
             
             sql_clean = sql.strip().rstrip(';').strip()
             
@@ -397,8 +432,9 @@ class Text2SQLService:
         
         logger.info(f"[医院过滤] hospital_codes={hospital_codes}, time_mode={time_mode}, time_value={time_value}, group_by_hospital={group_by_hospital}")
         
-        # 获取医院名称映射
+        # 获取医院名称映射 + 全省时展开医院列表
         hospital_names = {}
+        all_hospitals = []
         try:
             from sql_runner import get_hospitals
             all_hospitals = get_hospitals()
@@ -407,108 +443,13 @@ class Text2SQLService:
         except Exception:
             pass
         
-        # 如果需要按医院分组执行
-        if group_by_hospital and hospital_codes and len(hospital_codes) > 1:
-            hospital_results = []
-            total_num_cnt = 0
-            total_den_cnt = 0
-            all_ok = True
-            all_logs = []
-            
-            for i, hosp_code in enumerate(hospital_codes):
-                hosp_name = hospital_names.get(hosp_code, hosp_code)
-                hosp_logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 开始执行..."}]
-                
-                # 为当前医院构造筛选后的SQL
-                hosp_num_sql = _inject_hospital_filter(numerator_sql, [hosp_code]) if numerator_sql else ""
-                hosp_num_sql = _inject_time_filter(hosp_num_sql, time_mode, time_value, date_field) if hosp_num_sql else ""
-                hosp_den_sql = _inject_hospital_filter(denominator_sql, [hosp_code]) if denominator_sql else ""
-                hosp_den_sql = _inject_time_filter(hosp_den_sql, time_mode, time_value, date_field) if hosp_den_sql else ""
-                
-                hosp_num_cnt, hosp_num_err, hosp_num_cols, hosp_num_rows = _exec_sql(hosp_num_sql) if hosp_num_sql else (None, None, [], [])
-                hosp_den_cnt, hosp_den_err, hosp_den_cols, hosp_den_rows = _exec_sql(hosp_den_sql) if hosp_den_sql else (None, None, [], [])
-                
-                hosp_rate = round(hosp_num_cnt * 100.0 / hosp_den_cnt, 4) if (hosp_den_cnt and hosp_num_cnt is not None and hosp_den_cnt != 0) else None
-                hosp_ok = hosp_num_err is None and hosp_den_err is None and hosp_num_cnt is not None and hosp_den_cnt is not None
-                
-                if not hosp_ok:
-                    all_ok = False
-                
-                total_num_cnt += (hosp_num_cnt or 0)
-                total_den_cnt += (hosp_den_cnt or 0)
-                
-                hosp_logs.extend([
-                    {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 分子：{hosp_num_cnt} 条"},
-                    {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 分母：{hosp_den_cnt} 条"},
-                ])
-                if hosp_rate is not None:
-                    hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 指标值：{hosp_rate}%"})
-                if hosp_num_err:
-                    hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"[{hosp_name}] 分子执行出错：{hosp_num_err}"})
-                if hosp_den_err:
-                    hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"[{hosp_name}] 分母执行出错：{hosp_den_err}"})
-                
-                hospital_results.append({
-                    "hospital_code": hosp_code,
-                    "hospital_name": hosp_name,
-                    "numerator_count": hosp_num_cnt,
-                    "denominator_count": hosp_den_cnt,
-                    "ratio_percent": hosp_rate,
-                    "status": "success" if hosp_ok else "failed",
-                    "error": hosp_num_err or hosp_den_err,
-                    "preview_data": _to_serializable_rows(hosp_num_rows[:10]) if hosp_num_rows else [],
-                    "denominator_preview_data": _to_serializable_rows(hosp_den_rows[:10]) if hosp_den_rows else [],
-                })
-                all_logs.extend(hosp_logs)
-            
-            # 计算总体指标值
-            total_rate = round(total_num_cnt * 100.0 / total_den_cnt, 4) if total_den_cnt != 0 else None
-            all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"汇总执行完成。总体指标值：{total_rate}%（{total_num_cnt}/{total_den_cnt}）"})
-            
-            # 聚合预览数据：使用第一个有数据的医院的预览
-            first_preview = []
-            first_cols = []
-            first_den_preview = []
-            first_den_cols = []
-            for hosp in hospital_results:
-                pd = hosp.get("preview_data", [])
-                if pd and not first_preview:
-                    first_preview = pd
-                    first_cols = list(pd[0].keys()) if pd else []
-                dpd = hosp.get("denominator_preview_data", [])
-                if dpd and not first_den_preview:
-                    first_den_preview = dpd
-                    first_den_cols = list(dpd[0].keys()) if dpd else []
-            result = {
-                "ok": all_ok,
-                "indicator_type": ind_type,
-                "numerator_sql": numerator_sql,
-                "denominator_sql": denominator_sql,
-                "numerator_count": total_num_cnt,
-                "denominator_count": total_den_cnt,
-                "rate_percent": total_rate,
-                "rate_formula": f"{total_num_cnt}/{total_den_cnt}={total_rate}%" if total_rate is not None else None,
-                "error": None if all_ok else "部分医院执行失败",
-                "preview_columns": first_cols,
-                "preview_rows": first_preview,
-                "preview_data": {"columns": first_cols, "rows": first_preview},
-                "denominator_preview_columns": first_den_cols,
-                "denominator_preview_rows": first_den_preview,
-                "denominator_preview_data": {"columns": first_den_cols, "rows": first_den_preview},
-                "request_id": "",
-                "conversation_id": "",
-                "cache_hit": False,
-                "logs": all_logs,
-                "duration_seconds": round(time.time() - start_time, 3),
-                "group_by_hospital": True,
-                "hospital_results": hospital_results,
-            }
-            db_record_id = _save(result)
-            if db_record_id is not None:
-                result["db_record_id"] = db_record_id
-            return result
+        # 当 group_by_hospital=True 但 hospital_codes 为空时（前端选了"全省"），
+        # 展开为所有医院代码，确保能走分组执行逻辑
+        if group_by_hospital and not hospital_codes and all_hospitals:
+            hospital_codes = [h.get("MDC_ORG_CD") for h in all_hospitals]
+            logger.info(f"[医院过滤] 全省模式，展开医院列表，共 {len(hospital_codes)} 家医院")
         
-        if numerator_sql:
+        # 计数型 group_by 医院分组在后面处理（见 596 行）
             numerator_sql = _inject_hospital_filter(numerator_sql, hospital_codes)
             numerator_sql = _inject_time_filter(numerator_sql, time_mode, time_value, date_field)
         if denominator_sql:
@@ -522,6 +463,106 @@ class Text2SQLService:
         # 仅当有分子分母 SQL 且非计数型时才走比值型分支
         if numerator_sql and denominator_sql and not is_count_type:
             # 比值型需要同时获取分子和分母的预览数据
+
+            # 如果需要按医院分组执行（比值型）
+            if group_by_hospital and hospital_codes and len(hospital_codes) > 0:
+                hospital_results = []
+                total_num_cnt = 0
+                total_den_cnt = 0
+                all_ok = True
+                all_logs = []
+
+                for i, hosp_code in enumerate(hospital_codes):
+                    hosp_name = hospital_names.get(hosp_code, hosp_code)
+                    hosp_logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 开始执行..."}]
+
+                    hosp_num_sql = _inject_hospital_filter(numerator_sql, [hosp_code])
+                    hosp_num_sql = _inject_time_filter(hosp_num_sql, time_mode, time_value, date_field)
+                    hosp_den_sql = _inject_hospital_filter(denominator_sql, [hosp_code])
+                    hosp_den_sql = _inject_time_filter(hosp_den_sql, time_mode, time_value, date_field)
+
+                    hosp_num_cnt, hosp_num_err, hosp_num_cols, hosp_num_rows = _exec_sql(hosp_num_sql)
+                    hosp_den_cnt, hosp_den_err, hosp_den_cols, hosp_den_rows = _exec_sql(hosp_den_sql)
+
+                    hosp_rate = round(hosp_num_cnt * 100.0 / hosp_den_cnt, 4) if (hosp_den_cnt and hosp_num_cnt is not None and hosp_den_cnt != 0) else None
+                    hosp_ok = hosp_num_err is None and hosp_den_err is None and hosp_num_cnt is not None and hosp_den_cnt is not None
+
+                    if not hosp_ok:
+                        all_ok = False
+
+                    total_num_cnt += (hosp_num_cnt or 0)
+                    total_den_cnt += (hosp_den_cnt or 0)
+
+                    hosp_logs.extend([
+                        {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 分子：{hosp_num_cnt} 条"},
+                        {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 分母：{hosp_den_cnt} 条"},
+                    ])
+                    if hosp_rate is not None:
+                        hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 指标值：{hosp_rate}%"})
+                    if hosp_num_err:
+                        hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"[{hosp_name}] 分子执行出错：{hosp_num_err}"})
+                    if hosp_den_err:
+                        hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"[{hosp_name}] 分母执行出错：{hosp_den_err}"})
+
+                    hospital_results.append({
+                        "hospital_code": hosp_code,
+                        "hospital_name": hosp_name,
+                        "numerator_count": hosp_num_cnt,
+                        "denominator_count": hosp_den_cnt,
+                        "ratio_percent": hosp_rate,
+                        "status": "success" if hosp_ok else "failed",
+                        "error": hosp_num_err or hosp_den_err,
+                        "preview_data": _to_serializable_rows(hosp_num_rows[:10]) if hosp_num_rows else [],
+                        "denominator_preview_data": _to_serializable_rows(hosp_den_rows[:10]) if hosp_den_rows else [],
+                    })
+                    all_logs.extend(hosp_logs)
+
+                total_rate = round(total_num_cnt * 100.0 / total_den_cnt, 4) if total_den_cnt != 0 else None
+                all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"汇总执行完成。总体指标值：{total_rate}%（{total_num_cnt}/{total_den_cnt}）"})
+
+                first_preview = []
+                first_cols = []
+                first_den_preview = []
+                first_den_cols = []
+                for hosp in hospital_results:
+                    pd = hosp.get("preview_data", [])
+                    if pd and not first_preview:
+                        first_preview = pd
+                        first_cols = list(pd[0].keys()) if pd else []
+                    dpd = hosp.get("denominator_preview_data", [])
+                    if dpd and not first_den_preview:
+                        first_den_preview = dpd
+                        first_den_cols = list(dpd[0].keys()) if dpd else []
+
+                result = {
+                    "ok": all_ok,
+                    "indicator_type": ind_type,
+                    "numerator_sql": numerator_sql,
+                    "denominator_sql": denominator_sql,
+                    "numerator_count": total_num_cnt,
+                    "denominator_count": total_den_cnt,
+                    "rate_percent": total_rate,
+                    "rate_formula": f"{total_num_cnt}/{total_den_cnt}={total_rate}%" if total_rate is not None else None,
+                    "error": None if all_ok else "部分医院执行失败",
+                    "preview_columns": first_cols,
+                    "preview_rows": first_preview,
+                    "preview_data": {"columns": first_cols, "rows": first_preview},
+                    "denominator_preview_columns": first_den_cols,
+                    "denominator_preview_rows": first_den_preview,
+                    "denominator_preview_data": {"columns": first_den_cols, "rows": first_den_preview},
+                    "request_id": "",
+                    "conversation_id": "",
+                    "cache_hit": False,
+                    "logs": all_logs,
+                    "duration_seconds": round(time.time() - start_time, 3),
+                    "group_by_hospital": True,
+                    "hospital_results": hospital_results,
+                }
+                db_record_id = _save(result)
+                if db_record_id is not None:
+                    result["db_record_id"] = db_record_id
+                return result
+
             num_cnt, num_err, num_cols, num_rows = _exec_sql(numerator_sql)
             den_cnt, den_err, den_cols, den_rows = _exec_sql(denominator_sql)
             rate = round(num_cnt * 100.0 / den_cnt, 4) if (den_cnt and num_cnt is not None and den_cnt != 0) else None
@@ -576,8 +617,87 @@ class Text2SQLService:
             return result
 
         # 计数型指标：优先用 single_sql；若无则用 numerator_sql（适用于四要素计数型）
-        sql_to_exec = single_sql if single_sql else (""
-            if not is_count_type else numerator_sql)
+        sql_to_exec = single_sql if single_sql else (numerator_sql if is_count_type else "")
+
+        logger.info(f"[计数型 group_by] group_by_hospital={group_by_hospital}, hospital_codes={hospital_codes}, len={len(hospital_codes) if hospital_codes else 0}, sql_to_exec={bool(sql_to_exec)}, single_sql={bool(single_sql)}, numerator_sql={bool(numerator_sql)}, is_count_type={is_count_type}")
+        # 如果需要按医院分组执行（计数型）
+        if group_by_hospital and hospital_codes and len(hospital_codes) > 0 and sql_to_exec:
+            hospital_results = []
+            total_count = 0
+            all_ok = True
+            all_logs = []
+            first_preview = []
+            first_cols = []
+
+            for hosp_code in hospital_codes:
+                hosp_name = hospital_names.get(hosp_code, hosp_code)
+                hosp_logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 开始执行..."}]
+
+                hosp_sql = _inject_hospital_filter(sql_to_exec, [hosp_code])
+                hosp_sql = _inject_time_filter(hosp_sql, time_mode, time_value, date_field or "discharge")
+                hosp_cnt, hosp_err, hosp_cols, hosp_rows = _exec_sql(hosp_sql)
+
+                stat_count = hosp_cnt
+                if hosp_cols and hosp_rows and "patient_cnt" in hosp_cols:
+                    total = sum(float(r.get("patient_cnt") or 0) for r in hosp_rows)
+                    stat_count = int(total)
+
+                hosp_ok = hosp_err is None and hosp_cnt is not None
+                if not hosp_ok:
+                    all_ok = False
+
+                total_count += (stat_count or 0)
+                hosp_logs.extend([
+                    {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 查询结果：{hosp_cnt} 条记录。"},
+                    {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 执行完成，共 {stat_count} 人次。"},
+                ])
+                if hosp_err:
+                    hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"[{hosp_name}] 执行出错：{hosp_err}"})
+
+                preview = _to_serializable_rows(hosp_rows[:10]) if hosp_rows else []
+                if preview and not first_preview:
+                    first_preview = preview
+                    first_cols = list(preview[0].keys()) if preview else []
+
+                hospital_results.append({
+                    "hospital_code": hosp_code,
+                    "hospital_name": hosp_name,
+                    "numerator_count": stat_count,
+                    "count": stat_count,
+                    "status": "success" if hosp_ok else "failed",
+                    "error": hosp_err,
+                    "preview_data": preview,
+                    "preview_columns": list(preview[0].keys()) if preview else [],
+                })
+                all_logs.extend(hosp_logs)
+
+            all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"汇总执行完成，共 {total_count} 人次。"})
+            duration = round(time.time() - start_time, 3)
+            result = {
+                "ok": all_ok,
+                "indicator_type": ind_type,
+                "indicator": {"calc_type": calc_type_raw},
+                "calc_type": calc_type_raw,
+                "sql": sql_to_exec,
+                "count": total_count,
+                "numerator_count": total_count,
+                "error": None if all_ok else "部分医院执行失败",
+                "preview_columns": first_cols,
+                "preview_rows": first_preview,
+                "preview_data": {"columns": first_cols, "rows": first_preview},
+                "request_id": "",
+                "conversation_id": "",
+                "cache_hit": False,
+                "logs": all_logs,
+                "duration_seconds": duration,
+                "group_by_hospital": True,
+                "hospital_results": hospital_results,
+            }
+            db_record_id = _save(result)
+            if db_record_id is not None:
+                result["db_record_id"] = db_record_id
+            return result
+
         if sql_to_exec:
             sql_to_exec = _inject_hospital_filter(sql_to_exec, hospital_codes)
             sql_to_exec = _inject_time_filter(sql_to_exec, time_mode, time_value, date_field)
@@ -603,6 +723,7 @@ class Text2SQLService:
                     {"time": time.strftime("%H:%M:%S"), "level": "info", "message": "执行 SQL..."},
                     {"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"执行失败：{err}"},
                 ]
+            duration = round(time.time() - start_time, 3)
             result = {
                 "ok": err is None and cnt is not None,
                 "indicator_type": ind_type,
@@ -846,7 +967,18 @@ class Text2SQLService:
                 if not sql or not t_mode or not t_value:
                     return sql
                 import re, calendar
-                dt_field = "dscg_dt_tm" if d_field == "discharge" else "admn_dt_tm"
+                sql_clean = sql.strip().rstrip(';').strip()
+                possible_date_fields = [
+                    "dscg_dt_tm", "admn_dt_tm", "vst_dt_tm", "rsc_dt_tm", "oprt_dt_tm",
+                    "dth_dt_tm", "odr_opn_dt_tm", "dscs_dt_tm",
+                ]
+                found_field = None
+                for field in possible_date_fields:
+                    if re.search(r'(?<!\w)' + field + r'(?!\w)', sql_clean, re.IGNORECASE):
+                        found_field = field
+                        break
+                if not found_field:
+                    return sql
                 if t_mode == "monthly":
                     year, month = t_value.split("-")
                     start_date = f"{year}-{month}-01"
@@ -862,7 +994,7 @@ class Text2SQLService:
                     end_date = f"{year}-{end_month:02d}-{last_day:02d}"
                 else:
                     return sql
-                time_filter = f"AND DATE({dt_field}) BETWEEN '{start_date}' AND '{end_date}'"
+                time_filter = f"AND DATE({found_field}) BETWEEN '{start_date}' AND '{end_date}'"
                 sql_clean = sql.strip().rstrip(';').strip()
                 outer_pattern = r'\)\s+(?:AS\s+)?\w+\s+WHERE\b'
                 all_matches = list(re.finditer(outer_pattern, sql_clean, re.IGNORECASE | re.DOTALL))

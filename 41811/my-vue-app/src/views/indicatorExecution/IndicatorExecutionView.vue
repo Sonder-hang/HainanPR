@@ -394,8 +394,9 @@
             <div class="rounded-[2px] bg-white p-2.5 text-center border border-[#b8c9e8]/40">
               <div class="text-[11px] text-[#596080]">指标结果</div>
               <div class="mt-1 font-semibold" :class="selectedRecord.resultType === 'ratio' ? 'text-emerald-600' : 'text-blue-600'">
-                {{ selectedRecord.resultType === 'ratio' ? '比值型' : '计数型' }}
-                <span v-if="selectedRecord.ratioPercent != null" class="ml-1">{{ selectedRecord.ratioPercent.toFixed(2) }}%</span>
+                <span v-if="selectedRecord.resultType === 'ratio' && selectedRecord.ratioPercent != null">{{ selectedRecord.ratioPercent.toFixed(2) }}%</span>
+                <span v-else-if="selectedRecord.resultType === 'count' && selectedRecord.numeratorCount != null">{{ selectedRecord.numeratorCount.toLocaleString() }} 条</span>
+                <span v-else>—</span>
               </div>
             </div>
           </div>
@@ -482,7 +483,7 @@
                   v-if="paginatedNumRows.length > 0"
                   :columns="selectedRecord.resultColumns"
                   :rows="paginatedNumRows"
-                  row-height="36"
+                  :row-height="36"
                   :overscan="8"
                   max-height="300px"
                 />
@@ -526,7 +527,7 @@
                   v-if="paginatedDenRows.length > 0"
                   :columns="selectedRecord.denominatorPreviewColumns"
                   :rows="paginatedDenRows"
-                  row-height="36"
+                  :row-height="36"
                   :overscan="8"
                   max-height="300px"
                 />
@@ -1042,9 +1043,14 @@ async function handleRun() {
       result_type: (selectedInd?.calc_type as 'ratio' | 'count') || 'ratio',
       calc_method: 'SQL录入',
       scope: runScopes.value.includes('__all__') ? '' : runScopes.value.join(','),
-      group_by_hospital: true,
+      group_by_hospital: runScopes.value.length > 0 && !runScopes.value.includes('__all__'),
     }
     reqData.hospital_codes = runScopes.value.includes('__all__') ? [] : runScopes.value
+    // 存储完整医院列表用于重跑
+    const finalHospitalCodes = runScopes.value.includes('__all__')
+      ? hospitalList.value.map(h => h.MDC_ORG_CD)
+      : runScopes.value
+    newRecord.hospitalCodes = finalHospitalCodes
     console.log('发送请求 - runScopes:', runScopes.value, 'hospital_codes:', reqData.hospital_codes, 'group_by_hospital:', reqData.group_by_hospital)
     if (runMode.value === 'monthly' || runMode.value === 'quarterly') {
       reqData.time_mode = runMode.value
@@ -1245,7 +1251,11 @@ async function rerun(row: ExecutionRecord) {
       result_type: copy.resultType,
       calc_method: copy.calcMethod,
       scope: copy.scope || '',
-      hospital_codes: copy.scope ? [copy.scope] : [],
+      // 优先使用已存储的完整医院列表（全省重跑时包含所有医院）
+      hospital_codes: copy.hospitalCodes && copy.hospitalCodes.length > 0
+        ? copy.hospitalCodes
+        : (copy.scope ? [copy.scope] : []),
+      group_by_hospital: true,
       time_mode: timeMode,
       time_value: timeValue,
     })
