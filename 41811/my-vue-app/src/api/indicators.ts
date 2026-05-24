@@ -299,7 +299,7 @@ export const indicatorsApi = {
    * 获取执行历史
    * @param params 支持 indicator_id, keyword, status, kind, limit, offset
    */
-  getExecutionHistory: (params?: { 
+  getExecutionHistory: (params?: {
     indicator_id?: number
     keyword?: string
     status?: string
@@ -307,7 +307,7 @@ export const indicatorsApi = {
     limit?: number
     offset?: number
   }) =>
-    httpClient.get<IndicatorExecution[]>(API_ENDPOINTS.indicatorExecution, { params }),
+    httpClient.get<{ records: IndicatorExecution[]; total: number }>(API_ENDPOINTS.indicatorExecution, { params }),
 
   /**
    * 删除执行记录

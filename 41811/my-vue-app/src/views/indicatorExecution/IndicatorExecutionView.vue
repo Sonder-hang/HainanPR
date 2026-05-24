@@ -154,7 +154,7 @@
           >
             <Clock class="h-4 w-4" />
             历史执行记录
-            <span class="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[11px] font-medium text-white">{{ records.length }}</span>
+            <span class="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[11px] font-medium text-white">{{ historyTotal }}</span>
             <ChevronDown class="h-3.5 w-3.5 transition-transform" :class="historyOpen ? 'rotate-180' : ''" />
           </button>
 
@@ -310,6 +310,27 @@
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <!-- 加载更多 -->
+              <div
+                v-if="records.length < historyTotal"
+                class="flex items-center justify-center border-t border-[#b8c9e8]/30 bg-white px-4 py-2.5"
+              >
+                <button
+                  type="button"
+                  class="flex items-center gap-1.5 rounded-[2px] border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-[12px] text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="loadingMore"
+                  @click="loadMore"
+                >
+                  <template v-if="loadingMore">
+                    <span class="h-3.5 w-3.5 animate-spin rounded-full border border-emerald-400 border-t-transparent" />
+                    加载中...
+                  </template>
+                  <template v-else>
+                    加载更多
+                  </template>
+                </button>
               </div>
             </div>
           </Transition>
@@ -658,7 +679,9 @@ const quarterOptionsOfYear = computed(() => [
 const statusFilter = ref('all')
 const searchKeyword = ref('')
 const records = ref<ExecutionRecord[]>([])
+const historyTotal = ref(0)
 const historyOpen = ref(false)
+const loadingMore = ref(false)
 const selectedRecord = ref<ExecutionRecord | null>(null)
 const executingIds = ref<Set<string>>(new Set())
 const detailContainer = ref<HTMLElement | null>(null)
@@ -803,12 +826,12 @@ const paginatedDenRows = computed(() => {
 })
 
 const allIndicators = ref<Indicator[]>([])
-const hospitalList = ref<{ MDC_ORG_CD: string; MDC_ORG_NM: string }[]>([])
+const hospitalList = ref<{ value: string; label: string }[]>([])
 
 // 医院选项（多选下拉框）
 const hospitalOptions = computed(() => [
   { value: '__all__', label: '全省' },
-  ...hospitalList.value.map((h) => ({ value: h.MDC_ORG_CD, label: h.MDC_ORG_NM })),
+  ...hospitalList.value.map((h) => ({ value: h.value, label: h.label })),
 ])
 
 onMounted(async () => {
@@ -818,7 +841,7 @@ onMounted(async () => {
 async function loadHospitals() {
   try {
     const res = await indicatorsApi.getHospitals()
-    hospitalList.value = res || []
+    hospitalList.value = (res as any)?.value || res || []
   } catch (e) {
     console.error('加载医院列表失败:', e)
     hospitalList.value = []
@@ -837,7 +860,7 @@ async function loadIndicators() {
   }
 }
 
-async function loadRecords() {
+async function loadRecords(append = false) {
   try {
     const params: any = {}
     if (runIndicatorId.value) {
@@ -852,84 +875,107 @@ async function loadRecords() {
     if (runKind.value) {
       params.kind = runKind.value
     }
-    const history = await indicatorsApi.getExecutionHistory(params)
-    if (history && history.length > 0) {
-      records.value = history.map((exec: any) => {
-        const ind = allIndicators.value.find((i: any) => i.id === exec.indicator)
-        const rawCalcType = exec.indicator?.calc_type ?? ind?.calc_type ?? exec.result_type ?? 'ratio'
-        const isCount = rawCalcType === 'count'
-        const resultType: 'ratio' | 'count' = isCount ? 'count' : 'ratio'
-        const outputCount = isCount
-          ? (exec.count ?? exec.numerator_count ?? 0)
-          : (exec.numerator_count ?? exec.denominator_count ?? 0)
-        const isGroupByHospital = exec.group_by_hospital || false
-        const hospitalResults = exec.hospital_results || []
-        const firstHospWithData = hospitalResults.find((h: any) => h.preview_data && h.preview_data.length > 0)
-        const execPreviewData = exec.preview_data || {}
-        const resultColumns = execPreviewData.columns
-          ?? exec.preview_columns
-          ?? (exec.result_data ? Object.keys(exec.result_data?.[0] ?? {}) : undefined)
-          ?? (isGroupByHospital && firstHospWithData && firstHospWithData.preview_data?.length ? Object.keys(firstHospWithData.preview_data[0] || {}) : undefined)
-        const resultData = execPreviewData.rows ?? exec.preview_rows ?? exec.result_data
-          ?? (isGroupByHospital && firstHospWithData ? firstHospWithData.preview_data : undefined)
-        const denominatorPreviewColumns = exec.denominator_preview_columns
-          ?? exec.denominator_preview_data?.columns
-          ?? (exec.denominator_preview_data?.rows?.length ? Object.keys(exec.denominator_preview_data.rows[0]) : undefined)
-        const denominatorPreviewData = exec.denominator_preview_data ?? { columns: exec.denominator_preview_columns ?? [], rows: exec.denominator_preview_rows ?? [] }
-        return {
-          id: String(exec.id),
-          kind: exec.kind || exec.indicator?.indicator_type || 'core18',
-          indicatorName: exec.indicator_name || ind?.name || `指标 #${exec.indicator}`,
-          indicatorId: String(exec.indicator || ''),
-          runMode: (exec.run_mode as RunMode) || 'immediate',
-          timeRange: exec.time_range || '全量',
-          status: (exec.status || 'pending') as RunStatus,
-          startTime: exec.execution_time || '—',
-          duration: exec.duration_seconds || 0,
-          scope: exec.scope || '',
-          dateField: exec.indicator?.date_field ?? ind?.date_field ?? 'discharge',
-          outputCount,
-          ratioPercent: isCount ? undefined : (exec.rate_percent ?? undefined),
-          denominatorCount: isCount ? undefined : (exec.denominator_count ?? undefined),
-          numeratorCount: isCount ? (exec.count ?? exec.numerator_count ?? 0) : (exec.numerator_count ?? undefined),
-          resultType,
-          resultColumns,
-          resultData,
-          denominatorPreviewColumns,
-          denominatorPreviewData,
-          calcMethod: exec.calc_method || ((exec.numerator_sql || exec.sql) ? 'SQL录入' : '大模型Prompt'),
-          usedScript: isCount
-            ? (exec.sql || exec.numerator_sql || exec.denominator_sql || '')
-            : (exec.numerator_sql
-                ? `【分子 SQL】\n${exec.numerator_sql}\n\n【分母 SQL】\n${exec.denominator_sql || '—'}`
-                : (exec.sql || '')),
-          errorMessage: exec.error || undefined,
-          logs: exec.logs?.length ? exec.logs : buildLogs(exec, isCount),
-          groupByHospital: exec.group_by_hospital || false,
-          hospitalResults: (exec.hospital_results || []).map((h: any) => ({
-            hospitalCode: h.hospital_code ?? '',
-            hospitalName: h.hospital_name ?? '',
-            status: h.status ?? 'pending',
-            numeratorCount: h.numerator_count,
-            denominatorCount: h.denominator_count,
-            ratioPercent: h.ratio_percent,
-            previewData: h.preview_data || [],
-            denominatorPreviewData: h.denominator_preview_data || [],
-            error: h.error || undefined,
-          })),
-        }
-      })
+    if (append) {
+      params.offset = records.value.length
+      params.limit = 100
     } else {
-      records.value = JSON.parse(JSON.stringify(MOCK_RECORDS))
+      params.limit = 100
+    }
+    const res = await indicatorsApi.getExecutionHistory(params)
+    const history = res.records || []
+    historyTotal.value = res.total ?? history.length
+    if (append) {
+      records.value = [...records.value, ...history.map((exec: any) => mapExecToRecord(exec))]
+    } else {
+      records.value = history.map((exec: any) => mapExecToRecord(exec))
     }
   } catch (e) {
     console.error('加载执行记录失败:', e)
-    records.value = JSON.parse(JSON.stringify(MOCK_RECORDS))
+    if (!append) {
+      records.value = JSON.parse(JSON.stringify(MOCK_RECORDS))
+    }
+  }
+}
+
+function mapExecToRecord(exec: any): ExecutionRecord {
+  const ind = allIndicators.value.find((i: any) => i.id === exec.indicator)
+  const rawCalcType = exec.indicator?.calc_type ?? ind?.calc_type ?? exec.result_type ?? 'ratio'
+  const isCount = rawCalcType === 'count'
+  const resultType: 'ratio' | 'count' = isCount ? 'count' : 'ratio'
+  const outputCount = isCount
+    ? (exec.count ?? exec.numerator_count ?? 0)
+    : (exec.numerator_count ?? exec.denominator_count ?? 0)
+  const isGroupByHospital = exec.group_by_hospital || false
+  const hospitalResults = exec.hospital_results || []
+  const firstHospWithData = hospitalResults.find((h: any) => h.preview_data && h.preview_data.length > 0)
+  const execPreviewData = exec.preview_data || {}
+  const resultColumns = execPreviewData.columns
+    ?? exec.preview_columns
+    ?? (exec.result_data ? Object.keys(exec.result_data?.[0] ?? {}) : undefined)
+    ?? (isGroupByHospital && firstHospWithData && firstHospWithData.preview_data?.length ? Object.keys(firstHospWithData.preview_data[0] || {}) : undefined)
+  const resultData = execPreviewData.rows ?? exec.preview_rows ?? exec.result_data
+    ?? (isGroupByHospital && firstHospWithData ? firstHospWithData.preview_data : undefined)
+  const denominatorPreviewColumns = exec.denominator_preview_columns
+    ?? exec.denominator_preview_data?.columns
+    ?? (exec.denominator_preview_data?.rows?.length ? Object.keys(exec.denominator_preview_data.rows[0]) : undefined)
+  const denominatorPreviewData = exec.denominator_preview_data ?? { columns: exec.denominator_preview_columns ?? [], rows: exec.denominator_preview_rows ?? [] }
+  return {
+    id: String(exec.id),
+    kind: exec.kind || exec.indicator?.indicator_type || 'core18',
+    indicatorName: exec.indicator_name || ind?.name || `指标 #${exec.indicator}`,
+    indicatorId: String(exec.indicator || ''),
+    runMode: (exec.run_mode as RunMode) || 'immediate',
+    timeRange: exec.time_range || '全量',
+    status: (exec.status || 'pending') as RunStatus,
+    startTime: exec.execution_time || '—',
+    duration: exec.duration_seconds || 0,
+    scope: exec.scope || '',
+    dateField: exec.indicator?.date_field ?? ind?.date_field ?? 'discharge',
+    outputCount,
+    ratioPercent: isCount ? undefined : (exec.rate_percent ?? undefined),
+    denominatorCount: isCount ? undefined : (exec.denominator_count ?? undefined),
+    numeratorCount: isCount ? (exec.count ?? exec.numerator_count ?? 0) : (exec.numerator_count ?? undefined),
+    resultType,
+    resultColumns,
+    resultData,
+    denominatorPreviewColumns,
+    denominatorPreviewData,
+    calcMethod: exec.calc_method || ((exec.numerator_sql || exec.sql) ? 'SQL录入' : '大模型Prompt'),
+    usedScript: isCount
+      ? (exec.sql || exec.numerator_sql || exec.denominator_sql || '')
+      : (exec.numerator_sql
+          ? `【分子 SQL】\n${exec.numerator_sql}\n\n【分母 SQL】\n${exec.denominator_sql || '—'}`
+          : (exec.sql || '')),
+    errorMessage: exec.error || undefined,
+    logs: exec.logs?.length ? exec.logs : buildLogs(exec, isCount),
+    groupByHospital: exec.group_by_hospital || false,
+    hospitalResults: (exec.hospital_results || []).map((h: any) => ({
+      hospitalCode: h.hospital_code ?? '',
+      hospitalName: h.hospital_name ?? '',
+      status: h.status ?? 'pending',
+      numeratorCount: h.numerator_count,
+      denominatorCount: h.denominator_count,
+      ratioPercent: h.ratio_percent,
+      previewData: h.preview_data || [],
+      denominatorPreviewData: h.denominator_preview_data || [],
+      error: h.error || undefined,
+    })),
   }
 }
 
 async function handleSearch() {
-  await loadRecords()
+  await loadRecords(false)
+}
+
+async function loadMore() {
+  if (loadingMore.value) return
+  if (records.value.length >= historyTotal.value) return
+  loadingMore.value = true
+  try {
+    await loadRecords(true)
+  } finally {
+    loadingMore.value = false
+  }
 }
 
 function buildLogs(exec: any, isCount: boolean = false): { time: string; level: 'info' | 'warn' | 'error'; message: string }[] {
@@ -1045,11 +1091,11 @@ async function handleRun() {
       scope: runScopes.value.includes('__all__') ? '' : runScopes.value.join(','),
       group_by_hospital: runScopes.value.length > 0 && !runScopes.value.includes('__all__'),
     }
-    reqData.hospital_codes = runScopes.value.includes('__all__') ? [] : runScopes.value
+    reqData.hospital_codes = runScopes.value.includes('__all__') ? [] : runScopes.value.filter(Boolean)
     // 存储完整医院列表用于重跑
     const finalHospitalCodes = runScopes.value.includes('__all__')
-      ? hospitalList.value.map(h => h.MDC_ORG_CD)
-      : runScopes.value
+      ? hospitalList.value.filter(h => h.value !== '__all__').map(h => h.value)
+      : runScopes.value.filter(Boolean)
     newRecord.hospitalCodes = finalHospitalCodes
     console.log('发送请求 - runScopes:', runScopes.value, 'hospital_codes:', reqData.hospital_codes, 'group_by_hospital:', reqData.group_by_hospital)
     if (runMode.value === 'monthly' || runMode.value === 'quarterly') {
@@ -1222,6 +1268,7 @@ async function rerun(row: ExecutionRecord) {
     logs: [{ time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: '任务已重新提交...' }],
   }
   records.value = [copy, ...records.value]
+  historyTotal.value += 1
   selectedRecord.value = copy
 
   executingIds.value.add(execId)
@@ -1253,7 +1300,7 @@ async function rerun(row: ExecutionRecord) {
       scope: copy.scope || '',
       // 优先使用已存储的完整医院列表（全省重跑时包含所有医院）
       hospital_codes: copy.hospitalCodes && copy.hospitalCodes.length > 0
-        ? copy.hospitalCodes
+        ? copy.hospitalCodes.filter(Boolean)
         : (copy.scope ? [copy.scope] : []),
       group_by_hospital: true,
       time_mode: timeMode,

@@ -166,6 +166,13 @@ class ExecuteRequest(BaseModel):
     group_by_hospital: Optional[bool] = True  # 是否按医院分组执行
 
 
+class ExecutionHistoryResponse(BaseModel):
+    records: list[IndicatorExecutionResponse]
+    total: int
+
+    model_config = {"from_attributes": True}
+
+
 class TestSqlRequest(BaseModel):
     sql: str
     limit: int = 200

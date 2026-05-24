@@ -485,7 +485,7 @@ class Text2SQLService:
                     hosp_den_cnt, hosp_den_err, hosp_den_cols, hosp_den_rows = _exec_sql(hosp_den_sql)
 
                     hosp_rate = round(hosp_num_cnt * 100.0 / hosp_den_cnt, 4) if (hosp_den_cnt and hosp_num_cnt is not None and hosp_den_cnt != 0) else None
-                    hosp_ok = hosp_num_err is None and hosp_den_err is None and hosp_num_cnt is not None and hosp_den_cnt is not None
+                    hosp_ok = hosp_num_err is None and hosp_den_err is None
 
                     if not hosp_ok:
                         all_ok = False
@@ -642,7 +642,7 @@ class Text2SQLService:
                     total = sum(float(r.get("patient_cnt") or 0) for r in hosp_rows)
                     stat_count = int(total)
 
-                hosp_ok = hosp_err is None and hosp_cnt is not None
+                hosp_ok = hosp_err is None
                 if not hosp_ok:
                     all_ok = False
 

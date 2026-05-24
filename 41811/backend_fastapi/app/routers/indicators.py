@@ -9,7 +9,7 @@ from app.models.indicator import Indicator, IndicatorExecution, TableMetadata
 from app.schemas.indicator import (
     IndicatorCreate, IndicatorUpdate, IndicatorResponse,
     IndicatorExecutionResponse, ExecuteRequest, TestSqlRequest,
-    PreviewPageRequest, PreviewPageResponse,
+    PreviewPageRequest, PreviewPageResponse, ExecutionHistoryResponse,
 )
 from app.services.text2sql import Text2SQLService
 
@@ -32,7 +32,7 @@ def list_hospitals(db: Session = Depends(get_db)):
     local_hospitals = db.query(LocalHospital).filter(LocalHospital.is_active == 1).order_by(LocalHospital.name).all()
     if local_hospitals:
         return [
-            {"MDC_ORG_CD": h.hospital_code or h.id, "MDC_ORG_NM": h.name}
+            {"value": h.hospital_code or h.id, "label": h.name}
             for h in local_hospitals
         ]
 
@@ -49,8 +49,8 @@ def list_hospitals(db: Session = Depends(get_db)):
             if err:
                 logger.error(f"获取医院列表失败: {err}")
                 return []
-            # rows 已经是字典列表（使用 DictCursor），直接返回
-            return rows
+            # rows 已经是字典列表（使用 DictCursor），转换为 value/label 格式
+            return [{"value": r.get("MDC_ORG_CD", ""), "label": r.get("MDC_ORG_NM", "")} for r in rows]
         except Exception as e:
             logger.error(f"获取医院列表异常: {e}")
             return []
@@ -187,10 +187,11 @@ def _list_executions(
 ):
     """
     获取执行历史记录列表，支持搜索、筛选
-    
+
     - keyword: 按指标名称模糊搜索
     - status: 按状态筛选 (pending/running/success/failed)
     - kind: 按类型筛选 (four/core18)
+    - limit: 返回记录数上限（默认100，上限500）
     - offset: 跳过数量
     """
     q = db.query(IndicatorExecution)
@@ -202,17 +203,21 @@ def _list_executions(
         q = q.filter(IndicatorExecution.status == status)
     if kind:
         q = q.filter(IndicatorExecution.kind == kind)
-    
+
+    # 先计算总数
+    total = q.count()
+
     if offset is None:
         offset = 0
     if limit is None:
         limit = 100
-    
+    limit = min(limit, 500)
+
     rows = q.order_by(IndicatorExecution.execution_time.desc()).offset(offset).limit(limit).all()
-    return rows
+    return rows, total
 
 
-@router.get("/execution/", response_model=list[IndicatorExecutionResponse])
+@router.get("/execution/", response_model=ExecutionHistoryResponse)
 def list_executions(
     indicator_id: Optional[int] = None,
     keyword: Optional[str] = None,
@@ -222,10 +227,12 @@ def list_executions(
     offset: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    return _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
+    rows, total = _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
+    serialized = [IndicatorExecutionResponse.model_validate(r).model_dump(mode='json') for r in rows]
+    return {"records": serialized, "total": total}
 
 
-@router.get("/execution", response_model=list[IndicatorExecutionResponse])
+@router.get("/execution", response_model=ExecutionHistoryResponse)
 def list_executions_no_slash(
     indicator_id: Optional[int] = None,
     keyword: Optional[str] = None,
@@ -235,7 +242,9 @@ def list_executions_no_slash(
     offset: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    return _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
+    rows, total = _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
+    serialized = [IndicatorExecutionResponse.model_validate(r).model_dump(mode='json') for r in rows]
+    return {"records": serialized, "total": total}
 
 
 @router.delete("/execution/{execution_id}", status_code=204)

@@ -77,6 +77,21 @@ def _shutdown_tunnel():
         _tunnel = None
 
 
+def db_connect_local():
+    """直连本地 MySQL（绕过 SSH 隧道）。"""
+    return pymysql.connect(
+        host="localhost",
+        port=3306,
+        user="root",
+        password="Ecust@1234",
+        database="Hainan",
+        charset="utf8mb4",
+        cursorclass=DictCursor,
+        connect_timeout=10,
+        read_timeout=120,
+    )
+
+
 def db_connect():
     host, port = _ensure_tunnel()
     return pymysql.connect(
@@ -95,7 +110,7 @@ def db_connect():
 def get_hospitals() -> list[dict[str, Any]]:
     """获取医院列表"""
     try:
-        conn = db_connect()
+        conn = db_connect_local()
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT MDC_ORG_CD, MDC_ORG_NM FROM DIM_MDC_ORG ORDER BY MDC_ORG_CD")
@@ -125,10 +140,10 @@ def execute_limited(
 ) -> tuple[list[str], list[dict[str, Any]], Optional[str]]:
     if not sql.strip():
         return [], [], "SQL 为空"
+    import re
     sql = _clean_sql(sql)
 
     # 如果原 SQL 已有 LIMIT / OFFSET，会与外层 LIMIT 冲突，先去掉
-    import re
     sql_no_limit = re.sub(r'\bLIMIT\s+[\d\s,+-]+\s*$', '', sql, flags=re.IGNORECASE).rstrip().rstrip(";").rstrip()
     sql_no_limit = _clean_sql(sql_no_limit)
 
@@ -138,12 +153,17 @@ def execute_limited(
         try:
             with conn.cursor() as cur:
                 cur.execute(wrapped)
-                rows = cur.fetchall()
+                rows = []
+                while len(rows) < limit:
+                    batch = cur.fetchmany(min(limit - len(rows), 1000))
+                    if not batch:
+                        break
+                    rows.extend(batch)
                 if not rows:
                     cols: list[str] = []
                 else:
                     cols = list(rows[0].keys())
-                return cols, list(rows), None
+                return cols, rows, None
         finally:
             conn.close()
     except Exception as e:
