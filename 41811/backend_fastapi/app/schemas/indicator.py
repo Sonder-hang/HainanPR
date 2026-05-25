@@ -90,6 +90,7 @@ class IndicatorExecutionResponse(BaseModel):
     sql: str = ""
     numerator_count: Optional[int] = None
     denominator_count: Optional[int] = None
+    count: Optional[int] = None  # 计数型指标的总数量
     rate_percent: Optional[float] = None
     rate_formula: str = ""
     result_text: str = ""

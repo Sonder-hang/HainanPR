@@ -228,7 +228,7 @@
                       <td class="max-w-[200px] px-3 py-2.5 text-[12px] font-medium text-[#1F264D]">
                         <span class="line-clamp-1" :title="row.indicatorName">{{ row.indicatorName }}</span>
                       </td>
-                      <td class="px-3 py-2.5 text-[12px] text-[#596080]">{{ row.scope || '全省' }}</td>
+                      <td class="px-3 py-2.5 text-[12px] text-[#596080]">{{ resolveScopeLabel(row.scope) }}</td>
                       <td class="px-3 py-2.5 text-[12px]">
                         <span
                           class="inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium"
@@ -442,7 +442,7 @@
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/20">
                 <tr v-for="h in selectedRecord.hospitalResults" :key="h.hospitalCode" class="hover:bg-emerald-50/30">
-                  <td class="px-3 py-2.5 font-medium text-[#1F264D]">{{ h.hospitalName }}</td>
+                  <td class="px-3 py-2.5 font-medium text-[#1F264D]">{{ resolveScopeLabel(h.hospitalCode) }}</td>
                   <td class="px-3 py-2.5 text-center">
                     <span
                       v-if="h.status === 'success'"
@@ -542,6 +542,15 @@
               <h4 class="mb-2 flex items-center text-[12px] font-semibold text-[#1F264D]">
                 <Code2 class="mr-1.5 h-3.5 w-3.5 text-[#596080]" />
                 分母预览数据
+                <span v-if="selectedRecord?.groupByHospital && detailHospOptions.length" class="ml-3">
+                  <select
+                    v-model="selectedDetailHospCode"
+                    class="rounded border border-[#b8c9e8]/60 bg-white px-2 py-0.5 text-[11px] text-[#1F264D] focus:outline-none focus:ring-1 focus:ring-[#596080]"
+                  >
+                    <option value="">全部医院汇总</option>
+                    <option v-for="opt in detailHospOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                </span>
               </h4>
               <div class="rounded-[2px] border border-[#b8c9e8]/60 overflow-hidden">
                 <VirtualTable
@@ -795,7 +804,7 @@ const detailHospOptions = computed(() => {
   if (!selectedRecord.value?.groupByHospital || !selectedRecord.value?.hospitalResults?.length) return []
   return selectedRecord.value.hospitalResults.map((h) => ({
     value: h.hospitalCode,
-    label: h.hospitalName,
+    label: resolveScopeLabel(h.hospitalCode) || h.hospitalName || h.hospitalCode,
   }))
 })
 
@@ -841,7 +850,7 @@ onMounted(async () => {
 async function loadHospitals() {
   try {
     const res = await indicatorsApi.getHospitals()
-    hospitalList.value = (res as any)?.value || res || []
+    hospitalList.value = res || []
   } catch (e) {
     console.error('加载医院列表失败:', e)
     hospitalList.value = []
@@ -872,9 +881,6 @@ async function loadRecords(append = false) {
     if (statusFilter.value !== 'all') {
       params.status = statusFilter.value
     }
-    if (runKind.value) {
-      params.kind = runKind.value
-    }
     if (append) {
       params.offset = records.value.length
       params.limit = 100
@@ -902,9 +908,6 @@ function mapExecToRecord(exec: any): ExecutionRecord {
   const rawCalcType = exec.indicator?.calc_type ?? ind?.calc_type ?? exec.result_type ?? 'ratio'
   const isCount = rawCalcType === 'count'
   const resultType: 'ratio' | 'count' = isCount ? 'count' : 'ratio'
-  const outputCount = isCount
-    ? (exec.count ?? exec.numerator_count ?? 0)
-    : (exec.numerator_count ?? exec.denominator_count ?? 0)
   const isGroupByHospital = exec.group_by_hospital || false
   const hospitalResults = exec.hospital_results || []
   const firstHospWithData = hospitalResults.find((h: any) => h.preview_data && h.preview_data.length > 0)
@@ -919,6 +922,16 @@ function mapExecToRecord(exec: any): ExecutionRecord {
     ?? exec.denominator_preview_data?.columns
     ?? (exec.denominator_preview_data?.rows?.length ? Object.keys(exec.denominator_preview_data.rows[0]) : undefined)
   const denominatorPreviewData = exec.denominator_preview_data ?? { columns: exec.denominator_preview_columns ?? [], rows: exec.denominator_preview_rows ?? [] }
+  const resultDataLen = Array.isArray(resultData) ? resultData.length : 0
+  const outputCount = isCount
+    ? (exec.count ?? exec.numerator_count ?? resultDataLen)
+    : (exec.numerator_count ?? exec.denominator_count ?? resultDataLen)
+  const numeratorCount = isCount
+    ? (exec.count ?? exec.numerator_count ?? resultDataLen)
+    : (exec.numerator_count ?? undefined)
+  const denominatorCount = isCount
+    ? undefined
+    : (exec.denominator_count ?? undefined)
   return {
     id: String(exec.id),
     kind: exec.kind || exec.indicator?.indicator_type || 'core18',
@@ -933,8 +946,8 @@ function mapExecToRecord(exec: any): ExecutionRecord {
     dateField: exec.indicator?.date_field ?? ind?.date_field ?? 'discharge',
     outputCount,
     ratioPercent: isCount ? undefined : (exec.rate_percent ?? undefined),
-    denominatorCount: isCount ? undefined : (exec.denominator_count ?? undefined),
-    numeratorCount: isCount ? (exec.count ?? exec.numerator_count ?? 0) : (exec.numerator_count ?? undefined),
+    denominatorCount,
+    numeratorCount,
     resultType,
     resultColumns,
     resultData,
@@ -1013,6 +1026,20 @@ function buildLogs(exec: any, isCount: boolean = false): { time: string; level: 
     }
   }
   return logs
+}
+
+function resolveScopeLabel(scope: string): string {
+  if (!scope) return '全省'
+  const codes = String(scope).split(',')
+  console.log('[resolveScopeLabel] 原始 scope:', scope, '| 切割后 codes:', codes)
+  console.log('[resolveScopeLabel] hospitalOptions:', hospitalOptions.value)
+  const names = codes.map(code => {
+    const cleanCode = String(code).trim()
+    const found = hospitalOptions.value.find(o => String(o.value).trim() === cleanCode)
+    console.log(`[resolveScopeLabel] 正在匹配 code="${cleanCode}" | found:`, found)
+    return found ? found.label : cleanCode
+  })
+  return names.join(', ')
 }
 
 const currentIndicatorOptions = computed(() => {
@@ -1130,7 +1157,8 @@ async function handleRun() {
       const rawCalcType = exec.calc_type ?? exec.indicator?.calc_type ?? selectedInd?.calc_type
       const isRatio = rawCalcType !== 'count'
       const resultType: 'ratio' | 'count' = isRatio ? 'ratio' : 'count'
-      const countVal = isRatio ? numCnt : (exec.count ?? 0)
+      const previewRows = exec.preview_data?.rows ?? exec.preview_rows ?? exec.result_data ?? []
+      const countVal = isRatio ? numCnt : (exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0))
       const updatedRecord = {
         ...records.value[idx],
         status: 'success',
@@ -1138,7 +1166,7 @@ async function handleRun() {
         outputCount: countVal,
         ratioPercent: isRatio ? (rate ?? undefined) : undefined,
         denominatorCount: isRatio ? denCnt : undefined,
-        numeratorCount: isRatio ? numCnt : (exec.count ?? numCnt ?? 0),
+        numeratorCount: isRatio ? numCnt : (exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0)),
         resultType,
         resultColumns: exec.preview_data?.columns
           ?? exec.preview_columns
@@ -1325,7 +1353,8 @@ async function rerun(row: ExecutionRecord) {
     } else {
       const rawCalcType = row.resultType
       const isRatio = rawCalcType !== 'count'
-      const countVal = isRatio ? numCnt : ((exec.count ?? numCnt) || 0)
+      const previewRows = exec.preview_data?.rows ?? exec.preview_rows ?? exec.result_data ?? []
+      const countVal = isRatio ? numCnt : ((exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0)) || 0)
       records.value[i] = {
         ...records.value[i],
         status: 'success',
@@ -1333,7 +1362,7 @@ async function rerun(row: ExecutionRecord) {
         outputCount: countVal,
         ratioPercent: isRatio ? (rate ?? undefined) : undefined,
         denominatorCount: isRatio ? denCnt : undefined,
-        numeratorCount: isRatio ? numCnt : (exec.count ?? numCnt ?? 0),
+        numeratorCount: isRatio ? numCnt : (exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0)),
         resultType: isRatio ? 'ratio' : 'count',
         resultColumns: exec.preview_data?.columns
           ?? exec.preview_columns

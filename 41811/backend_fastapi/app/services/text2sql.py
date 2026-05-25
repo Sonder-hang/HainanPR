@@ -203,6 +203,7 @@ class Text2SQLService:
                         sql=result.get("sql", ""),
                         numerator_count=result.get("numerator_count"),
                         denominator_count=result.get("denominator_count"),
+                        count=result.get("count"),
                         rate_percent=result.get("rate_percent"),
                         rate_formula=result.get("rate_formula", ""),
                         result_text=result.get("analysis", ""),

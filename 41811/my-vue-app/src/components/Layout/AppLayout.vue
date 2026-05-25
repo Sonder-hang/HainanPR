@@ -106,6 +106,32 @@
               />
               <span>{{ menu.label }}</span>
             </div>
+
+            <div
+              class="mx-2 my-3 border-t border-[#7c8fab]/80"
+              role="separator"
+              aria-hidden="true"
+            />
+            <div class="mb-2 px-2 text-[11px] font-bold uppercase tracking-wider text-[#5b6b8c]">
+              专项业务监管
+            </div>
+
+            <div
+              v-for="menu in SPECIALTY_MENUS"
+              :key="menu.path"
+              class="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-3 text-left text-[13px] transition-all duration-200"
+              :class="route.path === menu.path
+                ? 'bg-[#a8c4f0] font-medium text-[#0f172a] shadow-sm'
+                : 'text-[#475569] hover:bg-white/50 hover:text-[#0f172a]'"
+              @click="goMenu(menu.path)"
+            >
+              <component
+                :is="menu.icon"
+                :size="16"
+                :class="route.path === menu.path ? 'text-[#1e40af]' : 'text-[#64748b]'"
+              />
+              <span>{{ menu.label }}</span>
+            </div>
           </nav>
         </div>
       </aside>
@@ -144,6 +170,7 @@ import {
   Building,
   ClipboardList,
   FileSpreadsheet,
+  FileSearch,
   Home,
   Monitor,
   PlayCircle,
@@ -173,7 +200,11 @@ const INDICATOR_CENTER_MENUS: MenuItem[] = [
   { path: '/report-center', label: '报表中心', icon: FileSpreadsheet },
 ]
 
-const ALL_MENUS: MenuItem[] = [...ELEMENT_MENUS, ...CORE18_MENUS, ...INDICATOR_CENTER_MENUS]
+const SPECIALTY_MENUS: MenuItem[] = [
+  { path: '/third-party-inspection', label: '第三方送检监管', icon: FileSearch },
+]
+
+const ALL_MENUS: MenuItem[] = [...ELEMENT_MENUS, ...CORE18_MENUS, ...INDICATOR_CENTER_MENUS, ...SPECIALTY_MENUS]
 
 const route = useRoute()
 const router = useRouter()

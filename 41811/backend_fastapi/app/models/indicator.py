@@ -61,6 +61,7 @@ class IndicatorExecution(Base):
     sql = Column(Text, default="")
     numerator_count = Column(Integer, nullable=True)
     denominator_count = Column(Integer, nullable=True)
+    count = Column(Integer, nullable=True)  # 计数型指标的总数量
     rate_percent = Column(Float, nullable=True)
     rate_formula = Column(String(200), default="")
     result_text = Column(Text, default="")

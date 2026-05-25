@@ -66,6 +66,16 @@ const routes: RouteRecordRaw[] = [
     name: 'report-center',
     component: () => import('../views/reportCenter/ReportCenterView.vue'),
   },
+  {
+    path: '/third-party-inspection',
+    name: 'third-party-inspection',
+    component: () => import('../views/thirdPartyInspection/ThirdPartyInspectionView.vue'),
+  },
+  {
+    path: '/third-party-inspection/add',
+    name: 'third-party-inspection-add',
+    component: () => import('../views/thirdPartyInspection/ThirdPartyInspectionAddView.vue'),
+  },
 ]
 
 const router = createRouter({
