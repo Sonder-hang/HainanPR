@@ -9,125 +9,263 @@
     </div>
 
     <template v-else>
-      <!-- 四大要素统计卡片 -->
-      <div class="grid grid-cols-4 gap-5">
-        <div
-          @click="$router.push('/personnel')"
-          class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-5 flex items-center shadow-sm hover:border-[#0A6EFD]/60 hover:shadow-md transition-all cursor-pointer"
-        >
-          <div class="w-13 h-13 rounded-full bg-blue-50 flex items-center justify-center mr-4 shrink-0">
-            <Users class="w-6 h-6 text-[#0A6EFD]" />
+      <!-- 页面标题 + 筛选器 -->
+      <div class="flex items-center justify-between">
+        <h2 class="text-[16px] font-bold text-[#1F264D]">四要素总览</h2>
+        <!-- 筛选器 -->
+        <div class="flex items-center gap-2">
+          <!-- 时间筛选 -->
+          <div class="flex items-center gap-1 border border-[#b8c9e8]/60 rounded-[2px] px-2 bg-white h-[34px]">
+            <button
+              v-for="mode in TIME_MODE_OPTIONS"
+              :key="mode.value"
+              type="button"
+              class="rounded px-2 text-[11px] transition-colors leading-[22px]"
+              :class="timeMode === mode.value
+                ? 'bg-[#0A6EFD] text-white font-medium'
+                : 'text-[#596080] hover:bg-[#e8eef9]'"
+              @click="timeMode = mode.value; refreshData()"
+            >{{ mode.label }}</button>
+            <!-- 月份选择 -->
+            <template v-if="timeMode === 'monthly'">
+              <select
+                v-model="selectedMonthYear"
+                class="border-none bg-transparent text-[11px] text-[#1F264D] focus:outline-none cursor-pointer"
+                @change="refreshData"
+              >
+                <option v-for="y in monthYearOptions" :key="y" :value="y">{{ y }}</option>
+              </select>
+              <span class="text-[#596080]">年</span>
+              <select
+                v-model="selectedMonthNum"
+                class="border-none bg-transparent text-[11px] text-[#1F264D] focus:outline-none cursor-pointer"
+                @change="refreshData"
+              >
+                <option v-for="m in MONTH_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+              </select>
+            </template>
+            <!-- 季度选择 -->
+            <template v-else-if="timeMode === 'quarterly'">
+              <select
+                v-model="selectedQuarterYear"
+                class="border-none bg-transparent text-[11px] text-[#1F264D] focus:outline-none cursor-pointer"
+                @change="refreshData"
+              >
+                <option v-for="y in quarterYearOptions" :key="y" :value="y">{{ y }}</option>
+              </select>
+              <span class="text-[#596080]">年</span>
+              <select
+                v-model="selectedQuarterNum"
+                class="border-none bg-transparent text-[11px] text-[#1F264D] focus:outline-none cursor-pointer"
+                @change="refreshData"
+              >
+                <option v-for="q in QUARTER_OPTIONS" :key="q.value" :value="q.value">{{ q.label }}</option>
+              </select>
+            </template>
           </div>
-          <div>
-            <p class="text-[12px] text-[#596080] font-medium mb-1">人员要素违规报警</p>
-            <h3 class="text-[28px] font-bold text-[#0A6EFD] leading-none">
-              {{ overviewData?.personnel_alerts ?? 0 }}
-              <span class="text-[11px] font-normal text-[#B8BCCC]">次</span>
-            </h3>
-          </div>
-        </div>
-        <div
-          @click="$router.push('/institution')"
-          class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-5 flex items-center shadow-sm hover:border-purple-500/60 hover:shadow-md transition-all cursor-pointer"
-        >
-          <div class="w-13 h-13 rounded-full bg-purple-50 flex items-center justify-center mr-4 shrink-0">
-            <Building class="w-6 h-6 text-purple-600" />
-          </div>
-          <div>
-            <p class="text-[12px] text-[#596080] font-medium mb-1">机构运行预警记录</p>
-            <h3 class="text-[28px] font-bold text-purple-600 leading-none">
-              {{ overviewData?.institution_alerts ?? 0 }}
-              <span class="text-[11px] font-normal text-[#B8BCCC]">次</span>
-            </h3>
-          </div>
-        </div>
-        <div
-          @click="$router.push('/technology')"
-          class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-5 flex items-center shadow-sm hover:border-red-500/60 hover:shadow-md transition-all cursor-pointer"
-        >
-          <div class="w-13 h-13 rounded-full bg-red-50 flex items-center justify-center mr-4 shrink-0">
-            <ShieldAlert class="w-6 h-6 text-red-600" />
-          </div>
-          <div>
-            <p class="text-[12px] text-[#596080] font-medium mb-1">医疗技术高危拦截</p>
-            <h3 class="text-[28px] font-bold text-red-600 leading-none">
-              {{ overviewData?.technology_alerts ?? 0 }}
-              <span class="text-[11px] font-normal text-[#B8BCCC]">次</span>
-            </h3>
-          </div>
-        </div>
-        <div
-          @click="$router.push('/equipment')"
-          class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-5 flex items-center shadow-sm hover:border-orange-500/60 hover:shadow-md transition-all cursor-pointer"
-        >
-          <div class="w-13 h-13 rounded-full bg-orange-50 flex items-center justify-center mr-4 shrink-0">
-            <Monitor class="w-6 h-6 text-orange-600" />
-          </div>
-          <div>
-            <p class="text-[12px] text-[#596080] font-medium mb-1">设备效能异常监测</p>
-            <h3 class="text-[28px] font-bold text-orange-600 leading-none">
-              {{ overviewData?.equipment_alerts ?? 0 }}
-              <span class="text-[11px] font-normal text-[#B8BCCC]">次</span>
-            </h3>
+          <!-- 医院筛选 -->
+          <div class="relative hospital-filter">
+            <div class="flex items-center gap-1.5 border border-[#b8c9e8]/60 rounded-[2px] px-2.5 py-1.5 cursor-pointer select-none hover:border-[#0A6EFD]/50 transition-colors bg-white text-[12px] h-[34px]"
+              @click.stop="showHospitalFilter = !showHospitalFilter"
+            >
+              <MapPin class="w-3.5 h-3.5 text-[#0A6EFD] shrink-0" />
+              <span class="font-medium text-[#1F264D]">{{ currentHospital.name }}</span>
+              <ChevronDown class="w-3.5 h-3.5 text-[#596080] shrink-0 transition-transform" :class="showHospitalFilter ? 'rotate-180' : ''" />
+            </div>
+            <div v-if="showHospitalFilter" class="absolute right-0 top-full mt-1 w-[200px] bg-white border border-[#b8c9e8]/60 rounded-[2px] shadow-lg z-50 max-h-[280px] overflow-y-auto">
+              <div
+                v-for="h in hospitalOptions"
+                :key="h.id"
+                class="flex items-center justify-between px-3 py-2 text-[12px] cursor-pointer hover:bg-[#e8eef9] transition-colors"
+                :class="currentHospitalId === h.id ? 'bg-[#e8eef9] text-[#0A6EFD] font-medium' : 'text-[#1F264D]'"
+                @click="selectHospital(h)"
+              >
+                <span>{{ h.name }}</span>
+                <span v-if="h.level" class="text-[10px] text-[#B8BCCC] shrink-0 ml-2">{{ h.level }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- 四要素分布 + 实时拦截滚动 -->
-      <div class="grid grid-cols-3 gap-5">
-        <!-- 四要素分布 -->
-        <div class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-5 shadow-sm">
-          <h3 class="text-[13px] font-bold text-[#1F264D] mb-3.5">四要素预警分布</h3>
-          <div class="space-y-3.5">
-            <div
-              v-for="item in factorStats"
-              :key="item.name"
-              @click="$router.push(item.route)"
-              class="cursor-pointer"
-            >
-              <div class="flex justify-between text-[12px] mb-1">
-                <span class="text-[#596080]">{{ item.name }}</span>
-                <span class="font-bold hover:underline" :style="{ color: item.color }">{{ item.count }}条</span>
+      <!-- 四要素统计卡片 2x2 布局 -->
+      <div class="grid grid-cols-2 gap-5">
+        <!-- 人员要素卡片 -->
+        <div
+          @click="$router.push('/personnel')"
+          class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-6 shadow-sm hover:border-[#0A6EFD]/60 hover:shadow-md transition-all cursor-pointer"
+        >
+          <div class="flex items-center mb-4">
+            <div class="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center mr-4 shrink-0">
+              <Users class="w-7 h-7 text-[#0A6EFD]" />
+            </div>
+            <div>
+              <p class="text-[13px] text-[#596080] font-medium mb-0.5">人员要素违规报警</p>
+              <h3 class="text-[32px] font-bold text-[#0A6EFD] leading-none">
+                {{ stats.personnel }}
+                <span class="text-[12px] font-normal text-[#B8BCCC]">次</span>
+              </h3>
+            </div>
+          </div>
+          <!-- 重点指标预警 -->
+          <div>
+            <h4 class="text-[12px] font-medium text-[#596080] mb-2">重点指标预警</h4>
+            <div class="space-y-2">
+              <div
+                v-for="item in topIndicators.personnel"
+                :key="item.name"
+                @click="$router.push('/personnel')"
+                class="cursor-pointer"
+              >
+                <div class="flex justify-between text-[11px] mb-0.5">
+                  <span class="text-[#596080] truncate flex-1 mr-2">{{ item.name }}</span>
+                  <span class="font-bold hover:underline text-[#0A6EFD] shrink-0">{{ item.count }}条</span>
+                </div>
+                <div class="h-1.5 bg-[#e8eef9] rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500 hover:opacity-80 bg-[#0A6EFD]"
+                    :style="{ width: `${item.percent}%` }"
+                  ></div>
+                </div>
               </div>
-              <div class="h-2 bg-[#e8eef9] rounded-full overflow-hidden">
-                <div
-                  class="h-full rounded-full transition-all duration-500 hover:opacity-80"
-                  :style="{ width: `${item.percent}%`, backgroundColor: item.color }"
-                ></div>
+              <div v-if="topIndicators.personnel.length === 0" class="text-[12px] text-[#B8BCCC] text-center py-2">
+                暂无数据
               </div>
             </div>
           </div>
         </div>
 
-        <!-- 实时拦截滚动 -->
-        <div class="col-span-2 bg-white rounded-[2px] border border-[#b8c9e8]/60 p-5 shadow-sm">
-          <div class="flex items-center justify-between mb-3.5">
-            <h3 class="text-[13px] font-bold text-[#1F264D] flex items-center">
-              <span class="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span>
-              实时拦截/预警滚动屏
-            </h3>
-            <span class="text-[11px] text-[#B8BCCC]">近24小时</span>
+        <!-- 机构要素卡片 -->
+        <div
+          @click="$router.push('/institution')"
+          class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-6 shadow-sm hover:border-purple-500/60 hover:shadow-md transition-all cursor-pointer"
+        >
+          <div class="flex items-center mb-4">
+            <div class="w-14 h-14 rounded-full bg-purple-50 flex items-center justify-center mr-4 shrink-0">
+              <Building class="w-7 h-7 text-purple-600" />
+            </div>
+            <div>
+              <p class="text-[13px] text-[#596080] font-medium mb-0.5">机构运行预警记录</p>
+              <h3 class="text-[32px] font-bold text-purple-600 leading-none">
+                {{ stats.institution }}
+                <span class="text-[12px] font-normal text-[#B8BCCC]">次</span>
+              </h3>
+            </div>
           </div>
-          <div class="space-y-2.5">
-            <div
-              v-for="(item, i) in overviewData?.recent_alerts ?? mockAlerts"
-              :key="i"
-              class="flex items-center justify-between p-2.5 hover:bg-[#e8eef9]/50 rounded-[2px] border transition-colors"
-              :class="item.level === 'high' ? 'border-red-200/60' : 'border-[#b8c9e8]/40'"
-            >
-              <div class="flex items-center gap-3">
-                <span class="text-[11px] text-[#B8BCCC] font-mono">{{ formatTime(item.time) }}</span>
-                <span
-                  :class="['px-2 py-0.5 rounded-full text-[10px] font-medium border', item.level === 'high' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-orange-50 text-orange-600 border-orange-200']"
-                >
-                  {{ item.level === 'high' ? '高危' : '预警' }}
-                </span>
-                <span class="text-[12px] font-medium text-[#1F264D]">{{ item.message }}</span>
+          <!-- 重点指标预警 -->
+          <div>
+            <h4 class="text-[12px] font-medium text-[#596080] mb-2">重点指标预警</h4>
+            <div class="space-y-2">
+              <div
+                v-for="item in topIndicators.institution"
+                :key="item.name"
+                @click="$router.push('/institution')"
+                class="cursor-pointer"
+              >
+                <div class="flex justify-between text-[11px] mb-0.5">
+                  <span class="text-[#596080] truncate flex-1 mr-2">{{ item.name }}</span>
+                  <span class="font-bold hover:underline text-purple-600 shrink-0">{{ item.count }}条</span>
+                </div>
+                <div class="h-1.5 bg-[#e8eef9] rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500 hover:opacity-80 bg-purple-600"
+                    :style="{ width: `${item.percent}%` }"
+                  ></div>
+                </div>
               </div>
-              <RouterLink
-                :to="getNavPath(item.message)"
-                class="text-[#0A6EFD] text-[11px] hover:underline font-medium"
-              >前往核查</RouterLink>
+              <div v-if="topIndicators.institution.length === 0" class="text-[12px] text-[#B8BCCC] text-center py-2">
+                暂无数据
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 技术要素卡片 -->
+        <div
+          @click="$router.push('/technology')"
+          class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-6 shadow-sm hover:border-red-500/60 hover:shadow-md transition-all cursor-pointer"
+        >
+          <div class="flex items-center mb-4">
+            <div class="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mr-4 shrink-0">
+              <ShieldAlert class="w-7 h-7 text-red-600" />
+            </div>
+            <div>
+              <p class="text-[13px] text-[#596080] font-medium mb-0.5">医疗技术高危拦截</p>
+              <h3 class="text-[32px] font-bold text-red-600 leading-none">
+                {{ stats.technology }}
+                <span class="text-[12px] font-normal text-[#B8BCCC]">次</span>
+              </h3>
+            </div>
+          </div>
+          <!-- 重点指标预警 -->
+          <div>
+            <h4 class="text-[12px] font-medium text-[#596080] mb-2">重点指标预警</h4>
+            <div class="space-y-2">
+              <div
+                v-for="item in topIndicators.technology"
+                :key="item.name"
+                @click="$router.push('/technology')"
+                class="cursor-pointer"
+              >
+                <div class="flex justify-between text-[11px] mb-0.5">
+                  <span class="text-[#596080] truncate flex-1 mr-2">{{ item.name }}</span>
+                  <span class="font-bold hover:underline text-red-600 shrink-0">{{ item.count }}条</span>
+                </div>
+                <div class="h-1.5 bg-[#e8eef9] rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500 hover:opacity-80 bg-red-600"
+                    :style="{ width: `${item.percent}%` }"
+                  ></div>
+                </div>
+              </div>
+              <div v-if="topIndicators.technology.length === 0" class="text-[12px] text-[#B8BCCC] text-center py-2">
+                暂无数据
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 设备要素卡片 -->
+        <div
+          @click="$router.push('/equipment')"
+          class="bg-white rounded-[2px] border border-[#b8c9e8]/60 p-6 shadow-sm hover:border-orange-500/60 hover:shadow-md transition-all cursor-pointer"
+        >
+          <div class="flex items-center mb-4">
+            <div class="w-14 h-14 rounded-full bg-orange-50 flex items-center justify-center mr-4 shrink-0">
+              <Monitor class="w-7 h-7 text-orange-600" />
+            </div>
+            <div>
+              <p class="text-[13px] text-[#596080] font-medium mb-0.5">设备效能异常监测</p>
+              <h3 class="text-[32px] font-bold text-orange-600 leading-none">
+                {{ stats.equipment }}
+                <span class="text-[12px] font-normal text-[#B8BCCC]">次</span>
+              </h3>
+            </div>
+          </div>
+          <!-- 重点指标预警 -->
+          <div>
+            <h4 class="text-[12px] font-medium text-[#596080] mb-2">重点指标预警</h4>
+            <div class="space-y-2">
+              <div
+                v-for="item in topIndicators.equipment"
+                :key="item.name"
+                @click="$router.push('/equipment')"
+                class="cursor-pointer"
+              >
+                <div class="flex justify-between text-[11px] mb-0.5">
+                  <span class="text-[#596080] truncate flex-1 mr-2">{{ item.name }}</span>
+                  <span class="font-bold hover:underline text-orange-600 shrink-0">{{ item.count }}条</span>
+                </div>
+                <div class="h-1.5 bg-[#e8eef9] rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500 hover:opacity-80 bg-orange-600"
+                    :style="{ width: `${item.percent}%` }"
+                  ></div>
+                </div>
+              </div>
+              <div v-if="topIndicators.equipment.length === 0" class="text-[12px] text-[#B8BCCC] text-center py-2">
+                暂无数据
+              </div>
             </div>
           </div>
         </div>
@@ -138,7 +276,7 @@
         <h3 class="text-[13px] font-bold text-[#1F264D] mb-3.5">重点预警分类统计</h3>
         <div class="grid grid-cols-5 gap-3">
           <div
-            v-for="item in overviewData?.alert_categories ?? alertCategories"
+            v-for="item in alertCategories"
             :key="item.name"
             @click="$router.push(item.route)"
             class="text-center p-3 border border-[#b8c9e8]/40 rounded-[2px] hover:bg-[#e8eef9]/30 hover:border-[#0A6EFD]/50 transition-all cursor-pointer"
@@ -153,84 +291,229 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { RouterLink } from 'vue-router'
-import { Building, Monitor, ShieldAlert, Users } from 'lucide-vue-next'
-import { dashboardApi, type DashboardOverview, type FactorDistribution } from '@/api/dashboard'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { Building, MapPin, ChevronDown, Monitor, ShieldAlert, Users } from 'lucide-vue-next'
+import {
+  TIME_MODE_OPTIONS,
+  MONTH_OPTIONS,
+  QUARTER_OPTIONS,
+  type TimeMode,
+  useFourFactorExecutions,
+} from '@/composables/useFourFactorExecutions'
+
+// 预警分类颜色配置
+const ALERT_COLORS = ['#dc2626', '#7c3aed', '#2563eb', '#ea580c', '#9333ea']
 
 const loading = ref(true)
-const overviewData = ref<DashboardOverview | null>(null)
+const showHospitalFilter = ref(false)
+const currentHospitalId = ref('all')
 
-/** 四要素条数（与顶部卡片一致）；图表按条数从高到低排序，条形宽度相对最大值等比缩放 */
-const factorStats = computed(() => {
-  const distribution = overviewData.value?.factor_distribution ?? []
-  if (!distribution.length) {
-    // 兜底静态数据
-    return [
-      { name: '人员要素', count: 0, color: '#0A6EFD', route: '/personnel', percent: 0 },
-      { name: '机构要素', count: 0, color: '#7c3aed', route: '/institution', percent: 0 },
-      { name: '技术要素', count: 0, color: '#dc2626', route: '/technology', percent: 0 },
-      { name: '设备要素', count: 0, color: '#ea580c', route: '/equipment', percent: 0 },
-    ]
+// 使用 composable
+const {
+  fetchHospitals,
+  fetchExecutions,
+  fetchIndicators,
+  getLatestSuccess,
+  getCountByHospital,
+  getIndicatorCategory,
+  getIndicatorName,
+  hospitalList,
+  executionRecords,
+} = useFourFactorExecutions()
+
+// 时间筛选状态
+const timeMode = ref<TimeMode>('immediate')
+const selectedMonthYear = ref(new Date().getFullYear().toString())
+const selectedMonthNum = ref('01')
+const selectedQuarterYear = ref(new Date().getFullYear().toString())
+const selectedQuarterNum = ref('1')
+
+// 计算当前时间值
+const currentTimeValue = computed(() => {
+  if (timeMode.value === 'monthly') {
+    return `${selectedMonthYear.value}-${selectedMonthNum.value}`
   }
-  const max = Math.max(...distribution.map((x) => x.count), 1)
-  return [...distribution]
-    .sort((a, b) => b.count - a.count)
-    .map((x) => ({
-      name: x.name,
-      count: x.count,
-      color: x.color,
-      route: x.route,
-      percent: Math.round((x.count / max) * 100),
-    }))
+  if (timeMode.value === 'quarterly') {
+    return `${selectedQuarterYear.value}-Q${selectedQuarterNum.value}`
+  }
+  return undefined
 })
 
-const mockAlerts = [
-  { time: new Date().toISOString(), msg: '【技术要素】县人民医院疑似侵害未成年人高风险诊断线索。', level: 'high' },
-  { time: new Date().toISOString(), msg: '【人员要素】赵伟医师25分钟内跨越30公里产生门诊处方记录。', level: 'high' },
-  { time: new Date().toISOString(), msg: '【人员要素】越权开具特殊级抗生素（美罗培南）预警。', level: 'warning' },
-  { time: new Date().toISOString(), msg: '【机构要素】省立第一医院单日住院收治人数超出核定床位数。', level: 'warning' },
-  { time: new Date().toISOString(), msg: '【设备要素】某县人民医院CT设备阳性率异常，高达95%。', level: 'warning' },
-]
-
-const alertCategories = [
-  { name: '越权开具抗生素', count: 36, color: '#dc2626', route: '/personnel?tab=r1' },
-  { name: '时空轨迹异常', count: 28, color: '#7c3aed', route: '/personnel?tab=r2' },
-  { name: '多点执业冲突', count: 19, color: '#2563eb', route: '/personnel?tab=r3' },
-  { name: '超范围经营', count: 15, color: '#ea580c', route: '/institution?tab=r4' },
-  { name: '收治能力超限', count: 23, color: '#9333ea', route: '/institution?tab=r5' },
-]
-
-function getNavPath(msg: string) {
-  if (msg.includes('人员要素')) return '/personnel'
-  if (msg.includes('机构要素')) return '/institution'
-  if (msg.includes('技术要素')) return '/technology'
-  if (msg.includes('设备要素')) return '/equipment'
-  return '/dashboard'
-}
-
-function formatTime(isoString: string) {
-  try {
-    const d = new Date(isoString)
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  } catch {
-    return '--:--'
+// 月份年份选项
+const monthYearOptions = computed(() => {
+  const now = new Date()
+  const cur = now.getFullYear()
+  const years: number[] = []
+  for (let y = cur - 5; y <= cur + 1; y++) {
+    years.push(y)
   }
+  return years
+})
+
+// 季度年份选项
+const quarterYearOptions = computed(() => {
+  const now = new Date()
+  const cur = now.getFullYear()
+  const years: number[] = []
+  for (let y = cur - 5; y <= cur + 1; y++) {
+    years.push(y)
+  }
+  return years
+})
+
+interface Hospital {
+  id: string
+  name: string
+  level?: string
 }
 
-async function loadData() {
+const hospitalOptions = computed<Hospital[]>(() => [
+  { id: 'all', name: '全省', level: '' },
+  ...hospitalList.value.map(h => ({ id: h.MDC_ORG_CD, name: h.MDC_ORG_NM })),
+])
+
+const currentHospital = computed(() =>
+  hospitalOptions.value.find(h => h.id === currentHospitalId.value) || hospitalOptions.value[0]
+)
+
+function selectHospital(h: Hospital) {
+  currentHospitalId.value = h.id
+  showHospitalFilter.value = false
+  refreshData()
+}
+
+// 统计数据
+const stats = ref({
+  personnel: 0,
+  institution: 0,
+  technology: 0,
+  equipment: 0,
+})
+
+// Top 指标数据
+const topIndicators = ref<Record<string, { name: string; count: number; percent: number }[]>>({
+  personnel: [],
+  institution: [],
+  technology: [],
+  equipment: [],
+})
+
+// 预警分类统计
+const alertCategories = ref<{ name: string; count: number; color: string; route: string }[]>([])
+
+// 刷新数据
+async function refreshData() {
   loading.value = true
   try {
-    overviewData.value = await dashboardApi.getOverview()
-  } catch (e) {
-    console.error('加载总览数据失败:', e)
+    // 按分类汇总数据
+    const categoryData: Record<string, { total: number; indicators: Map<string, number> }> = {
+      personnel: { total: 0, indicators: new Map() },
+      institution: { total: 0, indicators: new Map() },
+      technology: { total: 0, indicators: new Map() },
+      equipment: { total: 0, indicators: new Map() },
+    }
+
+    // 所有指标计数列表（用于预警分类统计）
+    const allIndicators: { name: string; count: number; category: string }[] = []
+
+    // 获取所有指标的唯一 ID
+    const indicatorIds = [...new Set(executionRecords.value.map(r => r.indicator_id))]
+
+    // 对每个指标获取计数
+    for (const indicatorId of indicatorIds) {
+      let count: number
+      
+      if (currentHospitalId.value === 'all') {
+        const rec = getLatestSuccess(indicatorId, timeMode.value, currentTimeValue.value)
+        count = rec?.numerator_count ?? 0
+      } else {
+        const result = await getCountByHospital(indicatorId, currentHospitalId.value, timeMode.value, currentTimeValue.value)
+        count = result < 0 ? 0 : result
+      }
+
+      if (count <= 0) continue
+
+      // 获取指标名称和分类
+      const indicatorName = getIndicatorName(indicatorId)
+      const category = getIndicatorCategory(indicatorId)
+
+      // 记录到所有指标列表
+      allIndicators.push({ name: indicatorName, count, category })
+
+      // 累加到对应分类
+      categoryData[category].total += count
+      const existingCount = categoryData[category].indicators.get(indicatorName) || 0
+      categoryData[category].indicators.set(indicatorName, existingCount + count)
+    }
+
+    // 更新统计数据
+    stats.value.personnel = categoryData.personnel.total
+    stats.value.institution = categoryData.institution.total
+    stats.value.technology = categoryData.technology.total
+    stats.value.equipment = categoryData.equipment.total
+
+    // 计算最大分类计数，用于百分比
+    const maxTotal = Math.max(
+      stats.value.personnel,
+      stats.value.institution,
+      stats.value.technology,
+      stats.value.equipment,
+      1
+    )
+
+    // 构建 top 指标数据（每个分类取前3个）
+    const buildTopIndicators = (category: string): { name: string; count: number; percent: number }[] => {
+      const indicators = categoryData[category as keyof typeof categoryData].indicators
+      const entries = Array.from(indicators.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+      return entries.map(([name, count]) => ({
+        name,
+        count,
+        percent: Math.round((count / maxTotal) * 100),
+      }))
+    }
+
+    topIndicators.value = {
+      personnel: buildTopIndicators('personnel'),
+      institution: buildTopIndicators('institution'),
+      technology: buildTopIndicators('technology'),
+      equipment: buildTopIndicators('equipment'),
+    }
+
+    // 更新预警分类统计（展示所有指标中 count 最大的前5个）
+    const top5Indicators = allIndicators
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+
+    alertCategories.value = top5Indicators.map((item, idx) => ({
+      name: item.name,
+      count: item.count,
+      color: ALERT_COLORS[idx % ALERT_COLORS.length],
+      route: `/${item.category === 'personnel' ? 'personnel' : item.category === 'institution' ? 'institution' : item.category === 'technology' ? 'technology' : 'equipment'}`,
+    }))
+
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
-  loadData()
+function handleClickOutside(e: MouseEvent) {
+  if (!(e.target as HTMLElement).closest('.hospital-filter')) {
+    showHospitalFilter.value = false
+  }
+}
+
+onMounted(async () => {
+  document.addEventListener('click', handleClickOutside)
+  await fetchHospitals()
+  await fetchIndicators()
+  await fetchExecutions()
+  await refreshData()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 

@@ -39,6 +39,8 @@ export const API_ENDPOINTS = {
 
   // 执行相关
   indicatorExecution: `${API_BASE_URL}/api/indicators/execution/`,
+  executionByHospital: (indicatorId: number, hospitalCode: string) =>
+    `${API_BASE_URL}/api/indicators/execution/by-hospital/?indicator_id=${indicatorId}&hospital_code=${hospitalCode}`,
   deleteExecution: (id: number) => `${API_BASE_URL}/api/indicators/execution/${id}`,
   executeIndicator: `${API_BASE_URL}/api/indicators/execute/`,
   executeIndicatorStream: `${API_BASE_URL}/api/indicators/execute/stream/`,

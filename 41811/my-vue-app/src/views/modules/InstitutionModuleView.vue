@@ -20,6 +20,51 @@
       <h2 class="text-[14px] font-bold text-[#1F264D] mb-4 flex items-center">
         <Activity class="w-4 h-4 mr-2 text-[#0A6EFD]" />
         机构要素 — 监管规则总览
+        <span class="ml-auto flex items-center gap-2">
+          <!-- 时间筛选 -->
+          <div class="flex items-center gap-1 border border-[#b8c9e8]/60 rounded-[2px] px-2 bg-white text-[12px] h-[34px]">
+            <button
+              v-for="mode in TIME_MODE_OPTIONS"
+              :key="mode.value"
+              type="button"
+              class="rounded px-2 text-[11px] transition-colors leading-[22px]"
+              :class="timeMode === mode.value
+                ? 'bg-[#0A6EFD] text-white font-medium'
+                : 'text-[#596080] hover:bg-[#e8eef9]'"
+              @click="timeMode = mode.value; hospitalVersion++"
+            >{{ mode.label }}</button>
+            <template v-if="timeMode === 'monthly'">
+              <select
+                v-model="selectedMonthYear"
+                class="border-none bg-transparent text-[11px] text-[#1F264D] focus:outline-none cursor-pointer"
+              >
+                <option v-for="y in monthYearOptions" :key="y" :value="y">{{ y }}</option>
+              </select>
+              <span class="text-[#596080]">年</span>
+              <select
+                v-model="selectedMonthNum"
+                class="border-none bg-transparent text-[11px] text-[#1F264D] focus:outline-none cursor-pointer"
+              >
+                <option v-for="m in MONTH_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+              </select>
+            </template>
+            <template v-else-if="timeMode === 'quarterly'">
+              <select
+                v-model="selectedQuarterYear"
+                class="border-none bg-transparent text-[11px] text-[#1F264D] focus:outline-none cursor-pointer"
+              >
+                <option v-for="y in quarterYearOptions" :key="y" :value="y">{{ y }}</option>
+              </select>
+              <span class="text-[#596080]">年</span>
+              <select
+                v-model="selectedQuarterNum"
+                class="border-none bg-transparent text-[11px] text-[#1F264D] focus:outline-none cursor-pointer"
+              >
+                <option v-for="q in QUARTER_OPTIONS" :key="q.value" :value="q.value">{{ q.label }}</option>
+              </select>
+            </template>
+          </div>
+        </span>
       </h2>
       <div class="mb-5 bg-blue-50 border border-blue-200 rounded-[2px] p-3.5 text-[13px] text-blue-800">
         <p class="font-medium mb-0.5 text-[13px]">规则说明</p>
@@ -55,7 +100,7 @@
                 {{ rule.mode === 'alert' ? '预警模式' : '常规监测' }}
               </span>
               <span class="text-[11px] font-bold" :class="rule.mode === 'alert' ? 'text-red-600' : 'text-emerald-600'">
-                {{ rule.mode === 'alert' ? `${getMockCount(rule.id)} 条` : rule.metric }}
+                {{ getRuleCount(rule) }}
               </span>
             </div>
           </div>
@@ -119,32 +164,24 @@
 
           <!-- 预警模式表格（r4/r5） -->
           <div v-if="currentRule?.mode === 'alert'" class="flex-1 overflow-auto">
-            <table class="w-full text-left border-collapse">
+            <!-- 真实数据：动态列 -->
+            <table v-if="realTableData.length > 0" class="w-full text-left border-collapse">
               <thead class="bg-[#e8eef9] sticky top-0 z-10">
                 <tr>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">预警时间</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">涉事机构</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">违规类型</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">违规详情</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide text-right">操作</th>
+                  <th v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <tr v-for="row in tableData" :key="row.id" class="hover:bg-[#e8eef9]/40 transition-colors">
-                  <td class="px-3.5 py-2.5 text-[12px] text-[#596080] whitespace-nowrap"><Clock class="w-3 h-3 inline mr-1 text-[#B8BCCC]"/>{{ row.time }}</td>
-                  <td class="px-3.5 py-2.5 text-[12px] text-[#1F264D] font-medium">{{ row.org }}</td>
-                  <td class="px-3.5 py-2.5 text-[12px]">
-                    <span class="px-2 py-0.5 text-[11px] rounded-full bg-red-100 text-red-600 border border-red-200">{{ row.violationType }}</span>
-                  </td>
-                  <td class="px-3.5 py-2.5 text-[12px] text-[#1F264D] max-w-xs truncate" :title="row.detail">{{ row.detail }}</td>
-                  <td class="px-3.5 py-2.5 text-[12px] text-right">
-                    <button @click="openDrawer(row)" class="text-[#0A6EFD] hover:text-[#1F264D] font-medium flex items-center justify-end w-full text-[11px]">
-                      <Eye class="w-3 h-3 mr-1" /> 查看详情
-                    </button>
-                  </td>
+                  <td v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[12px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
+            <div v-else class="flex flex-col items-center justify-center py-16 text-[#9CA3AF]">
+              <Activity class="w-12 h-12 mb-3 opacity-30" />
+              <p class="text-[13px]">暂无预警数据</p>
+              <p class="text-[11px] mt-1">请在「指标执行」页面执行相应指标</p>
+            </div>
           </div>
 
           <!-- 常规监测表格（r6/r7） -->
@@ -163,36 +200,29 @@
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <!-- r6 科目零业务 -->
                 <template v-if="currentRule?.id === 'r6'">
-                  <tr v-for="row in tableData" :key="row.id" class="hover:bg-emerald-50/40 transition-colors">
-                    <td class="px-3.5 py-3 text-[12px] text-[#1F264D] font-medium flex items-center">
-                      <Building class="w-3.5 h-3.5 text-emerald-500 mr-2" /> {{ row.org }}
-                    </td>
-                    <td class="px-3.5 py-3 text-[12px] text-[#596080]">{{ row.subject }}</td>
-                    <td class="px-3.5 py-3 text-[12px] font-bold text-red-600">{{ row.zeroMonths }} 月</td>
-                    <td class="px-3.5 py-3 text-[12px]">
-                      <span :class="['px-2 py-0.5 text-[11px] rounded-full border', row.zeroMonths >= 3 ? 'border-red-200 text-red-600 bg-red-50' : 'border-orange-200 text-orange-600 bg-orange-50']">
-                        {{ row.zeroMonths >= 3 ? '触发预警' : '监测中' }}
-                      </span>
-                    </td>
-                    <td class="px-3.5 py-3 text-[12px] text-right">
-                      <button @click="openDrawer(row)" class="text-[#0A6EFD] hover:text-[#1F264D] font-medium text-[11px]">
-                        <Eye class="w-3 h-3 inline mr-1" />查看明细
-                      </button>
+                  <tr v-if="realTableData.length > 0" v-for="row in tableData" :key="row.id" class="hover:bg-emerald-50/40 transition-colors">
+                    <td v-for="col in realTableColumns" :key="col" class="px-3.5 py-3 text-[12px] text-[#596080]">{{ row[col] ?? '-' }}</td>
+                  </tr>
+                  <tr v-if="realTableData.length === 0">
+                    <td colspan="5" class="px-3.5 py-12 text-center text-[#9CA3AF]">
+                      <Activity class="w-10 h-10 mx-auto mb-2 opacity-30" />
+                      <p class="text-[13px]">暂无监测数据</p>
+                      <p class="text-[11px] mt-1">请在「指标执行」页面执行相应指标</p>
                     </td>
                   </tr>
                 </template>
-                <!-- r7 医疗资质监测 -->
+                <!-- r7 医疗资质监测（保留 mock） -->
                 <template v-else-if="currentRule?.id === 'r7'">
                   <tr v-for="row in tableData" :key="row.id" class="hover:bg-emerald-50/40 transition-colors">
                     <td class="px-3.5 py-3 text-[12px] text-[#1F264D] font-medium flex items-center">
-                      <Building class="w-3.5 h-3.5 text-emerald-500 mr-2" /> {{ row.org }}
+                      <Building class="w-3.5 h-3.5 text-emerald-500 mr-2" /> {{ row.org || '-' }}
                     </td>
                     <td class="px-3.5 py-3 text-[12px]">
-                      <span class="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">{{ row.category }}</span>
-                      <span class="ml-1 text-[11px] text-[#596080]">{{ row.level }}</span>
+                      <span class="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">{{ row.category || '-' }}</span>
+                      <span class="ml-1 text-[11px] text-[#596080]">{{ row.level || '-' }}</span>
                     </td>
                     <td class="px-3.5 py-3 text-[12px]">
-                      <span :class="row.licenseValid ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'">{{ row.licensePeriod }}</span>
+                      <span :class="row.licenseValid ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'">{{ row.licensePeriod || '-' }}</span>
                       <span class="ml-1.5 rounded px-1 py-0.5 text-[10px] font-medium" :class="row.licenseValid ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'">{{ row.licenseValid ? '有效' : '过期' }}</span>
                     </td>
                     <td class="px-3.5 py-3 text-[12px]">
@@ -200,7 +230,7 @@
                     </td>
                     <td class="px-3.5 py-3 text-[12px]">
                       <span v-if="row.riskCount > 0" class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-500">
-                        <AlertTriangle class="w-3 h-3" />{{ row.riskCount }} 项预警
+                        <AlertTriangle class="w-3 h-3"/>{{ row.riskCount }} 项预警
                       </span>
                       <span v-else class="text-[#9CA3AF]">暂无预警</span>
                     </td>
@@ -425,7 +455,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Activity,
@@ -443,17 +473,67 @@ import {
   X,
 } from 'lucide-vue-next'
 import { exportToExcel } from '../../utils/exportExcel'
+import { useFourFactorExecutions, TIME_MODE_OPTIONS, MONTH_OPTIONS, QUARTER_OPTIONS } from '../../composables/useFourFactorExecutions'
+import type { TimeMode } from '../../composables/useFourFactorExecutions'
 
 const route = useRoute()
 const router = useRouter()
+const { fetchExecutions, executionRecords, formatCountInMetric } = useFourFactorExecutions()
 
+// 用于触发医院筛选变化时的重算（当前固定为全选，未来扩展筛选时自动生效）
+const hospitalVersion = ref(0)
+const currentHospitalId = ref('all')
+
+// 时间筛选状态
+const timeMode = ref<TimeMode>('immediate')
+const selectedMonthYear = ref(new Date().getFullYear().toString())
+const selectedMonthNum = ref('01')
+const selectedQuarterYear = ref(new Date().getFullYear().toString())
+const selectedQuarterNum = ref('1')
+
+// 计算当前时间值
+const currentTimeValue = computed(() => {
+  if (timeMode.value === 'monthly') {
+    return `${selectedMonthYear.value}-${selectedMonthNum.value}`
+  }
+  if (timeMode.value === 'quarterly') {
+    return `${selectedQuarterYear.value}-Q${selectedQuarterNum.value}`
+  }
+  return undefined
+})
+
+// 月份年份选项（从5年前到当前年份+1年）
+const monthYearOptions = computed(() => {
+  const now = new Date()
+  const cur = now.getFullYear()
+  const start = cur - 5
+  const years: number[] = []
+  for (let y = start; y <= cur + 1; y++) {
+    years.push(y)
+  }
+  return years
+})
+
+// 季度年份选项（从5年前到当前年份+1年）
+const quarterYearOptions = computed(() => {
+  const now = new Date()
+  const cur = now.getFullYear()
+  const start = cur - 5
+  const years: number[] = []
+  for (let y = start; y <= cur + 1; y++) {
+    years.push(y)
+  }
+  return years
+})
+
+// indicator_id 对应 indicator.id（规则 ID 去掉 'r'）
 const rules = [
   // 红色预警规则
-  { id: 'r4', mode: 'alert' as const, name: '超范围经营', desc: '诊断治疗与机构诊疗科目不符，系统自动报警。', scope: '住院', dimension: '资质审核', metric: '2 条', logic: '在系统中维护医疗机构诊疗科目信息，设定"诊断治疗-诊疗科目"匹配规则，医生开了与该医疗机构诊疗科目不符的诊断时自动报警。' },
-  { id: 'r5', mode: 'alert' as const, name: '收治能力超限', desc: '面积、床位与当日住院收治人数比例异常，系统自动拦截。', scope: '住院', dimension: '容量监测', metric: '2 条', logic: '在系统中设定"面积-床位-住院收治上限"联动模型，机构面积、床位数与当日在院患者人数比例异常时自动拦截，通报医保拒绝结算。' },
+  { id: 'r4', indicator_id: 4, mode: 'alert' as const, name: '超范围经营', desc: '诊断治疗与机构诊疗科目不符，系统自动报警。', scope: '住院', dimension: '资质审核', metric: '2 条', logic: '在系统中维护医疗机构诊疗科目信息，设定"诊断治疗-诊疗科目"匹配规则，医生开了与该医疗机构诊疗科目不符的诊断时自动报警。' },
+  { id: 'r5', indicator_id: 5, mode: 'alert' as const, name: '收治能力超限', desc: '面积、床位与当日住院收治人数比例异常，系统自动拦截。', scope: '住院', dimension: '容量监测', metric: '2 条', logic: '在系统中设定"面积-床位-住院收治上限"联动模型，机构面积、床位数与当日在院患者人数比例异常时自动拦截，通报医保拒绝结算。' },
   // 绿色常规监测规则
-  { id: 'r6', mode: 'monitor' as const, name: '科目零业务监测', desc: '单一诊疗科目连续3个月"零"业务量统计，异常报警。', scope: '住院', dimension: '业务量监测', metric: '3 项异常', logic: '在系统中设定"机构-诊疗科目-业务量"匹配规则，对单一诊疗科目连续3个月"零"业务量的自动报警。' },
-  { id: 'r7', mode: 'monitor' as const, name: '医疗资质监测', desc: '展示机构基本信息、执业许可证、标准核验及风险预警等资质档案。', scope: '综合档案', dimension: '资质监测', metric: '完整档案', logic: '通过卫健委电子证照系统与病案首页实时同步，展示机构基本信息、执业许可证（正副本）、基本标准核验、补充信息及风险预警等多维度资质档案。' },
+  { id: 'r6', indicator_id: 6, mode: 'monitor' as const, name: '科目零业务监测', desc: '单一诊疗科目连续3个月"零"业务量统计，异常报警。', scope: '住院', dimension: '业务量监测', metric: '3 项异常', logic: '在系统中设定"机构-诊疗科目-业务量"匹配规则，对单一诊疗科目连续3个月"零"业务量的自动报警。' },
+  { id: 'r7', indicator_id: 0, mode: 'monitor' as const, name: '医疗资质监测', desc: '展示机构基本信息、执业许可证、标准核验及风险预警等资质档案。', scope: '综合档案', dimension: '资质监测', metric: '完整档案', logic: '通过卫健委电子证照系统与病案首页实时同步，展示机构基本信息、执业许可证（正副本）、基本标准核验、补充信息及风险预警等多维度资质档案。' },
 ]
 
 const tabs = [{ id: 'overview', name: '分类总览' }, ...rules]
@@ -467,6 +547,10 @@ const keyword = ref('')
 
 watch(activeTab, (val) => {
   router.replace({ query: val === 'overview' ? {} : { tab: val } })
+})
+
+onMounted(() => {
+  fetchExecutions()
 })
 
 const MOCK_DATA: Record<string, any[]> = {
@@ -534,6 +618,12 @@ const MOCK_DATA: Record<string, any[]> = {
 }
 
 const tableData = computed(() => {
+  const rule = currentRule.value
+  // r4/r5 (alert) 和 r6 (monitor)：真实数据
+  if (rule?.mode === 'alert' || rule?.id === 'r6') {
+    return realTableData.value
+  }
+  // r7：mock 数据
   let result = MOCK_DATA[activeTab.value] || []
   if (keyword.value) {
     result = result.filter((item: any) =>
@@ -549,7 +639,76 @@ const tableData = computed(() => {
   return result
 })
 
-const getMockCount = (id: string) => MOCK_DATA[id]?.length || 0
+// 当前规则对应的指标 ID
+const currentIndicatorId = computed(() => {
+  const rule = currentRule.value
+  return rule?.indicator_id && rule.indicator_id > 0 ? rule.indicator_id : null
+})
+
+// 真实预览数据列名
+const realTableColumns = computed(() => {
+  void hospitalVersion.value
+  const indId = currentIndicatorId.value
+  if (!indId) return []
+  const rec = findExecutionByTime(indId)
+  const preview = rec?.preview_data
+  if (!preview) return []
+  return preview.columns || (preview.rows?.[0] ? Object.keys(preview.rows[0]) : [])
+})
+
+// 真实预览数据
+const realTableData = computed(() => {
+  void hospitalVersion.value
+  const indId = currentIndicatorId.value
+  if (!indId) return []
+  const rec = findExecutionByTime(indId)
+  const preview = rec?.preview_data
+  if (!preview || !preview.rows?.length) return []
+  const cols = preview.columns || Object.keys(preview.rows[0])
+  return preview.rows.map((row, idx) => {
+    const item: any = { id: String(idx + 1), _raw: row }
+    for (const col of cols) {
+      item[col] = row[col]
+    }
+    return item
+  })
+})
+
+/**
+ * 注释：以下函数已废弃，请使用 getRuleCount 替代
+ * const getMockCount = (id: string) => {
+ *   const rule = rules.find(r => r.id === id)
+ *   if (!rule || !rule.indicator_id) return MOCK_DATA[id]?.length || 0
+ *   if (rule.mode === 'alert') return getAlertCount(rule.indicator_id)
+ *   return getCount(rule.indicator_id)
+ * }
+ */
+
+// 根据时间筛选条件过滤执行记录
+function findExecutionByTime(indicatorId: number): any | null {
+  const tm = timeMode.value
+  const tv = currentTimeValue.value
+  return executionRecords.value
+    .filter(r => r.indicator_id === indicatorId && r.status === 'success')
+    .filter(r => {
+      if (tm === 'immediate') return true
+      if (r.run_mode !== tm) return false
+      if (tv && r.time_value !== tv) return false
+      return true
+    })
+    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())[0] || null
+}
+
+function getRuleCount(rule: any): string {
+  if (!rule) return '-'
+  void hospitalVersion.value
+  const rec = findExecutionByTime(rule.indicator_id)
+  if (!rec) return '-'
+  const cnt = rec.numerator_count ?? 0
+  if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
+  return formatCountInMetric(rule.metric, cnt)
+}
+
 const openDrawer = (row: any) => { drawerData.value = row }
 const showLicenseImage = (row: any) => { licenseImageData.value = row }
 
@@ -562,7 +721,7 @@ const institutionColumns = [
 
 function handleExport() {
   const rule = currentRule.value
-  const name = rule ? `${rule.no}-${rule.name}` : '机构要素总览'
+  const name = rule ? `${rule.id}-${rule.name}` : '机构要素总览'
   exportToExcel(tableData.value, institutionColumns, `机构要素_${name}`)
 }
 </script>

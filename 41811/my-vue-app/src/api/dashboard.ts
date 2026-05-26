@@ -59,8 +59,13 @@ export interface DashboardStats {
 export const dashboardApi = {
   /**
    * 获取总览数据
+   * @param params 可选筛选参数：time_mode, time_value, hospital_code
    */
-  getOverview: () => httpClient.get<DashboardOverview>(API_ENDPOINTS.dashboardOverview),
+  getOverview: (params?: {
+    time_mode?: string
+    time_value?: string
+    hospital_code?: string
+  }) => httpClient.get<DashboardOverview>(API_ENDPOINTS.dashboardOverview, { params }),
 
   /**
    * 获取统计数据

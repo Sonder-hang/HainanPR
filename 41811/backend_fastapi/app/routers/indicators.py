@@ -238,6 +238,42 @@ def list_executions_no_slash(
     return _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
 
 
+@router.get("/execution/by-hospital/", response_model=Optional[IndicatorExecutionResponse])
+def get_execution_by_hospital(
+    indicator_id: int,
+    hospital_code: str,
+    time_mode: Optional[str] = None,
+    time_value: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    查询指定指标+医院下的最新一条 group_by_hospital=1 的执行记录。
+    hospital_results 中包含该医院对应的执行结果。
+    支持时间筛选：time_mode (monthly/quarterly) 和 time_value (如 2026-05 或 2026-Q1)
+    """
+    # 先查找所有符合条件的执行记录
+    query = db.query(IndicatorExecution).filter(
+        IndicatorExecution.indicator_id == indicator_id,
+        IndicatorExecution.group_by_hospital == True,
+        IndicatorExecution.status == "success",
+    )
+    
+    # 添加时间筛选条件
+    if time_mode and time_mode != 'immediate':
+        query = query.filter(IndicatorExecution.run_mode == time_mode)
+        if time_value:
+            query = query.filter(IndicatorExecution.time_value == time_value)
+    
+    all_execs = query.order_by(IndicatorExecution.execution_time.desc()).all()
+    
+    # hospital_codes 是 JSON 字段，需要在 Python 中检查是否包含目标医院代码
+    for exec in all_execs:
+        codes = exec.hospital_codes or []
+        if isinstance(codes, list) and hospital_code in codes:
+            return exec
+    return None
+
+
 @router.delete("/execution/{execution_id}", status_code=204)
 def delete_execution(execution_id: int, db: Session = Depends(get_db)):
     row = db.query(IndicatorExecution).filter(IndicatorExecution.id == execution_id).first()

@@ -201,7 +201,7 @@ class Text2SQLService:
                         numerator_sql=result.get("numerator_sql", ""),
                         denominator_sql=result.get("denominator_sql", ""),
                         sql=result.get("sql", ""),
-                        numerator_count=result.get("numerator_count"),
+                        numerator_count=result.get("numerator_count") if result.get("numerator_count") is not None else (result.get("count") if result.get("count") is not None else None),
                         denominator_count=result.get("denominator_count"),
                         rate_percent=result.get("rate_percent"),
                         rate_formula=result.get("rate_formula", ""),
@@ -439,7 +439,9 @@ class Text2SQLService:
             from sql_runner import get_hospitals
             all_hospitals = get_hospitals()
             for h in all_hospitals:
-                hospital_names[h.get("MDC_ORG_CD")] = h.get("MDC_ORG_NM", h.get("MDC_ORG_CD"))
+                # 统一用大写 key，避免大小写不一致导致查不到
+                key = (h.get("MDC_ORG_CD") or "").upper()
+                hospital_names[key] = h.get("MDC_ORG_NM", h.get("MDC_ORG_CD") or key)
         except Exception:
             pass
         
@@ -473,7 +475,7 @@ class Text2SQLService:
                 all_logs = []
 
                 for i, hosp_code in enumerate(hospital_codes):
-                    hosp_name = hospital_names.get(hosp_code, hosp_code)
+                    hosp_name = hospital_names.get(hosp_code.upper(), hosp_code)
                     hosp_logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 开始执行..."}]
 
                     hosp_num_sql = _inject_hospital_filter(numerator_sql, [hosp_code])
@@ -520,19 +522,21 @@ class Text2SQLService:
                 total_rate = round(total_num_cnt * 100.0 / total_den_cnt, 4) if total_den_cnt != 0 else None
                 all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"汇总执行完成。总体指标值：{total_rate}%（{total_num_cnt}/{total_den_cnt}）"})
 
-                first_preview = []
-                first_cols = []
-                first_den_preview = []
-                first_den_cols = []
+                all_preview_rows = []
+                all_den_preview_rows = []
+                all_preview_cols = []
+                all_den_preview_cols = []
                 for hosp in hospital_results:
                     pd = hosp.get("preview_data", [])
-                    if pd and not first_preview:
-                        first_preview = pd
-                        first_cols = list(pd[0].keys()) if pd else []
+                    if pd and isinstance(pd, list) and pd:
+                        all_preview_rows.extend(pd)
+                        if not all_preview_cols:
+                            all_preview_cols = list(pd[0].keys()) if pd else []
                     dpd = hosp.get("denominator_preview_data", [])
-                    if dpd and not first_den_preview:
-                        first_den_preview = dpd
-                        first_den_cols = list(dpd[0].keys()) if dpd else []
+                    if dpd and isinstance(dpd, list) and dpd:
+                        all_den_preview_rows.extend(dpd)
+                        if not all_den_preview_cols:
+                            all_den_preview_cols = list(dpd[0].keys()) if dpd else []
 
                 result = {
                     "ok": all_ok,
@@ -544,12 +548,12 @@ class Text2SQLService:
                     "rate_percent": total_rate,
                     "rate_formula": f"{total_num_cnt}/{total_den_cnt}={total_rate}%" if total_rate is not None else None,
                     "error": None if all_ok else "部分医院执行失败",
-                    "preview_columns": first_cols,
-                    "preview_rows": first_preview,
-                    "preview_data": {"columns": first_cols, "rows": first_preview},
-                    "denominator_preview_columns": first_den_cols,
-                    "denominator_preview_rows": first_den_preview,
-                    "denominator_preview_data": {"columns": first_den_cols, "rows": first_den_preview},
+                    "preview_columns": all_preview_cols,
+                    "preview_rows": all_preview_rows,
+                    "preview_data": {"columns": all_preview_cols, "rows": all_preview_rows},
+                    "denominator_preview_columns": all_den_preview_cols,
+                    "denominator_preview_rows": all_den_preview_rows,
+                    "denominator_preview_data": {"columns": all_den_preview_cols, "rows": all_den_preview_rows},
                     "request_id": "",
                     "conversation_id": "",
                     "cache_hit": False,
@@ -626,11 +630,11 @@ class Text2SQLService:
             total_count = 0
             all_ok = True
             all_logs = []
-            first_preview = []
-            first_cols = []
+            all_preview_rows = []
+            all_preview_cols = []
 
             for hosp_code in hospital_codes:
-                hosp_name = hospital_names.get(hosp_code, hosp_code)
+                hosp_name = hospital_names.get(hosp_code.upper(), hosp_code)
                 hosp_logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 开始执行..."}]
 
                 hosp_sql = _inject_hospital_filter(sql_to_exec, [hosp_code])
@@ -655,9 +659,10 @@ class Text2SQLService:
                     hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"[{hosp_name}] 执行出错：{hosp_err}"})
 
                 preview = _to_serializable_rows(hosp_rows[:10]) if hosp_rows else []
-                if preview and not first_preview:
-                    first_preview = preview
-                    first_cols = list(preview[0].keys()) if preview else []
+                if preview:
+                    all_preview_rows.extend(preview)
+                    if not all_preview_cols:
+                        all_preview_cols = list(preview[0].keys()) if preview else []
 
                 hospital_results.append({
                     "hospital_code": hosp_code,
@@ -682,9 +687,9 @@ class Text2SQLService:
                 "count": total_count,
                 "numerator_count": total_count,
                 "error": None if all_ok else "部分医院执行失败",
-                "preview_columns": first_cols,
-                "preview_rows": first_preview,
-                "preview_data": {"columns": first_cols, "rows": first_preview},
+                "preview_columns": all_preview_cols,
+                "preview_rows": all_preview_rows,
+                "preview_data": {"columns": all_preview_cols, "rows": all_preview_rows},
                 "request_id": "",
                 "conversation_id": "",
                 "cache_hit": False,

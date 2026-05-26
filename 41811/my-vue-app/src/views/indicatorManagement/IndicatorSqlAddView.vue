@@ -295,14 +295,14 @@
               >
                 {{ testingNum ? '测试中…' : '测试 SQL' }}
               </button>
-              <span v-if="previewNum.rows.length" class="text-[11px] text-emerald-600">
+              <span v-if="testNumCount !== null" class="text-[11px] text-emerald-600">
                 ✓ 执行成功，返回 {{ testNumCount }} 条
               </span>
             </div>
             <!-- 查询结果预览 -->
-            <div v-if="previewNum.rows.length" class="mt-3 min-h-[100px] overflow-auto rounded-[2px] border border-dashed border-purple-200 bg-[#fafbff] p-2">
+            <div v-if="testNumCount !== null" class="mt-3 min-h-[100px] overflow-auto rounded-[2px] border border-dashed border-purple-200 bg-[#fafbff] p-2">
               <p class="mb-1.5 text-[11px] font-medium text-[#596080]">查询结果预览</p>
-              <table class="w-full border-collapse text-left text-[11px]">
+              <table v-if="previewNum.rows.length" class="w-full border-collapse text-left text-[11px]">
                 <thead>
                   <tr class="border-b border-[#b8c9e8]/60 bg-white">
                     <th v-for="h in previewNum.headers" :key="h" class="px-2 py-1.5 font-semibold text-[#596080]">{{ h }}</th>
@@ -314,6 +314,7 @@
                   </tr>
                 </tbody>
               </table>
+              <p v-else class="text-[11px] text-gray-500">查询返回 0 条数据</p>
             </div>
           </div>
         </div>
@@ -361,14 +362,14 @@
               >
                 {{ testingDen ? '测试中…' : '测试 SQL' }}
               </button>
-              <span v-if="previewDen.rows.length" class="text-[11px] text-emerald-600">
+              <span v-if="testDenCount !== null" class="text-[11px] text-emerald-600">
                 ✓ 执行成功，返回 {{ testDenCount }} 条
               </span>
             </div>
             <!-- 查询结果预览 -->
-            <div v-if="previewDen.rows.length" class="mt-3 min-h-[100px] overflow-auto rounded-[2px] border border-dashed border-sky-200 bg-[#fafbff] p-2">
+            <div v-if="testDenCount !== null" class="mt-3 min-h-[100px] overflow-auto rounded-[2px] border border-dashed border-sky-200 bg-[#fafbff] p-2">
               <p class="mb-1.5 text-[11px] font-medium text-[#596080]">查询结果预览</p>
-              <table class="w-full border-collapse text-left text-[11px]">
+              <table v-if="previewDen.rows.length" class="w-full border-collapse text-left text-[11px]">
                 <thead>
                   <tr class="border-b border-[#b8c9e8]/60 bg-white">
                     <th v-for="h in previewDen.headers" :key="h" class="px-2 py-1.5 font-semibold text-[#596080]">{{ h }}</th>
@@ -380,6 +381,7 @@
                   </tr>
                 </tbody>
               </table>
+              <p v-else class="text-[11px] text-gray-500">查询返回 0 条数据</p>
             </div>
           </div>
         </div>

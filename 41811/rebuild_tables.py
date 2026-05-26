@@ -1,7 +1,7 @@
 """重建表（当前版本），与数据库实际结构保持一致。"""
 import pymysql
 
-DEST = dict(host="127.0.0.1", user="root", password="123456", database="hainan_41811", charset="utf8mb4")
+DEST = dict(host="127.0.0.1", user="root", password="0826", database="hainan_41811", charset="utf8mb4")
 conn = pymysql.connect(**DEST)
 cur = conn.cursor()
 
