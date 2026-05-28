@@ -170,30 +170,56 @@ def get_overview_data(
     ).distinct().all()
     categories = [cat[0] for cat in all_indicators_query if cat[0]]
 
-    # 查询所有 core18 指标的执行记录
+    # 查询所有 core18 指标的执行记录（仅成功状态、匹配时间）
     base_query = db.query(IndicatorExecution).filter(
         IndicatorExecution.status == "success",
         IndicatorExecution.time_mode == time_mode,
         IndicatorExecution.time_value == time_value,
     )
-
     all_executions = base_query.all()
 
-    # 按指标分组，每组取最新的执行记录
-    # 结构: {indicator_id: {execution_record}}
-    latest_execution_map = {}
-    for exec_record in all_executions:
-        ind_id = exec_record.indicator_id
-        if ind_id not in latest_execution_map:
-            latest_execution_map[ind_id] = exec_record
+    def pick_execution(exec_list: list, prefer_grouped: bool):
+        """从多条记录中选取最合适的一条。
+
+        - 全省/无医院（prefer_grouped=False）：优先取 group_by_hospital=False 的纯全省执行记录；
+          若无则降级取 group_by_hospital=True 的记录。
+        - 指定医院（prefer_grouped=True）：只取 group_by_hospital=True 且包含该医院的记录。
+
+        每组内按 execution_time 取最新一条。
+        """
+        if not exec_list:
+            return None
+        if prefer_grouped:
+            # 指定医院：严格筛选 group_by_hospital=True 且包含目标医院的记录
+            filtered = [
+                r for r in exec_list
+                if r.group_by_hospital
+                and isinstance(r.hospital_codes, list)
+                and any(h == hospital_code for h in r.hospital_codes)
+            ]
+            if not filtered:
+                return None
+            return max(filtered, key=lambda r: r.execution_time)
         else:
-            if exec_record.execution_time > latest_execution_map[ind_id].execution_time:
-                latest_execution_map[ind_id] = exec_record
+            # 全省/无医院：优先取 group_by_hospital=False 的记录
+            non_grouped = [r for r in exec_list if not r.group_by_hospital]
+            if non_grouped:
+                return max(non_grouped, key=lambda r: r.execution_time)
+            # 降级：取 group_by_hospital=True 中 execution_time 最新的
+            return max(exec_list, key=lambda r: r.execution_time)
+
+    # 按指标分组，每组取最合适的一条执行记录
+    # 结构: {indicator_id: [execution_records...]}
+    from collections import defaultdict
+    executions_by_indicator: dict = defaultdict(list)
+    for rec in all_executions:
+        executions_by_indicator[rec.indicator_id].append(rec)
 
     # 构建指标卡片数据
     indicator_cards = []
     for ind in indicators:
-        exec_record = latest_execution_map.get(ind.id)
+        exec_list = executions_by_indicator.get(ind.id, [])
+        exec_record = pick_execution(exec_list, prefer_grouped=(hospital_code and hospital_code != "province"))
 
         # 根据医院筛选逻辑获取数据
         rate_percent = None
@@ -204,39 +230,15 @@ def get_overview_data(
 
         if exec_record:
             calc_type = ind.calc_type or "ratio"
-
-            if hospital_code == "province" or not hospital_code:
-                # 全省：直接从 indicator_execution 表的字段获取
-                has_data = True
-                if calc_type == "ratio":
-                    # 比值型指标
-                    rate_percent = float(exec_record.rate_percent) if exec_record.rate_percent is not None else None
-                    numerator_count = exec_record.numerator_count
-                    denominator_count = exec_record.denominator_count
-                else:
-                    # 计数型指标
-                    count_value = exec_record.count
+            has_data = True
+            if calc_type == "ratio":
+                # 比值型指标：直接取顶层字段（全省记录或医院汇总记录）
+                rate_percent = float(exec_record.rate_percent) if exec_record.rate_percent is not None else None
+                numerator_count = exec_record.numerator_count
+                denominator_count = exec_record.denominator_count
             else:
-                # 具体医院：需要从 hospital_results 中获取
-                if exec_record.group_by_hospital and exec_record.hospital_codes and exec_record.hospital_results:
-                    # 检查 hospital_codes 中是否包含目标医院
-                    hospital_codes = exec_record.hospital_codes
-                    if isinstance(hospital_codes, list) and hospital_code in hospital_codes:
-                        # 从 hospital_results 中查找对应医院的结果
-                        hospital_results = exec_record.hospital_results
-                        if isinstance(hospital_results, list):
-                            for result in hospital_results:
-                                if isinstance(result, dict) and result.get("hospital_code") == hospital_code:
-                                    has_data = True
-                                    if calc_type == "ratio":
-                                        # 比值型指标
-                                        rate_percent = result.get("ratio_percent")
-                                        numerator_count = result.get("numerator_count")
-                                        denominator_count = result.get("denominator_count")
-                                    else:
-                                        # 计数型指标
-                                        count_value = result.get("count")
-                                    break
+                # 计数型指标
+                count_value = exec_record.count
 
         indicator_cards.append(IndicatorCardItem(
             id=ind.id,

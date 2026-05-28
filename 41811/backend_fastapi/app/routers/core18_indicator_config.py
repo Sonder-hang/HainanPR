@@ -6,7 +6,7 @@
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import cast, String, func as sql_func
+from sqlalchemy import func as sql_func
 from typing import Optional
 
 from app.database import get_db
@@ -152,19 +152,37 @@ def _query_execution(
     time_mode: str,
     time_value: Optional[str],
 ) -> Optional[IndicatorExecution]:
-    """查询指定指标的执行记录（最新成功记录）"""
-    query = db.query(IndicatorExecution).filter(
+    """查询指定指标的执行记录。
+
+    记录筛选规则（与总览页面一致）：
+    - 全省/无医院：优先取 group_by_hospital=False 的纯全省记录，降级取 group_by_hospital=True 最新
+    - 指定医院：严格取 group_by_hospital=True 且 hospital_codes 包含目标医院的记录，按 execution_time 取最新
+    """
+    base_q = db.query(IndicatorExecution).filter(
         IndicatorExecution.indicator_id == indicator_id,
         IndicatorExecution.status == "success",
         IndicatorExecution.time_mode == time_mode,
     )
     if time_value:
-        query = query.filter(IndicatorExecution.time_value == time_value)
+        base_q = base_q.filter(IndicatorExecution.time_value == time_value)
+
+    all_recs = base_q.order_by(IndicatorExecution.execution_time.desc()).all()
+    if not all_recs:
+        return None
+
     if hospital_code and hospital_code != "province":
-        query = query.filter(
-            cast(IndicatorExecution.hospital_codes, String).contains(hospital_code)
-        )
-    return query.order_by(IndicatorExecution.execution_time.desc()).first()
+        # 指定医院：严格筛选
+        filtered = [
+            r for r in all_recs
+            if r.group_by_hospital
+            and isinstance(r.hospital_codes, list)
+            and any(h == hospital_code for h in r.hospital_codes)
+        ]
+        return filtered[0] if filtered else None
+    else:
+        # 全省/无医院：优先非分组记录
+        non_grouped = [r for r in all_recs if not r.group_by_hospital]
+        return non_grouped[0] if non_grouped else all_recs[0]
 
 
 def _query_trend_records(
@@ -172,55 +190,60 @@ def _query_trend_records(
     indicator_id: int,
     time_mode: str,
     years: list[int],
+    hospital_code: Optional[str] = None,
 ) -> list[IndicatorExecution]:
-    """查询近 N 年所有月度/季度执行记录（用于聚合年度趋势）"""
+    """查询近 N 年所有月度/季度执行记录（用于聚合年度趋势）。
+
+    筛选规则：
+    - 全省/无医院：取 group_by_hospital=False 的记录
+    - 指定医院：取 group_by_hospital=True 且 hospital_codes 包含目标医院的记录
+    """
     patterns = []
     for y in years:
         if time_mode == "monthly":
             patterns.extend([f"{y}-{str(m).zfill(2)}" for m in range(1, 13)])
         else:
             patterns.extend([f"{y}-Q{q}" for q in range(1, 5)])
-    return db.query(IndicatorExecution).filter(
+
+    base_q = db.query(IndicatorExecution).filter(
         IndicatorExecution.indicator_id == indicator_id,
         IndicatorExecution.status == "success",
         IndicatorExecution.time_mode == time_mode,
         IndicatorExecution.time_value.in_(patterns),
-    ).order_by(IndicatorExecution.time_value.asc()).all()
+    )
+
+    all_recs = base_q.order_by(IndicatorExecution.execution_time.asc()).all()
+    if not all_recs:
+        return []
+
+    if hospital_code and hospital_code != "province":
+        return [
+            r for r in all_recs
+            if r.group_by_hospital
+            and isinstance(r.hospital_codes, list)
+            and any(h == hospital_code for h in r.hospital_codes)
+        ]
+    else:
+        return [r for r in all_recs if not r.group_by_hospital]
 
 
 def _extract_execution_values(
     exec_record: Optional[IndicatorExecution],
     hospital_code: Optional[str],
 ):
-    """从执行记录中提取 rate/numerator/denominator 数值"""
+    """从执行记录中提取 rate/numerator/denominator 数值。
+
+    由于 _query_execution 已按医院场景精确筛选，此处直接取顶层字段即可。
+    """
     if not exec_record:
         return None, None, None, False
 
-    rate_percent = None
-    numerator_count = None
-    denominator_count = None
-    has_data = False
-
-    if hospital_code == "province" or not hospital_code:
-        has_data = True
-        rate_percent = float(exec_record.rate_percent) if exec_record.rate_percent is not None else None
-        numerator_count = exec_record.numerator_count
-        denominator_count = exec_record.denominator_count
-    else:
-        if exec_record.group_by_hospital and exec_record.hospital_codes and exec_record.hospital_results:
-            hospital_codes = exec_record.hospital_codes
-            if isinstance(hospital_codes, list) and hospital_code in hospital_codes:
-                hospital_results = exec_record.hospital_results
-                if isinstance(hospital_results, list):
-                    for result in hospital_results:
-                        if isinstance(result, dict) and result.get("hospital_code") == hospital_code:
-                            has_data = True
-                            rate_percent = result.get("ratio_percent")
-                            numerator_count = result.get("numerator_count")
-                            denominator_count = result.get("denominator_count")
-                            break
-
-    return rate_percent, numerator_count, denominator_count, has_data
+    return (
+        float(exec_record.rate_percent) if exec_record.rate_percent is not None else None,
+        exec_record.numerator_count,
+        exec_record.denominator_count,
+        True,
+    )
 
 
 # ============================================================
@@ -273,7 +296,9 @@ def get_indicator_data(
     - hospital: 医院对比数据（selected_hospitals 精确过滤）
     - all     : 全部数据（默认，兼容现有逻辑）
 
-    数据来源：indicator_execution 表，按 time_mode + time_value 匹配最新成功记录。
+    记录筛选规则（与总览页面一致）：
+    - 全省/无医院：优先取 group_by_hospital=False 的纯全省记录，降级取 group_by_hospital=True 最新
+    - 指定医院：严格取 group_by_hospital=True 且 hospital_codes 包含目标医院的记录，按 execution_time 取最新
     """
     # 通过 cascader key 找到对应指标
     indicator_name = None
@@ -310,7 +335,7 @@ def get_indicator_data(
     # 趋势数据取数逻辑：
     # - RATE / RATE-special：取 rate_percent（比值型指标）
     # - STRUCTURE / STRUCTURE-special / COMPOSITE：取 count（总数/病例数），代表该时间段的疾病谱规模
-    records = _query_trend_records(db, ind.id, time_mode, [current_year - 2, current_year - 1, current_year])
+    records = _query_trend_records(db, ind.id, time_mode, [current_year - 2, current_year - 1, current_year], hospital_code)
     from collections import defaultdict
     period_values: dict = defaultdict(list)
 
