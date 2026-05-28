@@ -45,6 +45,8 @@ class IndicatorConfigResponse(BaseModel):
     timeComparisonTitle: str = "趋势分析"
     hospitalComparisonTitle: str = "医院对比"
     totalCountLabel: Optional[str] = None
+    # rankingMode: single=单排行榜, double=双排行榜, multi=多排行榜（由 subitem_config.type 决定）
+    rankingMode: Optional[Literal["single", "double", "multi"]] = None
     # 数据
     data: IndicatorConfigData = IndicatorConfigData()
 

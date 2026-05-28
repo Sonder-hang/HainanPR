@@ -117,6 +117,7 @@ export interface IndicatorConfigItem {
   timeComparisonTitle: string
   hospitalComparisonTitle: string
   totalCountLabel?: string
+  rankingMode?: 'single' | 'double' | 'multi'
   data: IndicatorConfigData
 }
 
@@ -135,6 +136,7 @@ export interface IndicatorDataResponse {
   leftData?: Record<string, any>
   leftData1?: Record<string, any>
   leftData2?: Record<string, any>
+  multiRankingData?: Record<string, any>
   dataTypes?: Array<{ name: string; key: string }>
 }
 
@@ -213,7 +215,7 @@ export const core18Api = {
 
   /**
    * 获取单个指标的图表数据（各子组件按自身时间筛选调用）
-   * @param params indicator_key, hospital_code, time_mode, time_value, data_type, selected_hospitals
+   * @param params indicator_key, hospital_code, time_mode, time_value, data_type, selected_hospitals, death_type_filter
    */
   getIndicatorData: (params: {
     indicator_key: string
@@ -222,6 +224,7 @@ export const core18Api = {
     time_value?: string
     data_type?: 'card' | 'trend' | 'hospital' | 'left' | 'all'
     selected_hospitals?: string
+    death_type_filter?: 'actual' | 'estimated'
   }) =>
     httpClient.get<IndicatorDataResponse>(API_ENDPOINTS.core18IndicatorData, { params }),
 }

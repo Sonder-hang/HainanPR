@@ -846,15 +846,29 @@ class Text2SQLService:
                         hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 总数：{int(hosp_total_count)}，排行TOP{ranking_limit}已生成。"})
                         all_logs.extend(hosp_logs)
                     # 构建全省的全局排行榜（按 key 聚合所有医院数据，再重新排行）
+                    # 注意：death_type 等额外字段保留到分组级别
                     from collections import defaultdict
-                    global_agg = defaultdict(float)
-                    for item in all_hospital_ranking_items:
-                        key = str(item.get("ranking_key", ""))
-                        global_agg[key] += item.get("ranking_value", 0.0)
-                    global_sorted = sorted(global_agg.items(), key=lambda kv: kv[1], reverse=True)
-                    global_subitem_data = []
-                    for rank_key, rank_val in global_sorted[:ranking_limit]:
-                        global_subitem_data.append({"ranking_key": rank_key, "ranking_value": rank_val})
+                    # death_type 聚合适配：当 death_type 存在时，按 (ranking_key, death_type) 分组
+                    has_death_type = any("death_type" in str(r) for r in rows)
+                    if has_death_type:
+                        # 死亡相关：按 (ranking_key, death_type) 聚合
+                        global_agg: dict = defaultdict(lambda: defaultdict(float))
+                        for item in all_hospital_ranking_items:
+                            key = str(item.get("ranking_key", ""))
+                            d_type = str(item.get("death_type") or "")
+                            global_agg[key][d_type] += item.get("ranking_value", 0.0)
+                        global_subitem_data = []
+                        for rank_key, type_vals in global_agg.items():
+                            for d_type, rank_val in type_vals.items():
+                                global_subitem_data.append({"ranking_key": rank_key, "ranking_value": rank_val, "death_type": d_type})
+                    else:
+                        global_agg = defaultdict(float)
+                        for item in all_hospital_ranking_items:
+                            key = str(item.get("ranking_key", ""))
+                            global_agg[key] += item.get("ranking_value", 0.0)
+                        global_subitem_data = []
+                        for rank_key, rank_val in global_agg.items():
+                            global_subitem_data.append({"ranking_key": rank_key, "ranking_value": rank_val})
                     all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"全省汇总：总数量={int(total_count_overall)}，全局TOP{ranking_limit}排行已生成。"})
                     first_preview = hospital_results[0].get("preview_data", []) if hospital_results else []
                     first_cols = hospital_results[0].get("preview_columns", []) if hospital_results else []

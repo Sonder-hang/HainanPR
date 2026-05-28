@@ -145,32 +145,26 @@ LIMIT 50
         },
     },
 
-    # ---- 4. 主要手术ICD-9-CM-3四位码种类数（STRUCTURE-special + COMPOSITE_RANKING） ----
-    # 注：STRUCTURE-special 需要双排行（治疗性/诊断性），这里通过 UNION 实现分离
+    # ---- 4. 主要手术ICD-9-CM-3四位码种类数（STRUCTURE + COMPOSITE_RANKING） ----
+    # 当前先用单排行榜实现（STRUTURE），双排行榜支持后续扩展
     {
         "name": "主要手术ICD-9-CM-3四位码种类数",
-        "template_type": "STRUCTURE-special",
+        "template_type": "STRUCTURE",
         "calc_type": "count",
-        "description": "主要手术ICD-9-CM-3四位码种类数，区分治疗性与诊断性操作",
+        "description": "主要手术ICD-9-CM-3四位码种类数",
         "numerator_desc": "主要手术ICD-9-CM-3四位码种类数",
         "formula": "COUNT(DISTINCT four_digit_code)",
         "sql": """
 SELECT
-    four_digit_code,
-    SUM(disease_cnt) AS surgery_cnt
-FROM (
-    SELECT
-        UPPER(LEFT(REPLACE(REPLACE(REPLACE(t2.OPRT_CD, '.', ''), '-', ''), ' ', ''), 4)) AS four_digit_code,
-        COUNT(DISTINCT UPPER(REPLACE(REPLACE(REPLACE(t2.OPRT_CD, '.', ''), '-', ''), ' ', ''))) AS disease_cnt
-    FROM FACT_MDC_RCD_HMPG t1
-    INNER JOIN FACT_MDC_RCD_HMPG_OPRT t2
-        ON t1.INHOS_NO = t2.INHOS_NO
-       AND t1.MDC_ORG_CD = t2.MDC_ORG_CD
-    WHERE t1.DSCG_DT_TM IS NOT NULL
-      AND t2.MAIN_OPRT_FLG = '1'
-      AND t2.OPRT_CD NOT IN ('','-')
-    GROUP BY four_digit_code
-) AS all_surgeries
+    UPPER(LEFT(REPLACE(REPLACE(REPLACE(t2.OPRT_CD, '.', ''), '-', ''), ' ', ''), 4)) AS four_digit_code,
+    COUNT(DISTINCT UPPER(REPLACE(REPLACE(REPLACE(t2.OPRT_CD, '.', ''), '-', ''), ' ', ''))) AS surgery_cnt
+FROM FACT_MDC_RCD_HMPG t1
+INNER JOIN FACT_MDC_RCD_HMPG_OPRT t2
+    ON t1.INHOS_NO = t2.INHOS_NO
+   AND t1.MDC_ORG_CD = t2.MDC_ORG_CD
+WHERE t1.DSCG_DT_TM IS NOT NULL
+  AND t2.MAIN_OPRT_FLG = '1'
+  AND t2.OPRT_CD NOT IN ('','-')
 GROUP BY four_digit_code
 ORDER BY surgery_cnt DESC
 LIMIT 50

@@ -119,15 +119,29 @@ def _build_config(
     )
 
     # 设置模板相关标题
+    subitem_cfg = ind.subitem_config if isinstance(ind.subitem_config, dict) else None
+    subitem_type = subitem_cfg.get("type") if subitem_cfg else None
     if template_type == "STRUCTURE":
         cfg.leftTitle = "排行榜"
         cfg.leftChartTitle = f"{title} TOP10"
         cfg.leftChartColor = "#E5455F" if is_death else "#2E57E5"
         cfg.totalCountLabel = f"{title}总量"
+        cfg.rankingMode = "single"
     elif template_type == "STRUCTURE-special":
         cfg.leftTitle = f"{title}排行榜"
         cfg.leftChartTitle1 = "治疗性操作 TOP10"
         cfg.leftChartTitle2 = "诊断性操作 TOP10"
+        # rankingMode 由 subitem_config.type 决定
+        if subitem_type == "COMPOSITE_MULTI_RANKING":
+            cfg.rankingMode = "multi"
+            rankings = subitem_cfg.get("rankings", [])
+            if len(rankings) >= 2:
+                cfg.leftChartTitle1 = rankings[0].get("name", "排行榜1")
+                cfg.leftChartColor1 = rankings[0].get("color", "#12B881")
+                cfg.leftChartTitle2 = rankings[1].get("name", "排行榜2")
+                cfg.leftChartColor2 = rankings[1].get("color", "#2E57E5")
+        else:
+            cfg.rankingMode = "double"
     elif template_type in ("RATE", "RATE-special"):
         cfg.leftTitle = f"{title}百分率直观展示"
         cfg.timeComparisonTitle = f"{title}趋势分析"
@@ -227,6 +241,48 @@ def _query_trend_records(
         return [r for r in all_recs if not r.group_by_hospital]
 
 
+def _build_special_left_data(subitem) -> tuple:
+    """从 subitem_data 构建 STRUCTURE-special 的 leftData1 / leftData2。
+
+    拆分规则：按 ranking_key 前缀分组
+      - OP_T_ 前缀 → leftData1（治疗性操作）
+      - OP_D_ 前缀 → leftData2（诊断性操作）
+      - 其他/无前缀 → 视为单一排行，全部放入 leftData1（降级场景，如 ICD-9-CM-3 单排行）
+
+    返回: (leftData1, leftData2)，格式：
+      {"actual": [{"name": "...", "value": ...}, ...], "estimated": []}
+    """
+    def _build_from_items(items: list) -> dict:
+        chart_data = []
+        for item in items:
+            if isinstance(item, dict):
+                name = str(item.get("ranking_key") or item.get("ranking_name") or "")
+                value = float(item.get("ranking_value") or 0)
+                chart_data.append({"name": name, "value": value})
+        return {"actual": chart_data, "estimated": []}
+
+    if not subitem or not isinstance(subitem, list):
+        return {"actual": [], "estimated": []}, {"actual": [], "estimated": []}
+
+    op_t_items, op_d_items, other_items = [], [], []
+    for item in subitem:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("ranking_key") or "")
+        if key.startswith("OP_T_"):
+            op_t_items.append(item)
+        elif key.startswith("OP_D_"):
+            op_d_items.append(item)
+        else:
+            other_items.append(item)
+
+    # 降级逻辑：若所有项均无 OP_T_/OP_D_ 前缀，则为单一排行
+    if not op_t_items and not op_d_items:
+        return _build_from_items(subitem), {"actual": [], "estimated": []}
+
+    return _build_from_items(op_t_items or subitem), _build_from_items(op_d_items)
+
+
 def _extract_execution_values(
     exec_record: Optional[IndicatorExecution],
     hospital_code: Optional[str],
@@ -285,6 +341,7 @@ def get_indicator_data(
     time_value: Optional[str] = Query(None, description="时间值: 2026-05 | 2026-Q1"),
     data_type: Optional[str] = Query(None, description="数据类型: card | trend | hospital | all（默认all）"),
     selected_hospitals: Optional[str] = Query(None, description="医院编码列表，逗号分隔，用于hospital类型精确过滤"),
+    death_type_filter: Optional[str] = Query(None, description="死亡类型筛选: actual=离院方式死亡, estimated=转归死亡（仅死亡相关指标支持）"),
     db: Session = Depends(get_db),
 ):
     """
@@ -494,14 +551,18 @@ def get_indicator_data(
         }
 
     # 构建排行榜/子项数据辅助函数
-    def _build_ranking_left_data(exec_rec, time_val):
+    def _build_ranking_left_data(exec_rec, time_val, indicator_key: str = None, death_type_filter: str = None):
         """从 exec_record.subitem_data 构建 STRUCTURE 型 leftData
 
         STRUCTURE 的排行榜数据直接存储为数组：
-          subitem_data = [{ranking_key: "A099", ranking_value: 1}, ...]
+          subitem_data = [{ranking_key: "A099", ranking_value: 1, death_type: "离院方式死亡"}, ...]
         转换为前端所需格式：
           leftData = { actual: [{name: "A099", value: 1}, ...], estimated: [] }
-        注意：不再嵌套 time_val，直接返回图表数组，前端按 dataSource = localLeftData['actual'] 取用
+
+        支持 death_type 筛选：
+        - deathDiseaseSpectrum 指标支持按"离院方式死亡"/"转归死亡"筛选
+        - actual → 离院方式死亡
+        - estimated → 转归死亡
         """
         subitem = exec_rec.subitem_data if exec_rec else None
         if subitem and isinstance(subitem, list):
@@ -510,10 +571,53 @@ def get_indicator_data(
                 if isinstance(item, dict):
                     name = str(item.get("ranking_key") or item.get("ranking_name") or "")
                     value = float(item.get("ranking_value") or 0)
+                    # 死亡相关指标：按 death_type 筛选
+                    if indicator_key == "deathDiseaseSpectrum" and death_type_filter:
+                        item_death_type = item.get("death_type") or ""
+                        # actual → 离院方式死亡, estimated → 转归死亡
+                        expected_type = "离院方式死亡" if death_type_filter == "actual" else "转归死亡"
+                        if item_death_type != expected_type:
+                            continue
                     chart_data.append({"name": name, "value": value})
-            # 返回图表数组（无 time_val 嵌套），与前端 updateSingleChart 直接取用 actual 数组的逻辑对齐
+            # 按 value 降序排列
+            chart_data.sort(key=lambda x: x["value"], reverse=True)
             return {"actual": chart_data, "estimated": []}
         return {"actual": [], "estimated": []}
+
+    def _build_multi_ranking_left_data(exec_rec, subitem_config: dict):
+        """从 subitem_data 构建多排行榜数据（COMPOSITE_MULTI_RANKING）。
+
+        subitem_config 格式：
+          {
+            "type": "COMPOSITE_MULTI_RANKING",
+            "rankings": [
+              {"id": "treatment", "name": "治疗性操作", "key_prefix": "OP_T_", "color": "#12B881"},
+              {"id": "diagnosis", "name": "诊断性操作", "key_prefix": "OP_D_", "color": "#2E57E5"}
+            ],
+            "limit": 20
+          }
+        返回: { ranking_id: {"actual": [...], "estimated": []} }
+        """
+        subitem = exec_rec.subitem_data if exec_rec else []
+        rankings_cfg = subitem_config.get("rankings", [])
+        result = {}
+        for cfg in rankings_cfg:
+            prefix = cfg.get("key_prefix", "")
+            rid = cfg.get("id", "")
+            items = []
+            for item in subitem:
+                if isinstance(item, dict):
+                    key = str(item.get("ranking_key") or "")
+                    if prefix and not key.startswith(prefix):
+                        continue
+                    display_name = key[len(prefix):] if prefix else key
+                    items.append({
+                        "name": display_name,
+                        "value": float(item.get("ranking_value") or 0)
+                    })
+            items.sort(key=lambda x: x["value"], reverse=True)
+            result[rid] = {"actual": items[:cfg.get("limit", 20)], "estimated": []}
+        return result
 
     def _build_composite_left_data(exec_rec, time_val):
         """从 exec_record.subitem_data 构建 COMPOSITE 型 leftData 和 dataTypes"""
@@ -539,20 +643,33 @@ def get_indicator_data(
 
     if data_type == "left":
         if template_type == "STRUCTURE-special":
-            # totalCount 暂用 numerator_count，后续可拆分为治疗性/诊断性分别统计
+            subitem_cfg = ind.subitem_config
+            if subitem_cfg and isinstance(subitem_cfg, dict) and subitem_cfg.get("type") == "COMPOSITE_MULTI_RANKING":
+                multi_data = _build_multi_ranking_left_data(exec_record, subitem_cfg)
+                return {
+                    **base,
+                    "totalCount": exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0),
+                    "multiRankingData": multi_data,
+                    "leftData": {},
+                    "leftData1": {},
+                    "leftData2": {},
+                }
+            subitem = exec_record.subitem_data if exec_record else None
+            left1, left2 = _build_special_left_data(subitem)
             total = exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0)
             return {
                 **base,
                 "totalCount": total,
-                "leftData1": {"actual": [], "estimated": []},
-                "leftData2": {"actual": [], "estimated": []},
+                "leftData": left1,
+                "leftData1": left1,
+                "leftData2": left2,
             }
         elif template_type == "STRUCTURE":
             total = exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0)
             return {
                 **base,
                 "totalCount": total,
-                "leftData": _build_ranking_left_data(exec_record, time_value or str(current_year)),
+                "leftData": _build_ranking_left_data(exec_record, time_value or str(current_year), indicator_key, death_type_filter),
             }
         elif template_type == "COMPOSITE":
             data_types, left_data = _build_composite_left_data(exec_record, time_value or str(current_year))
@@ -595,7 +712,7 @@ def get_indicator_data(
             **base,
             "numerator_count": numerator_count,
             "totalCount": exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0),
-            "leftData": _build_ranking_left_data(exec_record, time_value or str(current_year)),
+            "leftData": _build_ranking_left_data(exec_record, time_value or str(current_year), indicator_key, death_type_filter),
             "timeTrendData": {
                 "actual": {"years": x_labels, "data": y_values},
                 "estimated": {"years": x_labels, "data": []},
@@ -606,12 +723,36 @@ def get_indicator_data(
             },
         }
     elif template_type == "STRUCTURE-special":
+        subitem_cfg = ind.subitem_config
+        if subitem_cfg and isinstance(subitem_cfg, dict) and subitem_cfg.get("type") == "COMPOSITE_MULTI_RANKING":
+            multi_data = _build_multi_ranking_left_data(exec_record, subitem_cfg)
+            return {
+                **base,
+                "numerator_count": numerator_count,
+                "totalCount": exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0),
+                "multiRankingData": multi_data,
+                "leftData": {},
+                "leftData1": {},
+                "leftData2": {},
+                "timeTrendData": {
+                    "actual": {"years": x_labels, "data": y_values},
+                    "estimated": {"years": x_labels, "data": []},
+                },
+                "hospitalComparisonData": {
+                    "actual": hospital_comparison_actual,
+                    "estimated": {},
+                },
+            }
+        subitem = exec_record.subitem_data if exec_record else None
+        left1, left2 = _build_special_left_data(subitem)
+        total = exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0)
         return {
             **base,
             "numerator_count": numerator_count,
-            "totalCount": exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0),
-            "leftData1": {"actual": [], "estimated": []},
-            "leftData2": {"actual": [], "estimated": []},
+            "totalCount": total,
+            "leftData": left1,
+            "leftData1": left1,
+            "leftData2": left2,
             "timeTrendData": {
                 "actual": {"years": x_labels, "data": y_values},
                 "estimated": {"years": x_labels, "data": []},

@@ -101,6 +101,14 @@
               </div>
             </div>
           </template>
+          <template v-else-if="rankingMode === 'multi'">
+            <div class="grid grid-cols-2 gap-3">
+              <div v-for="(_, rankingId) in multiRankingData" :key="rankingId">
+                <h3 class="mb-2 text-[14px] font-semibold" :style="{ color: getMultiRankingColor(rankingId) }">{{ getMultiRankingTitle(rankingId) }}</h3>
+                <div :ref="el => registerMultiChartRef(el as HTMLElement | null, rankingId)" style="height: 450px;"></div>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -355,6 +363,39 @@ let leftChart2: echarts.ECharts | null = null
 let timeComparisonChart: echarts.ECharts | null = null
 let hospitalComparisonChart: echarts.ECharts | null = null
 
+// Multi-ranking mode state (COMPOSITE_MULTI_RANKING)
+const multiRankingData = ref<Record<string, any>>({})
+const multiChartRefs = ref<Record<string, HTMLElement | null>>({})
+const multiCharts = ref<Record<string, echarts.ECharts | null>>({})
+const multiRankingConfig = ref<Array<{ id: string; name: string; color: string }>>([])
+
+const getMultiRankingColor = (rankingId: string) => {
+  return multiRankingConfig.value.find(r => r.id === rankingId)?.color || '#2E57E5'
+}
+const getMultiRankingTitle = (rankingId: string) => {
+  return multiRankingConfig.value.find(r => r.id === rankingId)?.name || rankingId
+}
+const registerMultiChartRef = (el: HTMLElement | null, rankingId: string) => {
+  multiChartRefs.value[rankingId] = el
+  if (el && !multiCharts.value[rankingId]) {
+    multiCharts.value[rankingId] = echarts.init(el)
+  }
+}
+const updateMultiCharts = () => {
+  for (const [rankingId, chart] of Object.entries(multiCharts.value)) {
+    if (!chart) continue
+    const data = multiRankingData.value[rankingId]?.actual || []
+    if (!data.length) continue
+    const sortedData = [...data].sort((a, b) => a.value - b.value)
+    chart.setOption(makeBarOption(sortedData, getMultiRankingColor(rankingId)), true)
+  }
+}
+const resizeMultiCharts = () => {
+  for (const chart of Object.values(multiCharts.value)) {
+    chart?.resize()
+  }
+}
+
 const getDynamicYAxisMax = (data: number[]) => {
   const max = Math.max(...data.filter(v => typeof v === 'number' && !isNaN(v)))
   if (max === 0) return 100
@@ -424,13 +465,9 @@ const makeBarOption = (data: { name: string; value: number }[], color: string) =
 
 const updateSingleChart = () => {
   if (!singleChart) return
-  // leftData 格式：{ actual: [{name, value}, ...], estimated: [] }
-  // 直接取 actual 作为图表数据源（无需 time_val 嵌套）
   const actualData = localLeftData.value?.actual
-  if (!actualData) return
-  const data: { name: string; value: number }[] = Array.isArray(actualData)
-    ? actualData
-    : []
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) return
+  const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   singleChart.setOption(makeBarOption(sortedData, props.leftChartColor), true)
 }
@@ -438,8 +475,8 @@ const updateSingleChart = () => {
 const updateLeftChart1 = () => {
   if (!leftChart1) return
   const actualData = localLeftData1.value?.actual
-  if (!actualData) return
-  const data: { name: string; value: number }[] = Array.isArray(actualData) ? actualData : []
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) return
+  const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   leftChart1.setOption(makeBarOption(sortedData, props.leftChartColor1), true)
 }
@@ -447,8 +484,8 @@ const updateLeftChart1 = () => {
 const updateLeftChart2 = () => {
   if (!leftChart2) return
   const actualData = localLeftData2.value?.actual
-  if (!actualData) return
-  const data: { name: string; value: number }[] = Array.isArray(actualData) ? actualData : []
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) return
+  const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   leftChart2.setOption(makeBarOption(sortedData, props.leftChartColor2), true)
 }
@@ -456,6 +493,7 @@ const updateLeftChart2 = () => {
 const updateLeftChart = () => {
   if (props.rankingMode === 'single') updateSingleChart()
   else if (props.rankingMode === 'double') { updateLeftChart1(); updateLeftChart2() }
+  else if (props.rankingMode === 'multi') updateMultiCharts()
 }
 
 const updateTimeComparisonChart = () => {
@@ -548,6 +586,7 @@ const handleResize = () => {
   leftChart2?.resize()
   timeComparisonChart?.resize()
   hospitalComparisonChart?.resize()
+  resizeMultiCharts()
 }
 
 const fetchLeftData = async () => {
@@ -560,6 +599,8 @@ const fetchLeftData = async () => {
       time_value: buildLeftTimeValue(),
       data_type: 'left',
       hospital_code: appliedHospital.value === 'all' ? undefined : appliedHospital.value,
+      // 死亡相关指标支持 death_type 切换筛选
+      death_type_filter: props.showDeathToggle ? leftDataType.value as 'actual' | 'estimated' : undefined,
     }) as any
     if (res) {
       // leftData 格式（backend 已规范化为）：
@@ -575,8 +616,26 @@ const fetchLeftData = async () => {
         localLeftData1.value = {}
         localLeftData2.value = {}
       } else if (props.rankingMode === 'double') {
-        localLeftData1.value = res.leftData1 || { actual: [], estimated: [] }
-        localLeftData2.value = res.leftData2 || { actual: [], estimated: [] }
+        // 优先使用 leftData1/leftData2；若均为空，降级使用 leftData（单一排行场景）
+        const raw1 = res.leftData1 || {}
+        const raw2 = res.leftData2 || {}
+        const hasData1 = !!(raw1.actual && (raw1.actual.length > 0 || Object.keys(raw1.actual).length > 0))
+        const hasData2 = !!(raw2.actual && (raw2.actual.length > 0 || Object.keys(raw2.actual).length > 0))
+
+        if (hasData1) {
+          localLeftData1.value = raw1
+        } else if (res.leftData && res.leftData.actual) {
+          // 降级：使用 leftData 作为 leftData1（单一排行场景，如ICD-9-CM-3四位码种类数）
+          localLeftData1.value = res.leftData
+        } else {
+          localLeftData1.value = { actual: [], estimated: [] }
+        }
+        localLeftData2.value = hasData2 ? raw2 : { actual: [], estimated: [] }
+      } else if (props.rankingMode === 'multi') {
+        // COMPOSITE_MULTI_RANKING: 从 multiRankingData 获取多排行榜数据
+        multiRankingData.value = res.multiRankingData || {}
+        // 同步更新各子图表
+        updateMultiCharts()
       } else {
         localLeftData.value = res.leftData || {}
         localLeftData1.value = res.leftData1 || {}

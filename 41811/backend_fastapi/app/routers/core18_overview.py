@@ -230,15 +230,16 @@ def get_overview_data(
 
         if exec_record:
             calc_type = ind.calc_type or "ratio"
+            template_type = ind.template_type
             has_data = True
-            if calc_type == "ratio":
-                # 比值型指标：直接取顶层字段（全省记录或医院汇总记录）
+            # 计数型指标：STRUCTURE / STRUCTURE-special / 计数型 COMPOSITE_RANKING → 取 count
+            # 比值型指标：RATE / COMPOSITE_RATE → 取 rate_percent
+            if calc_type == "count" or template_type in ("STRUCTURE", "STRUCTURE-special"):
+                count_value = exec_record.count
+            else:
                 rate_percent = float(exec_record.rate_percent) if exec_record.rate_percent is not None else None
                 numerator_count = exec_record.numerator_count
                 denominator_count = exec_record.denominator_count
-            else:
-                # 计数型指标
-                count_value = exec_record.count
 
         indicator_cards.append(IndicatorCardItem(
             id=ind.id,

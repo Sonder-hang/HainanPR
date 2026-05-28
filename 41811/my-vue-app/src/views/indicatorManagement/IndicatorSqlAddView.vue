@@ -482,7 +482,7 @@
                 </div>
                 <div class="flex items-start gap-2">
                   <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">STRUCTURE-special</span>
-                  <span class="text-[#596080]">双排行榜型，无需子项配置。SQL 在 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">subitem_data</code> 表中通过 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_key</code> 前缀区分治疗性/诊断性（如 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_T_</code> / <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_D_</code>），系统自动拆分渲染两个排行榜。</span>
+                  <span class="text-[#596080]">双排行榜型，无需子项配置。SQL 通过 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_key</code> 前缀区分治疗性/诊断性（如 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_T_</code> / <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_D_</code>），系统自动拆分渲染两个排行榜。当前 ICD-9-CM-3 指标先用单排行榜实现（降级），双排行榜支持后续按相同前缀规则扩展。</span>
                 </div>
                 <div class="flex items-start gap-2">
                   <span class="shrink-0 w-20 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">COMPOSITE</span>
@@ -503,14 +503,21 @@
                   <p class="text-[12px] font-semibold text-amber-700 mb-1">COMPOSITE_RATE — 复合率型</p>
                   <p class="text-[11px] text-[#596080] leading-relaxed">适用于：围手术期各时间窗口死亡率、各科室再入院率等。SQL 返回单行，每个子项的分子/分母在同一行中，系统根据配置读取对应列计算各子项率。</p>
                   <div class="mt-2 bg-white rounded-[2px] border border-amber-200 p-2 font-mono text-[11px] text-[#334155] leading-relaxed">
-{&#10;  "type": "COMPOSITE_RATE",&#10;  "items": [&#10;    { "key": "death_in_or", "name": "术中死亡", "numerator_field": "DEATH_IN_OR_COUNT", "denominator_field": "OR_PATIENT_COUNT" },&#10;    { "key": "death_24h",  "name": "24h内死亡", "numerator_field": "DEATH_24H_COUNT",  "denominator_field": "OR_PATIENT_COUNT" }&#10;  ]&#10;}
+{&#10;  "type": "COMPOSITE_RATE",&#10;  "items": [&#10;    { "key": "death_in_or", "name": "术中死亡", "numerator_col": "DEATH_IN_OR_COUNT", "denominator_col": "OR_PATIENT_COUNT" },&#10;    { "key": "death_24h",  "name": "24h内死亡", "numerator_col": "DEATH_24H_COUNT",  "denominator_col": "OR_PATIENT_COUNT" }&#10;  ]&#10;}
                   </div>
                 </div>
                 <div class="bg-sky-50 border border-sky-200 rounded-[2px] p-3">
                   <p class="text-[12px] font-semibold text-sky-700 mb-1">COMPOSITE_RANKING — 复合排行型</p>
                   <p class="text-[11px] text-[#596080] leading-relaxed">适用于：死亡疾病谱、主要诊断分布等。SQL 返回分组聚合后的多行排行榜数据，系统根据字段名配置读取排行维度和数值。</p>
                   <div class="mt-2 bg-white rounded-[2px] border border-sky-200 p-2 font-mono text-[11px] text-[#334155] leading-relaxed">
-{&#10;  "type": "COMPOSITE_RANKING",&#10;  "ranking_key_field": "DISEASE_CODE",&#10;  "ranking_value_field": "PATIENT_COUNT",&#10;  "limit": 20&#10;}
+{&#10;  "type": "COMPOSITE_RANKING",&#10;  "ranking_key_field": "DISEASE_CODE",&#10;  "ranking_value_field": "PATIENT_COUNT",&#10;  "total_aggregation_field": "PATIENT_COUNT",&#10;  "limit": 20&#10;}
+                  </div>
+                </div>
+                <div class="bg-violet-50 border border-violet-200 rounded-[2px] p-3">
+                  <p class="text-[12px] font-semibold text-violet-700 mb-1">COMPOSITE_MULTI_RANKING — 多排行榜型（STRUCTURE-special）</p>
+                  <p class="text-[11px] text-[#596080] leading-relaxed">适用于：需要展示多个独立排行榜的指标（如治疗性/诊断性操作分离）。SQL 中排行榜维度的 key 需要加上对应 prefix 以便系统分组。</p>
+                  <div class="mt-2 bg-white rounded-[2px] border border-violet-200 p-2 font-mono text-[11px] text-[#334155] leading-relaxed">
+{&#10;  "type": "COMPOSITE_MULTI_RANKING",&#10;  "rankings": [&#10;    { "id": "treatment", "name": "治疗性操作 TOP20", "key_prefix": "OP_T_", "color": "#12B881", "limit": 20 },&#10;    { "id": "diagnosis", "name": "诊断性操作 TOP20", "key_prefix": "OP_D_", "color": "#2E57E5", "limit": 20 }&#10;  ]&#10;}
                   </div>
                 </div>
               </div>
@@ -522,7 +529,7 @@
               <div class="space-y-2">
                 <div class="grid grid-cols-[80px_1fr] gap-x-3 text-[11px]">
                   <span class="font-mono text-emerald-600 font-semibold">type</span>
-                  <span class="text-[#596080]">必填。配置类型，取值 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RATE</code> 或 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code></span>
+                  <span class="text-[#596080]">必填。配置类型，取值 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RATE</code>、<code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code> 或 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_MULTI_RANKING</code></span>
                 </div>
                 <div class="border-t border-[#e8eef9]"></div>
                 <div class="grid grid-cols-[80px_1fr] gap-x-3 text-[11px]">
@@ -539,11 +546,11 @@
                     <span>图表展示的子项名称（中文）</span>
                   </div>
                   <div class="grid grid-cols-[130px_1fr] gap-x-2">
-                    <span class="font-mono text-sky-600">numerator_field</span>
+                    <span class="font-mono text-sky-600">numerator_col</span>
                     <span>SQL 返回结果中的分子计数字段名（列名须与 SQL 中 SELECT 的列名完全一致）</span>
                   </div>
                   <div class="grid grid-cols-[130px_1fr] gap-x-2">
-                    <span class="font-mono text-sky-600">denominator_field</span>
+                    <span class="font-mono text-sky-600">denominator_col</span>
                     <span>SQL 返回结果中的分母计数字段名（列名须与 SQL 中 SELECT 的列名完全一致）</span>
                   </div>
                 </div>
@@ -570,11 +577,11 @@
               <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">SQL 返回格式要求</h3>
               <div class="space-y-2 text-[11px] text-[#596080]">
                 <div class="bg-amber-50 border border-amber-200 rounded-[2px] p-3">
-                  <p class="font-semibold text-amber-700 mb-1">COMPOSITE_RATE：SQL 返回单行，列名须与配置中的 numerator_field / denominator_field 一一对应</p>
+                  <p class="font-semibold text-amber-700 mb-1">COMPOSITE_RATE：SQL 返回单行，列名须与配置中的 numerator_col / denominator_col 一一对应</p>
                   <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-amber-200 p-2">
-SELECT&#10;  DEATH_IN_OR_COUNT,  -- 术中死亡分子（numerator_field）&#10;  OR_PATIENT_COUNT,   -- 分母（denominator_field，所有子项共用）&#10;  DEATH_24H_COUNT,   -- 24h死亡分子（numerator_field）&#10;  DEATH_7D_COUNT     -- 7d死亡分子（numerator_field）&#10;FROM ...
+SELECT&#10;  DEATH_IN_OR_COUNT,  -- 术中死亡分子（numerator_col）&#10;  OR_PATIENT_COUNT,   -- 分母（denominator_col，所有子项共用）&#10;  DEATH_24H_COUNT,   -- 24h死亡分子（numerator_col）&#10;  DEATH_7D_COUNT     -- 7d死亡分子（numerator_col）&#10;FROM ...
                   </div>
-                  <p class="text-[11px] text-red-500 mt-1.5">关键：SELECT 的列名必须与配置中 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">numerator_field</code> / <code class="font-mono text-[10px] bg-white/80 px-1 rounded">denominator_field</code> 的值完全一致，大小写敏感。SQL 只能返回一行结果。</p>
+                  <p class="text-[11px] text-red-500 mt-1.5">关键：SELECT 的列名必须与配置中 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">numerator_col</code> / <code class="font-mono text-[10px] bg-white/80 px-1 rounded">denominator_col</code> 的值完全一致，大小写敏感。SQL 只能返回一行结果。</p>
                 </div>
                 <div class="bg-sky-50 border border-sky-200 rounded-[2px] p-3">
                   <p class="font-semibold text-sky-700 mb-1">COMPOSITE_RANKING：SQL 返回多行排行榜数据，列名须与配置中的字段一一对应</p>
@@ -584,22 +591,21 @@ SELECT&#10;  ICD10_CODE AS DISEASE_CODE,   -- 排行维度（ranking_key_field�
                   <p class="text-[11px] text-sky-600 mt-1.5">SQL 应返回分组聚合后的结果，列名须与 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_key_field</code> 和 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_value_field</code> 配置一致。</p>
                 </div>
                 <div class="bg-gray-50 border border-gray-200 rounded-[2px] p-3">
-                  <p class="font-semibold text-gray-600 mb-1">STRUCTURE / STRUCTURE-special（无需子项配置）：SQL 将结果写入 subitem_data 表</p>
+                  <p class="font-semibold text-gray-600 mb-1">STRUCTURE / STRUCTURE-special（COMPOSITE_MULTI_RANKING 子配置）：SQL 结果存入 subitem_data</p>
                   <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-gray-200 p-2">
--- STRUCTURE：排行榜，subitem_data 表包含 ranking_key 和 ranking_value 两列<br/>
-INSERT INTO subitem_data (indicator_execution_id, ranking_key, ranking_value)<br/>
-  SELECT ICD10_CODE, COUNT(*) FROM ... GROUP BY ICD10_CODE ORDER BY COUNT(*) DESC LIMIT 100
+-- STRUCTURE + COMPOSITE_RANKING：单一排行榜<br/>
+SELECT ICD10_CODE, COUNT(*) AS disease_cnt FROM ...<br/>
+GROUP BY ICD10_CODE ORDER BY disease_cnt DESC LIMIT 50
                   </div>
                   <div class="font-mono text-[11px] text-[#334155] mt-2 bg-white rounded border border-gray-200 p-2">
--- STRUCTURE-special：双排行榜，通过 ranking_key 前缀区分类型<br/>
--- 治疗性操作前缀 "OP_T_" + ICD9CM_CODE<br/>
--- 诊断性操作前缀 "OP_D_" + DIAG_CODE
-INSERT INTO subitem_data (indicator_execution_id, ranking_key, ranking_value)<br/>
-  SELECT 'OP_T_'||ICD9CM_CODE, COUNT(*) FROM ... GROUP BY ICD9CM_CODE<br/>
-  UNION ALL<br/>
-  SELECT 'OP_D_'||DIAG_CODE, COUNT(*) FROM ... GROUP BY DIAG_CODE
+-- STRUCTURE + COMPOSITE_MULTI_RANKING：多排行榜，通过 key_prefix 前缀区分<br/>
+-- 治疗性操作前缀 "OP_T_" + 手术编码<br/>
+-- 诊断性操作前缀 "OP_D_" + 诊断编码<br/>
+SELECT 'OP_T_'||ICD9CM_CODE AS ranking_key, COUNT(*) AS cnt FROM ...<br/>
+UNION ALL<br/>
+SELECT 'OP_D_'||DIAG_CODE AS ranking_key, COUNT(*) AS cnt FROM ...
                   </div>
-                  <p class="text-[11px] text-gray-500 mt-1.5">系统从 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">subitem_data</code> 表读取 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_key</code> 和 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_value</code> 列，STRUCTURE-special 自动按 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">OP_T_</code> / <code class="font-mono text-[10px] bg-white/80 px-1 rounded">OP_D_</code> 前缀拆分为两个排行榜，无需子项配置。</p>
+                  <p class="text-[11px] text-gray-500 mt-1.5">当 subitem_config.type 为 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">COMPOSITE_MULTI_RANKING</code> 时，分析台以 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">multi</code> 模式渲染多排行榜；否则为单排行榜或原有双排行。</p>
                 </div>
               </div>
             </div>
