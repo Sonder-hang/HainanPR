@@ -19,6 +19,21 @@ class Text2SQLService:
             transport=transport,
         )
 
+    @staticmethod
+    def _parse_numeric(v):
+        """将任意值转为数值类型，用于 SQL 列值解析"""
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return v
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            try:
+                return float(v)
+            except (ValueError, TypeError):
+                return None
+
     def _make_url(self, path: str) -> str:
         return f"{self.base_url}{path}"
 
@@ -227,6 +242,7 @@ class Text2SQLService:
                         date_field=indicator_data.get("date_field"),
                         group_by_hospital=result.get("group_by_hospital", False),
                         hospital_results=result.get("hospital_results", []),
+                        subitem_data=_to_serializable_any(result.get("subitem_data")),
                     )
                 db_session.add(exec_record)
                 db_session.commit()
@@ -617,6 +633,302 @@ class Text2SQLService:
                 result["db_record_id"] = db_record_id
             return result
 
+        # ========== 复合指标执行逻辑 ==========
+        # 有 subitem_config 时，优先走复合指标分支
+        subitem_config = indicator_data.get("subitem_config")
+        # 计数型指标：优先用 single_sql；若无则用 numerator_sql（适用于四要素计数型）
+        sql_to_exec = single_sql if single_sql else (numerator_sql if is_count_type else "")
+
+        if subitem_config and sql_to_exec:
+            config_type = subitem_config.get("type")
+
+            # 注入医院和时间过滤（使用 sql 字段执行）
+            exec_sql = _inject_hospital_filter(sql_to_exec, hospital_codes)
+            exec_sql = _inject_time_filter(exec_sql, time_mode, time_value, date_field)
+
+            if config_type == "COMPOSITE_RATE":
+                # 复合率型：执行完整SQL，解析各子项的分子分母列，计算各子项比率
+                # 支持按医院分组执行（group_by_hospital）
+                all_logs = []
+                hospital_results = []
+                total_num_overall = 0
+                total_den_overall = None
+                all_ok = True
+
+                items_config = subitem_config.get("items", [])
+
+                def _calc_composite_rate(exec_sql_str: str) -> tuple:
+                    """执行一条复合率SQL，返回 (total_cnt, total_err, cols, rows, subitem_data, hosp_num, hosp_den)"""
+                    cnt, err, cols, rows = _exec_sql(exec_sql_str, include_rows=True, fetch_all=True)
+                    if err or not rows:
+                        return cnt, err, cols, rows, [], 0, None
+                    row = rows[0]
+                    sub = []
+                    hosp_num = 0
+                    hosp_den = None
+                    for item_cfg in items_config:
+                        num_col = item_cfg.get("numerator_col", "")
+                        den_col = item_cfg.get("denominator_col", "")
+                        num_v = self._parse_numeric(row.get(num_col))
+                        den_v = self._parse_numeric(row.get(den_col))
+                        rate_v = round(num_v * 100.0 / den_v, 4) if (den_v and num_v is not None and den_v != 0) else None
+                        if num_v is not None:
+                            hosp_num += num_v
+                        if den_v is not None and hosp_den is None:
+                            hosp_den = den_v
+                        sub.append({
+                            "key": item_cfg.get("key", ""),
+                            "name": item_cfg.get("name", ""),
+                            "numerator": num_v,
+                            "denominator": den_v,
+                            "rate": rate_v,
+                        })
+                    return cnt, None, cols, rows, sub, hosp_num, hosp_den
+
+                if group_by_hospital and hospital_codes and len(hospital_codes) > 0:
+                    # 按医院逐条执行
+                    for hosp_code in hospital_codes:
+                        hosp_name = hospital_names.get(hosp_code, hosp_code)
+                        hosp_logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 开始执行..."}]
+                        hosp_exec_sql = _inject_hospital_filter(sql_to_exec, [hosp_code])
+                        hosp_exec_sql = _inject_time_filter(hosp_exec_sql, time_mode, time_value, date_field)
+                        cnt, err, cols, rows, sub_data, hosp_num, hosp_den = _calc_composite_rate(hosp_exec_sql)
+                        hosp_ok = err is None
+                        if not hosp_ok:
+                            all_ok = False
+                        total_num_overall += (hosp_num or 0)
+                        if hosp_den is not None and total_den_overall is None:
+                            total_den_overall = hosp_den
+                        hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 分子：{hosp_num}，分母：{hosp_den}"})
+                        for item in sub_data:
+                            hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"  子项【{item['name']}】：{item['numerator']}/{item['denominator']} = {item['rate']}%"})
+                        hospital_results.append({
+                            "hospital_code": hosp_code,
+                            "hospital_name": hosp_name,
+                            "numerator_count": hosp_num,
+                            "denominator_count": hosp_den,
+                            "ratio_percent": round(hosp_num * 100.0 / hosp_den, 4) if (hosp_den and hosp_num is not None and hosp_den != 0) else None,
+                            "status": "success" if hosp_ok else "failed",
+                            "error": err,
+                            "preview_data": _to_serializable_rows(rows[:10]) if rows else [],
+                        })
+                        all_logs.extend(hosp_logs)
+                    total_rate_overall = round(total_num_overall * 100.0 / total_den_overall, 4) if (total_den_overall and total_num_overall > 0 and total_den_overall != 0) else None
+                    all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"全省汇总：{total_num_overall}/{total_den_overall}={total_rate_overall}%"})
+                    # 全省的 subitem_data 用第一条医院记录
+                    first_sub = hospital_results[0].get("preview_data", []) if hospital_results else []
+                    first_cols = list(first_sub[0].keys()) if first_sub else []
+                    result = {
+                        "ok": all_ok,
+                        "indicator_type": ind_type,
+                        "sql": sql_to_exec,
+                        "numerator_count": total_num_overall,
+                        "denominator_count": total_den_overall,
+                        "rate_percent": total_rate_overall,
+                        "rate_formula": f"{total_num_overall}/{total_den_overall}={total_rate_overall}%" if total_rate_overall is not None else None,
+                        "error": None if all_ok else "部分医院执行失败",
+                        "preview_columns": first_cols,
+                        "preview_rows": first_sub,
+                        "preview_data": {"columns": first_cols, "rows": first_sub},
+                        "request_id": "",
+                        "conversation_id": "",
+                        "cache_hit": False,
+                        "logs": all_logs,
+                        "duration_seconds": round(time.time() - start_time, 3),
+                        "group_by_hospital": True,
+                        "hospital_results": hospital_results,
+                        "subitem_data": _to_serializable_any(hospital_results[0].get("preview_data")) if hospital_results else None,
+                    }
+                    db_record_id = _save(result)
+                    if db_record_id is not None:
+                        result["db_record_id"] = db_record_id
+                    return result
+                else:
+                    # 全省（无分组）：直接执行一次
+                    cnt, err, cols, rows, sub_data, hosp_num, hosp_den = _calc_composite_rate(exec_sql)
+                    if err:
+                        all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"SQL 执行出错：{err}"})
+                        result = {"ok": False, "indicator_type": ind_type, "error": err, "logs": all_logs}
+                        db_record_id = _save(result)
+                        if db_record_id is not None:
+                            result["db_record_id"] = db_record_id
+                        return result
+                    all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"SQL 执行完成，共 {cnt} 条记录。"})
+                    all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"总分子：{hosp_num}，总分母：{hosp_den}"})
+                    for item in sub_data:
+                        all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"  子项【{item['name']}】：{item['numerator']}/{item['denominator']} = {item['rate']}%"})
+                    total_rate_overall = round(hosp_num * 100.0 / hosp_den, 4) if (hosp_den and hosp_num is not None and hosp_den != 0) else None
+                    result = {
+                        "ok": True,
+                        "indicator_type": ind_type,
+                        "sql": exec_sql,
+                        "numerator_count": hosp_num,
+                        "denominator_count": hosp_den,
+                        "rate_percent": total_rate_overall,
+                        "rate_formula": f"{hosp_num}/{hosp_den}={total_rate_overall}%" if total_rate_overall is not None else None,
+                        "error": None,
+                        "preview_columns": cols or [],
+                        "preview_rows": _to_serializable_rows(rows[:20]) if rows else [],
+                        "preview_data": {"columns": cols or [], "rows": _to_serializable_rows(rows[:20]) if rows else []},
+                        "request_id": "",
+                        "conversation_id": "",
+                        "cache_hit": False,
+                        "logs": all_logs,
+                        "duration_seconds": round(time.time() - start_time, 3),
+                        "subitem_data": _to_serializable_any(sub_data),
+                    }
+                    db_record_id = _save(result)
+                    if db_record_id is not None:
+                        result["db_record_id"] = db_record_id
+                    return result
+
+            elif config_type == "COMPOSITE_RANKING":
+                # 复合计数型/排行榜型：执行完整SQL，按数值排序取TOP，构建排行数据
+                # 支持按医院分组执行（group_by_hospital）
+                ranking_key_field = subitem_config.get("ranking_key_field", "ranking_key")
+                ranking_value_field = subitem_config.get("ranking_value_field", "ranking_value")
+                total_agg_field = subitem_config.get("total_aggregation_field", ranking_value_field)
+                ranking_limit = subitem_config.get("limit", 20)
+
+                def _safe_float(v):
+                    if v is None:
+                        return 0.0
+                    try:
+                        return float(v)
+                    except (ValueError, TypeError):
+                        return 0.0
+
+                all_logs = []
+                hospital_results = []
+                total_count_overall = 0.0
+                all_ok = True
+                # 收集所有医院的排行数据用于全局排行
+                all_hospital_ranking_items = []
+
+                if group_by_hospital and hospital_codes and len(hospital_codes) > 0:
+                    # 按医院逐条执行
+                    for hosp_code in hospital_codes:
+                        hosp_name = hospital_names.get(hosp_code, hosp_code)
+                        hosp_logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 开始执行..."}]
+                        hosp_exec_sql = _inject_hospital_filter(sql_to_exec, [hosp_code])
+                        hosp_exec_sql = _inject_time_filter(hosp_exec_sql, time_mode, time_value, date_field)
+                        total_cnt, total_err, cols, rows = _exec_sql(hosp_exec_sql, include_rows=True, fetch_all=True)
+                        hosp_ok = total_err is None
+                        if not hosp_ok:
+                            all_ok = False
+                        hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] SQL完成，共 {total_cnt} 条记录。"})
+                        hosp_total_count = sum(_safe_float(r.get(total_agg_field, 0)) for r in rows)
+                        total_count_overall += hosp_total_count
+                        hosp_ranked = sorted(rows, key=lambda r: _safe_float(r.get(ranking_value_field, 0)), reverse=True)
+                        hosp_ranked = hosp_ranked[:ranking_limit]
+                        # 医院级别的 subitem_data
+                        hosp_sub_data = []
+                        for r in hosp_ranked:
+                            item = {
+                                "ranking_key": r.get(ranking_key_field, ""),
+                                "ranking_value": _safe_float(r.get(ranking_value_field, 0)),
+                                **r,
+                            }
+                            hosp_sub_data.append(item)
+                            all_hospital_ranking_items.append({**item, "_hospital_code": hosp_code, "_hospital_name": hosp_name})
+                        hosp_preview = _to_serializable_rows(hosp_ranked)
+                        hospital_results.append({
+                            "hospital_code": hosp_code,
+                            "hospital_name": hosp_name,
+                            "numerator_count": int(hosp_total_count),
+                            "count": int(hosp_total_count),
+                            "status": "success" if hosp_ok else "failed",
+                            "error": total_err,
+                            "preview_data": hosp_preview,
+                            "preview_columns": list(hosp_ranked[0].keys()) if hosp_ranked else [],
+                            "subitem_data": hosp_sub_data,
+                        })
+                        hosp_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"[{hosp_name}] 总数：{int(hosp_total_count)}，排行TOP{ranking_limit}已生成。"})
+                        all_logs.extend(hosp_logs)
+                    # 构建全省的全局排行榜（按 key 聚合所有医院数据，再重新排行）
+                    from collections import defaultdict
+                    global_agg = defaultdict(float)
+                    for item in all_hospital_ranking_items:
+                        key = str(item.get("ranking_key", ""))
+                        global_agg[key] += item.get("ranking_value", 0.0)
+                    global_sorted = sorted(global_agg.items(), key=lambda kv: kv[1], reverse=True)
+                    global_subitem_data = []
+                    for rank_key, rank_val in global_sorted[:ranking_limit]:
+                        global_subitem_data.append({"ranking_key": rank_key, "ranking_value": rank_val})
+                    all_logs.append({"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"全省汇总：总数量={int(total_count_overall)}，全局TOP{ranking_limit}排行已生成。"})
+                    first_preview = hospital_results[0].get("preview_data", []) if hospital_results else []
+                    first_cols = hospital_results[0].get("preview_columns", []) if hospital_results else []
+                    result = {
+                        "ok": all_ok,
+                        "indicator_type": ind_type,
+                        "sql": sql_to_exec,
+                        "count": int(total_count_overall),
+                        "numerator_count": int(total_count_overall),
+                        "error": None if all_ok else "部分医院执行失败",
+                        "preview_columns": first_cols,
+                        "preview_rows": first_preview,
+                        "preview_data": {"columns": first_cols, "rows": first_preview},
+                        "request_id": "",
+                        "conversation_id": "",
+                        "cache_hit": False,
+                        "logs": all_logs,
+                        "duration_seconds": round(time.time() - start_time, 3),
+                        "group_by_hospital": True,
+                        "hospital_results": hospital_results,
+                        "subitem_data": _to_serializable_any(global_subitem_data),
+                    }
+                    db_record_id = _save(result)
+                    if db_record_id is not None:
+                        result["db_record_id"] = db_record_id
+                    return result
+                else:
+                    # 全省（无分组）：直接执行一次
+                    total_cnt, total_err, cols, rows = _exec_sql(exec_sql, include_rows=True, fetch_all=True)
+                    logs = [{"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"执行复合计数型指标 SQL..."}]
+                    if total_err:
+                        logs.append({"time": time.strftime("%H:%M:%S"), "level": "error", "message": f"SQL 执行出错：{total_err}"})
+                        result = {"ok": False, "indicator_type": ind_type, "error": total_err, "logs": logs}
+                        db_record_id = _save(result)
+                        if db_record_id is not None:
+                            result["db_record_id"] = db_record_id
+                        return result
+                    total_count = sum(_safe_float(r.get(total_agg_field, 0)) for r in rows)
+                    ranked_rows = sorted(rows, key=lambda r: _safe_float(r.get(ranking_value_field, 0)), reverse=True)
+                    ranked_rows = ranked_rows[:ranking_limit]
+                    subitem_data = []
+                    for r in ranked_rows:
+                        subitem_data.append({
+                            "ranking_key": r.get(ranking_key_field, ""),
+                            "ranking_value": _safe_float(r.get(ranking_value_field, 0)),
+                            **r,
+                        })
+                    logs.extend([
+                        {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"SQL 执行完成，共 {total_cnt} 条记录。"},
+                        {"time": time.strftime("%H:%M:%S"), "level": "info", "message": f"总数量：{int(total_count)}，TOP{ranking_limit}排行已生成。"},
+                    ])
+                    result = {
+                        "ok": True,
+                        "indicator_type": ind_type,
+                        "sql": exec_sql,
+                        "count": int(total_count),
+                        "numerator_count": int(total_count),
+                        "error": None,
+                        "preview_columns": cols or [],
+                        "preview_rows": _to_serializable_rows(ranked_rows),
+                        "preview_data": {"columns": cols or [], "rows": _to_serializable_rows(ranked_rows)},
+                        "request_id": "",
+                        "conversation_id": "",
+                        "cache_hit": False,
+                        "logs": logs,
+                        "duration_seconds": round(time.time() - start_time, 3),
+                        "subitem_data": _to_serializable_any(subitem_data),
+                    }
+                    db_record_id = _save(result)
+                    if db_record_id is not None:
+                        result["db_record_id"] = db_record_id
+                    return result
+
+        # ========== 原有计数型/单SQL逻辑 ==========
         # 计数型指标：优先用 single_sql；若无则用 numerator_sql（适用于四要素计数型）
         sql_to_exec = single_sql if single_sql else (numerator_sql if is_count_type else "")
 

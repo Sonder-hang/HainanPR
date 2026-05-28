@@ -32,6 +32,8 @@ class IndicatorBase(BaseModel):
     regex_rule: str = ""
     calc_type: str = "ratio"
     date_field: str = "discharge"  # discharge=出院时间, admission=入院时间
+    template_type: Optional[str] = None  # STRUCTURE | STRUCTURE-special | RATE | RATE-special | COMPOSITE
+    subitem_config: Optional[dict] = None  # 复合指标子项配置（COMPOSITE_RATE/COMPOSITE_RANKING）
 
 
 class IndicatorCreate(IndicatorBase):
@@ -63,6 +65,8 @@ class IndicatorUpdate(BaseModel):
     remark: Optional[str] = None
     calc_type: Optional[str] = None
     date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间, visit=就诊时间
+    template_type: Optional[str] = None  # STRUCTURE | STRUCTURE-special | RATE | RATE-special | COMPOSITE
+    subitem_config: Optional[dict] = None  # 复合指标子项配置
 
 
 class IndicatorResponse(IndicatorBase):

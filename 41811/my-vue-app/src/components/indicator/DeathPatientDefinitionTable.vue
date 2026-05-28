@@ -9,6 +9,49 @@
           title="指标说明"
         >?</button>
       </div>
+      <div class="flex flex-wrap items-center gap-2.5">
+        <select
+          v-model="timeMode"
+          class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+        >
+          <option value="monthly">按月份</option>
+          <option value="quarterly">按季度</option>
+        </select>
+        <select
+          v-if="timeMode === 'monthly'"
+          v-model="selectedYear"
+          class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+        >
+          <option v-for="year in yearOptions" :key="year" :value="year">{{ year }}年</option>
+        </select>
+        <select
+          v-if="timeMode === 'monthly'"
+          v-model="selectedMonth"
+          class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+        >
+          <option v-for="month in monthOptions" :key="month.value" :value="month.value">{{ month.label }}</option>
+        </select>
+        <template v-if="timeMode === 'quarterly'">
+          <select
+            v-model="selectedQuarterYear"
+            class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+          >
+            <option v-for="year in quarterYearOptions" :key="year" :value="year">{{ year }}年</option>
+          </select>
+          <select
+            v-model="selectedQuarter"
+            class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+          >
+            <option v-for="q in quarterOptions" :key="q.value" :value="q.value">{{ q.label }}</option>
+          </select>
+        </template>
+        <button
+          @click="loadData"
+          class="h-8 rounded bg-[#2E57E5] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#1E4BD8]"
+        >
+          查询
+        </button>
+      </div>
     </header>
 
     <div class="bg-white rounded-[2px] border border-[#b8c9e8]/60 flex-1 overflow-hidden flex flex-col shadow-sm">
@@ -60,8 +103,8 @@
           </thead>
           <tbody class="divide-y divide-[#b8c9e8]/30">
             <tr v-for="patient in paginatedData" :key="patient.id" class="hover:bg-[#e8eef9]/40 transition-colors group">
-              <td class="px-3.5 py-2.5 text-[12px] text-[#596080] whitespace-nowrap font-mono">{{ patient.patientId }}</td>
-              <td class="px-3.5 py-2.5 text-[12px] text-[#1F264D] font-medium">{{ patient.patientName }}</td>
+              <td class="px-3.5 py-2.5 text-[12px] text-[#596080] whitespace-nowrap font-mono">{{ patient.patient_id }}</td>
+              <td class="px-3.5 py-2.5 text-[12px] text-[#1F264D] font-medium">{{ patient.patient_name }}</td>
               <td class="px-3.5 py-2.5 text-[12px] text-[#596080]">{{ patient.department }}</td>
               <td class="px-3.5 py-2.5 text-[12px] text-[#596080]">{{ patient.hospital }}</td>
               <td class="px-3.5 py-2.5 text-[12px] text-right">
@@ -87,23 +130,23 @@
           <div class="mb-3"><h3 class="font-bold text-[#1F264D] text-[13px]">基本信息</h3></div>
           <div class="grid grid-cols-2 gap-3 text-[12px]">
             <div><span class="text-[#596080] block mb-0.5">医院名称</span><span class="font-medium text-[#1F264D]">{{ currentPatient?.hospital }}</span></div>
-            <div><span class="text-[#596080] block mb-0.5">患者ID</span><span class="font-medium text-[#1F264D] font-mono">{{ currentPatient?.patientId }}</span></div>
-            <div><span class="text-[#596080] block mb-0.5">患者姓名</span><span class="font-medium text-[#1F264D]">{{ currentPatient?.patientName }}</span></div>
+            <div><span class="text-[#596080] block mb-0.5">患者ID</span><span class="font-medium text-[#1F264D] font-mono">{{ currentPatient?.patient_id }}</span></div>
+            <div><span class="text-[#596080] block mb-0.5">患者姓名</span><span class="font-medium text-[#1F264D]">{{ currentPatient?.patient_name }}</span></div>
             <div><span class="text-[#596080] block mb-0.5">科室名称</span><span class="font-medium text-[#1F264D]">{{ currentPatient?.department }}</span></div>
           </div>
         </div>
         <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
           <h3 class="font-bold text-[#1F264D] text-[13px] mb-2.5">转归判断依据</h3>
           <div class="bg-red-50 border border-red-200 rounded-[2px] p-3 text-[12px] text-red-800">
-            <p class="font-medium mb-1">{{ currentPatient?.deathBasis }}</p>
-            <p class="text-red-700">{{ currentPatient?.deathBasisDetail }}</p>
+            <p class="font-medium mb-1">{{ currentPatient?.death_basis }}</p>
+            <p class="text-red-700">{{ currentPatient?.death_basis_detail }}</p>
           </div>
         </div>
         <div>
           <h3 class="font-bold text-[#1F264D] text-[13px] mb-2.5 flex items-center">病历来源</h3>
           <div class="bg-[#f8faff] border border-[#b8c9e8]/60 rounded-[2px] p-4">
             <p class="text-[11px] text-[#B8BCCC] mb-1.5 font-mono">=== 病历来源信息 ===</p>
-            <div class="bg-[#f0f4ff] p-2.5 rounded-[2px] text-[11px] font-mono text-[#596080] whitespace-pre-line leading-relaxed">{{ currentPatient?.deathRecordSource }}</div>
+            <div class="bg-[#f0f4ff] p-2.5 rounded-[2px] text-[11px] font-mono text-[#596080] whitespace-pre-line leading-relaxed">{{ currentPatient?.death_record_source }}</div>
           </div>
         </div>
       </div>
@@ -148,38 +191,99 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { Search, Eye, ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
+import { core18Api, type DeathPatient } from '@/api/core18'
 
-const props = defineProps({ title: { type: String, default: '死亡或出院预期转归不良患者' } })
+const props = defineProps({
+  title: { type: String, default: '死亡或出院预期转归不良患者' },
+  hospitalCode: { type: String, default: '' },
+})
 
-const mockPatients = Array.from({ length: 100 }, (_, i) => ({
-  id: i + 1,
-  patientId: `P${String(i + 1).padStart(6, '0')}`,
-  patientName: `患者${i + 1}`,
-  department: ['心血管内科', '神经外科', '肿瘤科', '呼吸内科', '消化内科'][i % 5],
-  hospital: ['省立第一医院', '市中心医院', '省肿瘤医院', '县人民医院', '康华医院'][i % 5],
-  deathBasis: i % 2 === 0 ? '病案首页标记转归不良' : '模型预估转归不良',
-  deathBasisDetail: i % 2 === 0 ? '根据病案首页出院转归标记，患者于出院时被标记为转归不良状态。' : '根据模型预估，患者病情严重程度达到预期转归不良风险阈值。',
-  deathRecordSource: `[病历系统] 住院号: ${String(i + 10000).padStart(8, '0')}\n[死亡时间] ${2026 - Math.floor(i / 20)}-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}\n[主治医师] 医师${String((i % 10) + 1).padStart(2, '0')}\n[死亡原因] ${['心力衰竭', '脑卒中', '恶性肿瘤', '呼吸衰竭', '多器官功能衰竭'][i % 5]}`
-}))
+// 时间筛选选项
+const now = new Date()
+const currentYear = now.getFullYear()
+const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i)
+const quarterYearOptions = Array.from({ length: 7 }, (_, i) => currentYear - 3 + i)
+const monthOptions = [
+  { value: 1, label: '1月' }, { value: 2, label: '2月' }, { value: 3, label: '3月' },
+  { value: 4, label: '4月' }, { value: 5, label: '5月' }, { value: 6, label: '6月' },
+  { value: 7, label: '7月' }, { value: 8, label: '8月' }, { value: 9, label: '9月' },
+  { value: 10, label: '10月' }, { value: 11, label: '11月' }, { value: 12, label: '12月' }
+]
+const quarterOptions = [
+  { value: '1', label: 'Q1（一季度）' },
+  { value: '2', label: 'Q2（二季度）' },
+  { value: '3', label: 'Q3（三季度）' },
+  { value: '4', label: 'Q4（四季度）' },
+]
 
+// 时间筛选状态
+const timeMode = ref<'monthly' | 'quarterly'>('monthly')
+const selectedYear = ref(currentYear)
+const selectedMonth = ref(now.getMonth() + 1)
+const selectedQuarterYear = ref(currentYear)
+const selectedQuarter = ref('1')
+
+// 搜索和分页
 const searchKeyword = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const modalVisible = ref(false)
 const helpVisible = ref(false)
-const currentPatient = ref<any>(null)
+const currentPatient = ref<DeathPatient | null>(null)
+
+// 后端数据
+const patientsData = ref<DeathPatient[]>([])
+const totalItems = ref(0)
+const isLoading = ref(false)
+
+// 获取时间值
+function getTimeValue(): string {
+  if (timeMode.value === 'monthly') {
+    return `${selectedYear.value}-${String(selectedMonth.value).padStart(2, '0')}`
+  } else {
+    return `${selectedQuarterYear.value}-Q${selectedQuarter.value}`
+  }
+}
+
+// 加载数据
+async function loadData() {
+  isLoading.value = true
+  try {
+    const res = await core18Api.getDeathPatients({
+      hospital_code: props.hospitalCode || undefined,
+      time_mode: timeMode.value,
+      time_value: getTimeValue(),
+      page: currentPage.value,
+      page_size: pageSize.value,
+      keyword: searchKeyword.value,
+    })
+    patientsData.value = res.data || []
+    totalItems.value = res.total || 0
+  } catch (e) {
+    console.error('加载死亡患者数据失败:', e)
+  } finally {
+    isLoading.value = false
+  }
+}
 
 const filteredData = computed(() => {
-  if (!searchKeyword.value.trim()) return mockPatients
+  if (!searchKeyword.value.trim()) return patientsData.value
   const keyword = searchKeyword.value.toLowerCase()
-  return mockPatients.filter(patient => patient.patientId.toLowerCase().includes(keyword) || patient.patientName.toLowerCase().includes(keyword) || patient.department.toLowerCase().includes(keyword) || patient.hospital.toLowerCase().includes(keyword))
+  return patientsData.value.filter(patient =>
+    patient.patientId?.toLowerCase().includes(keyword) ||
+    patient.patientName?.toLowerCase().includes(keyword) ||
+    patient.department?.toLowerCase().includes(keyword) ||
+    patient.hospital?.toLowerCase().includes(keyword)
+  )
 })
 
-const totalItems = computed(() => filteredData.value.length)
 const totalPages = computed(() => Math.ceil(totalItems.value / pageSize.value))
-const paginatedData = computed(() => { const start = (currentPage.value - 1) * pageSize.value; return filteredData.value.slice(start, start + pageSize.value) })
+const paginatedData = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredData.value.slice(start, start + pageSize.value)
+})
 const visiblePages = computed(() => {
   const maxVisible = 5
   let start = Math.max(1, currentPage.value - Math.floor(maxVisible / 2))
@@ -188,7 +292,7 @@ const visiblePages = computed(() => {
   return Array.from({ length: end - start + 1 }, (_, i) => start + i)
 })
 
-const handleSearch = () => { currentPage.value = 1 }
+const handleSearch = () => { currentPage.value = 1; loadData() }
 const prevPage = () => { if (currentPage.value > 1) currentPage.value-- }
 const nextPage = () => { if (currentPage.value < totalPages.value) currentPage.value++ }
 const goToPage = (page: number) => { currentPage.value = page }
@@ -196,6 +300,10 @@ const openModal = (patient: any) => { currentPatient.value = patient; modalVisib
 const closeModal = () => { modalVisible.value = false; currentPatient.value = null }
 
 watch(searchKeyword, () => { currentPage.value = 1 })
+watch(currentPage, () => { loadData() })
+watch(() => props.hospitalCode, () => { loadData() })
+
+onMounted(() => { loadData() })
 </script>
 
 <style scoped>

@@ -1,4 +1,4 @@
-<template>
+<template v-bind="$attrs">
   <div class="flex h-full min-h-0 flex-col bg-[#F4F6F8] p-5 font-sans overflow-y-auto">
     <header class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-2">
@@ -21,28 +21,35 @@
                 v-model="cardQueryType"
                 class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
               >
-                <option value="year">按年份</option>
-                <option value="month">按月份</option>
+                <option value="monthly">按月份</option>
+                <option value="quarterly">按季度</option>
               </select>
               <select
-                v-if="cardQueryType === 'year'"
-                v-model="cardSelectedYear"
+                v-if="cardQueryType === 'monthly'"
+                v-model="cardSelectedYearForMonth"
                 class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
               >
-                <option v-for="year in years" :key="year" :value="year">{{ year }}年</option>
+                <option v-for="year in yearOptions" :key="year" :value="year">{{ year }}年</option>
               </select>
-              <template v-if="cardQueryType === 'month'">
+              <select
+                v-if="cardQueryType === 'monthly'"
+                v-model="cardSelectedMonth"
+                class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+              >
+                <option v-for="month in monthOptions" :key="month.value" :value="month.value">{{ month.label }}</option>
+              </select>
+              <template v-if="cardQueryType === 'quarterly'">
                 <select
-                  v-model="cardSelectedYearForMonth"
+                  v-model="cardQuarterYear"
                   class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
                 >
-                  <option v-for="year in years" :key="year" :value="year">{{ year }}年</option>
+                  <option v-for="year in quarterYearOptions" :key="year" :value="year">{{ year }}年</option>
                 </select>
                 <select
-                  v-model="cardSelectedMonth"
+                  v-model="cardQuarterNum"
                   class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
                 >
-                  <option v-for="month in months" :key="month.value" :value="month.value">{{ month.label }}</option>
+                  <option v-for="q in quarterOptions" :key="q.value" :value="q.value">{{ q.label }}</option>
                 </select>
               </template>
               <div v-if="showDeathToggle" class="flex rounded border border-[#D1D5DB] bg-white overflow-hidden">
@@ -66,7 +73,7 @@
               <button
                 type="button"
                 class="h-8 rounded bg-[#2E57E5] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#1E4BD8]"
-                @click="updateCardData"
+                @click="fetchCardData"
               >
                 查询
               </button>
@@ -115,8 +122,8 @@
                 v-model="timeComparisonType"
                 class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
               >
-                <option value="year">按年份</option>
-                <option value="month">按月份</option>
+                <option value="monthly">按月份</option>
+                <option value="quarterly">按季度</option>
               </select>
               <div v-if="showDeathToggle" class="flex rounded border border-[#D1D5DB] bg-white overflow-hidden">
                 <button
@@ -139,7 +146,7 @@
               <button
                 type="button"
                 class="h-8 rounded bg-[#2E57E5] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#1E4BD8]"
-                @click="updateTimeComparisonChart"
+                @click="fetchTrendData"
               >
                 查询
               </button>
@@ -163,28 +170,35 @@
                 v-model="hospitalComparisonType"
                 class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
               >
-                <option value="year">按年份</option>
-                <option value="month">按月份</option>
+                <option value="monthly">按月份</option>
+                <option value="quarterly">按季度</option>
               </select>
               <select
-                v-if="hospitalComparisonType === 'year'"
+                v-if="hospitalComparisonType === 'quarterly'"
                 v-model="selectedComparisonYear"
                 class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
               >
-                <option v-for="year in years" :key="year" :value="year">{{ year }}年</option>
+                <option v-for="year in quarterYearOptions" :key="year" :value="year">{{ year }}年</option>
               </select>
-              <template v-if="hospitalComparisonType === 'month'">
+              <select
+                v-if="hospitalComparisonType === 'quarterly'"
+                v-model="selectedComparisonQuarter"
+                class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+              >
+                <option v-for="q in quarterOptions" :key="q.value" :value="q.value">{{ q.label }}</option>
+              </select>
+              <template v-if="hospitalComparisonType === 'monthly'">
                 <select
                   v-model="selectedComparisonYearForMonth"
                   class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
                 >
-                  <option v-for="year in years" :key="year" :value="year">{{ year }}年</option>
+                  <option v-for="year in yearOptions" :key="year" :value="year">{{ year }}年</option>
                 </select>
                 <select
                   v-model="selectedComparisonMonth"
                   class="h-8 rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
                 >
-                  <option v-for="month in months" :key="month.value" :value="month.value">{{ month.label }}</option>
+                  <option v-for="month in monthOptions" :key="month.value" :value="month.value">{{ month.label }}</option>
                 </select>
               </template>
               <div v-if="showDeathToggle" class="flex rounded border border-[#D1D5DB] bg-white overflow-hidden">
@@ -208,7 +222,7 @@
               <button
                 type="button"
                 class="h-8 rounded bg-[#2E57E5] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#1E4BD8]"
-                @click="updateHospitalComparisonChart"
+                @click="fetchHospitalData"
               >
                 查询
               </button>
@@ -276,8 +290,28 @@ import { ref, onMounted, watch } from 'vue'
 import * as echarts from 'echarts'
 import { X } from 'lucide-vue-next'
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown.vue'
+import { core18Api } from '@/api/core18'
+
+defineOptions({ inheritAttrs: false })
+
+// ---- 医院列表（从后端加载，含 all 全省） ----
+const hospitals = ref<Array<{ value: string; label: string }>>([])
+const fetchHospitals = async () => {
+  try {
+    const res = await core18Api.getHospitals() as Array<{ value: string; label: string }>
+    hospitals.value = [{ value: 'all', label: '全省' }, ...(res || [])]
+    // 默认：全省 + 医院列表第一家
+    const firstHospital = (res || [])[0]
+    selectedHospitals.value = firstHospital ? ['all', firstHospital.value] : ['all']
+  } catch (e) {
+    console.error('获取医院列表失败:', e)
+    hospitals.value = [{ value: 'all', label: '全省' }]
+    selectedHospitals.value = ['all']
+  }
+}
 
 const props = defineProps({
+  indicator_key: { type: String, default: '' },
   title: { type: String, default: '指标分析' },
   leftTitle: { type: String, default: '百分率直观展示' },
   timeComparisonTitle: { type: String, default: '趋势分析' },
@@ -286,118 +320,186 @@ const props = defineProps({
   rateLabel: { type: String, default: '率' },
   rateUnit: { type: String, default: '%' },
   maxRate: { type: Number, default: 100 },
-  cardData: {
-    type: Object,
-    default: () => ({
-      actual: { 2022: 82, 2023: 83, 2024: 85, 2025: 87, 2026: 89 },
-      estimated: { 2022: 83, 2023: 84, 2024: 86, 2025: 88, 2026: 90 }
-    })
-  },
-  timeTrendData: {
-    type: Object,
-    default: () => ({
-      actual: { years: ['2022', '2023', '2024', '2025', '2026'], rates: [82, 83, 85, 87, 89] },
-      estimated: { years: ['2022', '2023', '2024', '2025', '2026'], rates: [83, 84, 86, 88, 90] }
-    })
-  },
-  hospitalComparisonData: {
-    type: Object,
-    default: () => ({
-      actual: {
-        hospitalA: { 2022: 83, 2023: 84, 2024: 86, 2025: 88, 2026: 90 },
-        hospitalB: { 2022: 81, 2023: 82, 2024: 84, 2025: 86, 2026: 88 },
-        hospitalC: { 2022: 84, 2023: 85, 2024: 87, 2025: 89, 2026: 91 },
-        hospitalD: { 2022: 80, 2023: 81, 2024: 83, 2025: 85, 2026: 87 },
-        hospitalE: { 2022: 82, 2023: 83, 2024: 85, 2025: 87, 2026: 89 },
-      },
-      estimated: {
-        hospitalA: { 2022: 84, 2023: 85, 2024: 87, 2025: 89, 2026: 91 },
-        hospitalB: { 2022: 82, 2023: 83, 2024: 85, 2025: 87, 2026: 89 },
-        hospitalC: { 2022: 85, 2023: 86, 2024: 88, 2025: 90, 2026: 92 },
-        hospitalD: { 2022: 81, 2023: 82, 2024: 84, 2025: 86, 2026: 88 },
-        hospitalE: { 2022: 83, 2023: 84, 2024: 86, 2025: 88, 2026: 90 },
-      }
-    })
-  },
-  yAxisUnit: { type: String, default: '%' }
+  yAxisUnit: { type: String, default: '%' },
+  initTimeMode: { type: String, default: '' },
+  initTimeValue: { type: String, default: '' },
+  initHospital: { type: String, default: '' },
 })
 
-const emit = defineEmits(['update:selectedHospitals'])
+const now = new Date()
+const currentYear = now.getFullYear()
 
-const years = [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
-const months = [
+// ---- 筛选器状态 ----
+const selectedHospitals = ref<string[]>(['all'])
+// 当前生效的医院范围（由 initHospital 初始化，受顶部筛选器控制）
+const appliedHospital = ref('all')
+watch(() => props.initHospital, (val) => {
+  if (val) appliedHospital.value = val
+}, { immediate: true })
+// appliedHospital 变化时重新拉取卡片和趋势数据
+watch(appliedHospital, () => {
+  fetchCardData()
+  fetchTrendData()
+})
+
+// 卡片
+const cardQueryType = ref<'monthly' | 'quarterly'>('monthly')
+const cardSelectedYearForMonth = ref(currentYear)
+const cardSelectedMonth = ref(1)
+const cardQuarterYear = ref(currentYear)
+const cardQuarterNum = ref('1')
+const cardDataType = ref('actual')
+
+// 趋势图
+const timeComparisonType = ref<'monthly' | 'quarterly'>('monthly')
+const timeComparisonDataType = ref('actual')
+
+// 医院对比
+const hospitalComparisonType = ref<'monthly' | 'quarterly'>('monthly')
+const selectedComparisonYear = ref(currentYear)
+const selectedComparisonQuarter = ref('1')
+const selectedComparisonYearForMonth = ref(currentYear)
+const selectedComparisonMonth = ref(1)
+const hospitalComparisonDataType = ref('actual')
+
+// ---- 本地数据状态 ----
+const currentRate = ref<number>(0)
+const localCardData = ref<Record<string, Record<string, number | null>>>({})
+const localTimeTrendData = ref<Record<string, any>>({})
+const localHospitalComparisonData = ref<Record<string, Record<string, Record<string, number | null>>>>({})
+
+const isFetchingCard = ref(false)
+const isFetchingTrend = ref(false)
+const isFetchingHospital = ref(false)
+
+const helpVisible = ref(false)
+
+// ---- 筛选器选项 ----
+const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i)
+const quarterYearOptions = Array.from({ length: 7 }, (_, i) => currentYear - 3 + i)
+const monthOptions = [
   { value: 1, label: '1月' }, { value: 2, label: '2月' }, { value: 3, label: '3月' },
   { value: 4, label: '4月' }, { value: 5, label: '5月' }, { value: 6, label: '6月' },
   { value: 7, label: '7月' }, { value: 8, label: '8月' }, { value: 9, label: '9月' },
   { value: 10, label: '10月' }, { value: 11, label: '11月' }, { value: 12, label: '12月' }
 ]
-
-const hospitals = [
-  { value: 'hospitalA', label: '医院A' },
-  { value: 'hospitalB', label: '医院B' },
-  { value: 'hospitalC', label: '医院C' },
-  { value: 'hospitalD', label: '医院D' },
-  { value: 'hospitalE', label: '医院E' },
+const quarterOptions = [
+  { value: '1', label: 'Q1（一季度）' }, { value: '2', label: 'Q2（二季度）' },
+  { value: '3', label: 'Q3（三季度）' }, { value: '4', label: 'Q4（四季度）' },
 ]
+const buildCardTimeValue = () => {
+  if (cardQueryType.value === 'monthly') {
+    return `${cardSelectedYearForMonth.value}-${String(cardSelectedMonth.value).padStart(2, '0')}`
+  }
+  return `${cardQuarterYear.value}-Q${cardQuarterNum.value}`
+}
 
-const selectedHospitals = ref(['hospitalA', 'hospitalB', 'hospitalC'])
-const cardQueryType = ref('year')
-const cardSelectedYear = ref(2024)
-const cardSelectedYearForMonth = ref(2024)
-const cardSelectedMonth = ref(1)
-const cardDataType = ref('actual')
-const timeComparisonType = ref('year')
-const timeComparisonDataType = ref('actual')
-const hospitalComparisonType = ref('year')
-const selectedComparisonYear = ref(2024)
-const selectedComparisonYearForMonth = ref(2024)
-const selectedComparisonMonth = ref(1)
-const hospitalComparisonDataType = ref('actual')
-const currentRate = ref(85)
-const helpVisible = ref(false)
+const buildTrendTimeValue = () => {
+  return timeComparisonType.value === 'monthly'
+    ? `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    : `${currentYear}-Q${Math.ceil((now.getMonth() + 1) / 3)}`
+}
 
+const buildHospitalTimeValue = () => {
+  if (hospitalComparisonType.value === 'monthly') {
+    return `${selectedComparisonYearForMonth.value}-${String(selectedComparisonMonth.value).padStart(2, '0')}`
+  }
+  return `${selectedComparisonYear.value}-Q${selectedComparisonQuarter.value}`
+}
+
+// ---- 三个独立拉取函数 ----
+const fetchCardData = async () => {
+  if (!props.indicator_key) return
+  isFetchingCard.value = true
+  try {
+    const res = await core18Api.getIndicatorData({
+      indicator_key: props.indicator_key,
+      time_mode: cardQueryType.value,
+      time_value: buildCardTimeValue(),
+      data_type: 'card',
+      hospital_code: appliedHospital.value === 'all' ? undefined : appliedHospital.value,
+    }) as any
+    if (res) {
+      localCardData.value = res.cardData || {}
+      const dataSource = localCardData.value[cardDataType.value] || {}
+      currentRate.value = dataSource[buildCardTimeValue()] ?? dataSource[cardSelectedYearForMonth.value] ?? 0
+    }
+  } catch (e) {
+    console.error('获取卡片数据失败:', e)
+  } finally {
+    isFetchingCard.value = false
+  }
+}
+
+const fetchTrendData = async () => {
+  if (!props.indicator_key) return
+  isFetchingTrend.value = true
+  try {
+    const res = await core18Api.getIndicatorData({
+      indicator_key: props.indicator_key,
+      time_mode: timeComparisonType.value,
+      time_value: buildTrendTimeValue(),
+      data_type: 'trend',
+      hospital_code: appliedHospital.value === 'all' ? undefined : appliedHospital.value,
+    }) as any
+    if (res) {
+      localTimeTrendData.value = res.timeTrendData || {}
+      updateTimeComparisonChart()
+    }
+  } catch (e) {
+    console.error('获取趋势数据失败:', e)
+  } finally {
+    isFetchingTrend.value = false
+  }
+}
+
+const fetchHospitalData = async () => {
+  if (!props.indicator_key) return
+  isFetchingHospital.value = true
+  try {
+    const res = await core18Api.getIndicatorData({
+      indicator_key: props.indicator_key,
+      time_mode: hospitalComparisonType.value,
+      time_value: buildHospitalTimeValue(),
+      data_type: 'hospital',
+      selected_hospitals: selectedHospitals.value.join(','),
+    }) as any
+    if (res) {
+      localHospitalComparisonData.value = res.hospitalComparisonData || {}
+      updateHospitalComparisonChart()
+    }
+  } catch (e) {
+    console.error('获取医院对比数据失败:', e)
+  } finally {
+    isFetchingHospital.value = false
+  }
+}
+
+// ---- 图表渲染 ----
 const timeComparisonChartRef = ref<HTMLElement | null>(null)
 const hospitalComparisonChartRef = ref<HTMLElement | null>(null)
 let timeComparisonChart: echarts.ECharts | null = null
 let hospitalComparisonChart: echarts.ECharts | null = null
 
-const generateMonthlyRateData = (yearRate: number, month: number) => {
-  const monthFactors = [0.95, 0.9, 1.0, 0.98, 1.02, 1.0, 1.05, 1.03, 0.97, 0.95, 0.92, 0.98]
-  const factor = monthFactors[month - 1]
-  return Number((yearRate * factor).toFixed(1))
-}
-
-const updateCardData = () => {
-  const dataSource = (props.cardData as any)[cardDataType.value]
-  if (cardQueryType.value === 'year') {
-    currentRate.value = dataSource[cardSelectedYear.value] || dataSource[2024]
-  } else {
-    const yearRate = dataSource[cardSelectedYearForMonth.value] || dataSource[2024]
-    currentRate.value = generateMonthlyRateData(yearRate, cardSelectedMonth.value)
-  }
-}
-
-const initTimeComparisonChart = () => {
-  if (timeComparisonChartRef.value) {
-    timeComparisonChart = echarts.init(timeComparisonChartRef.value)
-    updateTimeComparisonChart()
-  }
+const getDynamicYAxisMax = (data: number[]) => {
+  const max = Math.max(...data.filter(v => typeof v === 'number' && !isNaN(v)))
+  if (max === 0) return 100
+  if (max <= 1) return 1
+  if (max <= 5) return 5
+  if (max <= 10) return 10
+  if (max <= 20) return 20
+  if (max <= 30) return 30
+  if (max <= 50) return 50
+  if (max <= 100) return 100
+  return Math.ceil(max * 1.2)
 }
 
 const updateTimeComparisonChart = () => {
   if (!timeComparisonChart) return
-  const trendData = (props.timeTrendData as any)[timeComparisonDataType.value]
-  let xAxisData: string[] = []
-  let seriesData: number[] = []
-
-  if (timeComparisonType.value === 'year') {
-    xAxisData = trendData.years
-    seriesData = trendData.rates
-  } else {
-    xAxisData = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
-    const baseYearRate = (props.cardData as any)[cardDataType.value][2024]
-    seriesData = months.map(month => generateMonthlyRateData(baseYearRate, month.value))
-  }
+  const trendData = localTimeTrendData.value[timeComparisonDataType.value]
+  if (!trendData) return
+  const xAxisData = trendData.years || []
+  const seriesData = trendData.rates || trendData.data || []
 
   timeComparisonChart.setOption({
     tooltip: { trigger: 'axis', formatter: (params: any) => params[0].name + '<br/>' + props.rateLabel + ': ' + params[0].value + props.yAxisUnit },
@@ -413,36 +515,36 @@ const updateTimeComparisonChart = () => {
   }, true)
 }
 
-const initHospitalComparisonChart = () => {
-  if (hospitalComparisonChartRef.value) {
-    hospitalComparisonChart = echarts.init(hospitalComparisonChartRef.value)
-    updateHospitalComparisonChart()
-  }
-}
-
 const updateHospitalComparisonChart = () => {
   if (!hospitalComparisonChart) return
-  const hospitalDataMap = (props.hospitalComparisonData as any)[hospitalComparisonDataType.value]
-  const seriesData: number[] = []
+  const hospitalDataMap = localHospitalComparisonData.value[hospitalComparisonDataType.value]
+  const seriesData: (number | 0)[] = []
 
   selectedHospitals.value.forEach(hospitalKey => {
-    const hospital = hospitalDataMap[hospitalKey]
-    let rate: number
-    if (hospitalComparisonType.value === 'year') {
-      rate = hospital[selectedComparisonYear.value] || hospital[2024]
-    } else {
-      rate = generateMonthlyRateData(hospital[2024], selectedComparisonMonth.value)
-    }
-    seriesData.push(rate)
+    const hospital = hospitalDataMap?.[hospitalKey]
+    if (!hospital) { seriesData.push(0); return }
+    const yearKey = hospitalComparisonType.value === 'monthly'
+      ? String(selectedComparisonYearForMonth.value)
+      : selectedComparisonYear.value
+    seriesData.push(hospital[yearKey] ?? 0)
   })
 
   hospitalComparisonChart.setOption({
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params: any) => params[0].name + '<br/>' + props.rateLabel + ': ' + params[0].value + props.yAxisUnit },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '3%', containLabel: true },
-    xAxis: { type: 'category', data: selectedHospitals.value.map(key => hospitals.find(h => h.value === key)?.label || key) },
-    yAxis: { type: 'value', name: props.rateLabel + ' (' + props.yAxisUnit + ')', axisLabel: { formatter: '{value}' + props.yAxisUnit } },
+    xAxis: { type: 'category', data: selectedHospitals.value.map(key => (hospitals.value as Array<{ value: string; label: string }>).find(h => h.value === key)?.label || key) },
+    yAxis: { type: 'value', name: props.rateLabel + ' (' + props.yAxisUnit + ')', axisLabel: { formatter: '{value}' + props.yAxisUnit }, max: getDynamicYAxisMax(seriesData) },
     series: [{ type: 'bar', data: seriesData, itemStyle: { color: '#2E57E5' }, label: { show: true, position: 'top', formatter: '{c}' + props.yAxisUnit }, barWidth: 40 }]
   }, true)
+}
+
+const initCharts = () => {
+  if (timeComparisonChartRef.value) {
+    timeComparisonChart = echarts.init(timeComparisonChartRef.value)
+  }
+  if (hospitalComparisonChartRef.value) {
+    hospitalComparisonChart = echarts.init(hospitalComparisonChartRef.value)
+  }
 }
 
 const handleResize = () => {
@@ -450,13 +552,26 @@ const handleResize = () => {
   hospitalComparisonChart?.resize()
 }
 
-watch(selectedHospitals, (newValue) => { emit('update:selectedHospitals', newValue) })
-
-onMounted(() => {
-  updateCardData()
-  initTimeComparisonChart()
-  initHospitalComparisonChart()
+onMounted(async () => {
+  initCharts()
   window.addEventListener('resize', handleResize)
+
+  // 初始化卡片时间筛选（从总览页跳转时传入）
+  if (props.initTimeMode) {
+    cardQueryType.value = props.initTimeMode as 'monthly' | 'quarterly'
+    if (props.initTimeMode === 'monthly' && props.initTimeValue) {
+      const parts = props.initTimeValue.split('-')
+      cardSelectedYearForMonth.value = parseInt(parts[0])
+      cardSelectedMonth.value = parseInt(parts[1])
+    } else if (props.initTimeMode === 'quarterly' && props.initTimeValue) {
+      const parts = props.initTimeValue.split('-Q')
+      cardQuarterYear.value = parseInt(parts[0])
+      cardQuarterNum.value = parts[1]
+    }
+  }
+
+  await fetchHospitals()
+  await Promise.all([fetchCardData(), fetchTrendData(), fetchHospitalData()])
 })
 </script>
 

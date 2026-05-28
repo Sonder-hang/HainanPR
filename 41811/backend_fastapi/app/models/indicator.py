@@ -36,6 +36,8 @@ class Indicator(Base):
     regex_rule = Column(Text, default="")
     calc_type = Column(String(20), default="ratio")
     date_field = Column(String(20), default="discharge")  # discharge=出院时间, admission=入院时间
+    template_type = Column(String(30), nullable=True)  # STRUCTURE | STRUCTURE-special | RATE | RATE-special | COMPOSITE
+    subitem_config = Column(JSON, nullable=True)  # 复合指标子项配置（COMPOSITE_RATE/COMPOSITE_RANKING）
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -86,6 +88,7 @@ class IndicatorExecution(Base):
     date_field = Column(String(20), nullable=True)  # discharge=出院时间, admission=入院时间
     group_by_hospital = Column(Boolean, default=False)  # 是否按医院分组执行
     hospital_results = Column(JSON, default=list)  # 各医院执行结果列表
+    subitem_data = Column(JSON, nullable=True)  # 复合指标的子项详细数据（排行榜/子项率等）
 
     indicator = relationship("Indicator", back_populates="executions")
 

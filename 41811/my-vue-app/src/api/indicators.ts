@@ -37,6 +37,8 @@ export interface Indicator {
   regex_match: boolean
   regex_rule: string
   calc_type: string
+  template_type: string | null
+  subitem_config: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }

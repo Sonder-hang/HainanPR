@@ -220,6 +220,58 @@
               class="w-full rounded-[2px] border border-[#b8c9e8]/60 px-3 py-2 text-[12px] focus:border-emerald-400 focus:outline-none"
             />
           </label>
+
+          <!-- 模板类型 -->
+          <label class="block text-[12px]">
+            <span class="mb-1 block font-medium text-[#596080]">模板类型</span>
+            <select
+              v-model="form.templateType"
+              class="w-full cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+            >
+              <option value="">自动推断（根据计算类型）</option>
+              <option value="RATE">率型（RATE）</option>
+              <option value="STRUCTURE">排行榜型（STRUCTURE）</option>
+              <option value="STRUCTURE-special">双排行型（STRUCTURE-special）</option>
+              <option value="COMPOSITE">复合型（COMPOSITE）</option>
+            </select>
+            <p class="mt-0.5 text-[11px] text-[#B8BCCC]">
+              STRUCTURE适用于子项有排行（如ICD编码分布）；COMPOSITE适用于子项有比率（如围手术期各时间窗口死亡率）
+            </p>
+          </label>
+
+              <!-- 子项配置（JSON编辑器） -->
+              <!-- 失焦锁定：焦点进入时显示原始 JSON，失焦时验证并显示预览 -->
+              <div v-if="form.kind === 'core18'">
+                <label class="block text-[12px]">
+                  <span class="mb-1 flex items-center gap-1.5 font-medium text-[#596080]">
+                    子项配置（JSON）
+                    <span class="text-[#B8BCCC] font-normal">— 复合指标专用，如为普通指标请留空</span>
+                    <button
+                      type="button"
+                      @click.stop="subitemConfigHelpVisible = true"
+                      class="w-4 h-4 rounded-full bg-[#b8c9e8]/60 text-[#596080] text-[11px] font-medium flex items-center justify-center hover:bg-[#2E57E5] hover:text-white transition-colors cursor-pointer"
+                      title="子项配置说明"
+                    >?</button>
+                  </span>
+                  <textarea
+                    v-model="subitemConfigInput"
+                    rows="5"
+                    placeholder='{&#10;  "type": "COMPOSITE_RATE",&#10;  "items": [...]&#10;}&#10;或&#10;{&#10;  "type": "COMPOSITE_RANKING",&#10;  "ranking_key_field": "...",&#10;  "ranking_value_field": "..."&#10;}'
+                    class="w-full resize-y rounded-[2px] border border-amber-200 bg-amber-50/40 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-[#334155] focus:border-amber-400 focus:outline-none"
+                    @focus="onSubitemConfigFocus"
+                    @blur="onSubitemConfigBlur"
+                  />
+                </label>
+                <!-- 预览区（失焦后才更新） -->
+                <div v-if="!subitemConfigFocused">
+                  <div v-if="subitemConfigParseError" class="mt-1 text-[11px] text-red-500">
+                    JSON 格式错误：{{ subitemConfigParseError }}
+                  </div>
+                  <div v-else-if="subitemConfigDisplay" class="mt-1 text-[11px] text-emerald-600">
+                    {{ subitemConfigDisplay }}
+                  </div>
+                </div>
+          </div>
         </template>
 
         <!-- 计算结果预览说明 -->
@@ -401,16 +453,184 @@
       </div>
     </div>
   </div>
+
+  <!-- 子项配置说明弹窗 -->
+  <div v-if="subitemConfigHelpVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm" @click.self="subitemConfigHelpVisible = false">
+    <div class="w-[620px] max-h-[80vh] bg-white rounded-[2px] shadow-2xl flex flex-col animate-fade-in border border-[#b8c9e8]/60">
+      <div class="px-5 py-3.5 border-b border-[#b8c9e8]/60 flex justify-between items-center bg-[#e8eef9]">
+        <h2 class="text-[14px] font-bold text-[#1F264D]">子项配置（JSON）说明</h2>
+        <button @click="subitemConfigHelpVisible = false" class="p-1.5 hover:bg-[#b8c9e8]/30 rounded-full text-[#596080] transition-colors"><X class="w-4 h-4" /></button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-5 space-y-4">
+
+        <!-- 基础说明 -->
+        <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
+          <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">子项配置是什么？</h3>
+          <p class="text-[12px] text-[#596080] leading-relaxed">
+            子项配置（JSON）仅用于 <strong>COMPOSITE（复合指标）</strong>，用于定义子项结构和 SQL 字段映射。其他类型（STRUCTURE / STRUCTURE-special / RATE）<strong>无需配置此项，留空即可</strong>。
+          </p>
+        </div>
+
+        <!-- 五种模板类型与子项配置的关系 -->
+        <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
+          <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">五种模板类型一览</h3>
+          <div class="space-y-2 text-[11px]">
+            <div class="flex items-start gap-2">
+              <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">STRUCTURE</span>
+              <span class="text-[#596080]">排行榜型，无需子项配置。SQL 直接返回分组聚合结果（见下方排行榜型 SQL 示例），系统自动渲染排行榜图表。</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">STRUCTURE-special</span>
+              <span class="text-[#596080]">双排行榜型，无需子项配置。SQL 在 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">subitem_data</code> 表中通过 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_key</code> 前缀区分治疗性/诊断性（如 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_T_</code> / <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_D_</code>），系统自动拆分渲染两个排行榜。</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="shrink-0 w-20 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">COMPOSITE</span>
+              <span class="text-[#596080]"><strong>需要子项配置（JSON）</strong>。定义子项名称和 SQL 字段映射，系统根据配置渲染子项率图或子项排行榜。</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">RATE / RATE-special</span>
+              <span class="text-[#596080]">比值型，无需子项配置。SQL 返回分子/分母计数，系统自动计算比值并渲染进度环和趋势图。</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- COMPOSITE 两种配置类型 -->
+        <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
+          <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">COMPOSITE 子项配置类型</h3>
+          <div class="space-y-3 mt-2">
+            <div class="bg-amber-50 border border-amber-200 rounded-[2px] p-3">
+              <p class="text-[12px] font-semibold text-amber-700 mb-1">COMPOSITE_RATE — 复合率型</p>
+              <p class="text-[11px] text-[#596080] leading-relaxed">适用于：围手术期各时间窗口死亡率、各科室再入院率等。SQL 返回单行，每个子项的分子/分母在同一行中，系统根据配置读取对应列计算各子项率。</p>
+              <div class="mt-2 bg-white rounded-[2px] border border-amber-200 p-2 font-mono text-[11px] text-[#334155] leading-relaxed">
+{&#10;  "type": "COMPOSITE_RATE",&#10;  "items": [&#10;    { "key": "death_in_or", "name": "术中死亡", "numerator_field": "DEATH_IN_OR_COUNT", "denominator_field": "OR_PATIENT_COUNT" },&#10;    { "key": "death_24h",  "name": "24h内死亡", "numerator_field": "DEATH_24H_COUNT",  "denominator_field": "OR_PATIENT_COUNT" }&#10;  ]&#10;}
+              </div>
+            </div>
+            <div class="bg-sky-50 border border-sky-200 rounded-[2px] p-3">
+              <p class="text-[12px] font-semibold text-sky-700 mb-1">COMPOSITE_RANKING — 复合排行型</p>
+              <p class="text-[11px] text-[#596080] leading-relaxed">适用于：死亡疾病谱、主要诊断分布等。SQL 返回分组聚合后的多行排行榜数据，系统根据字段名配置读取排行维度和数值。</p>
+              <div class="mt-2 bg-white rounded-[2px] border border-sky-200 p-2 font-mono text-[11px] text-[#334155] leading-relaxed">
+{&#10;  "type": "COMPOSITE_RANKING",&#10;  "ranking_key_field": "DISEASE_CODE",&#10;  "ranking_value_field": "PATIENT_COUNT",&#10;  "limit": 20&#10;}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 字段详解 -->
+        <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
+          <h3 class="font-bold text-[#1F264D] text-[13px] mb-3">字段详解</h3>
+          <div class="space-y-2">
+            <div class="grid grid-cols-[80px_1fr] gap-x-3 text-[11px]">
+              <span class="font-mono text-emerald-600 font-semibold">type</span>
+              <span class="text-[#596080]">必填。配置类型，取值 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RATE</code> 或 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code></span>
+            </div>
+            <div class="border-t border-[#e8eef9]"></div>
+            <div class="grid grid-cols-[80px_1fr] gap-x-3 text-[11px]">
+              <span class="font-mono text-emerald-600 font-semibold">items</span>
+              <span class="text-[#596080]"><code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RATE</code> 必填，子项数组。每个子项字段含义如下：</span>
+            </div>
+            <div class="ml-6 space-y-1.5 text-[11px] text-[#596080]">
+              <div class="grid grid-cols-[100px_1fr] gap-x-2">
+                <span class="font-mono text-sky-600">key</span>
+                <span>子项唯一标识（英文），不可重复</span>
+              </div>
+              <div class="grid grid-cols-[100px_1fr] gap-x-2">
+                <span class="font-mono text-sky-600">name</span>
+                <span>图表展示的子项名称（中文）</span>
+              </div>
+              <div class="grid grid-cols-[130px_1fr] gap-x-2">
+                <span class="font-mono text-sky-600">numerator_field</span>
+                <span>SQL 返回结果中的分子计数字段名（列名须与 SQL 中 SELECT 的列名完全一致）</span>
+              </div>
+              <div class="grid grid-cols-[130px_1fr] gap-x-2">
+                <span class="font-mono text-sky-600">denominator_field</span>
+                <span>SQL 返回结果中的分母计数字段名（列名须与 SQL 中 SELECT 的列名完全一致）</span>
+              </div>
+            </div>
+            <div class="border-t border-[#e8eef9]"></div>
+            <div class="grid grid-cols-[140px_1fr] gap-x-3 text-[11px]">
+              <span class="font-mono text-emerald-600 font-semibold">ranking_key_field</span>
+              <span class="text-[#596080]"><code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code> 必填，SQL 返回的排行维度字段名（列名须与 SELECT 的列名一致）</span>
+            </div>
+            <div class="border-t border-[#e8eef9]"></div>
+            <div class="grid grid-cols-[140px_1fr] gap-x-3 text-[11px]">
+              <span class="font-mono text-emerald-600 font-semibold">ranking_value_field</span>
+              <span class="text-[#596080]"><code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code> 必填，SQL 返回的排行数值字段名（列名须与 SELECT 的列名一致）</span>
+            </div>
+            <div class="border-t border-[#e8eef9]"></div>
+            <div class="grid grid-cols-[80px_1fr] gap-x-3 text-[11px]">
+              <span class="font-mono text-emerald-600 font-semibold">limit</span>
+              <span class="text-[#596080]"><code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code> 选填，排行榜展示上限，默认 20</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- SQL 返回格式要求 -->
+        <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
+          <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">SQL 返回格式要求</h3>
+          <div class="space-y-2 text-[11px] text-[#596080]">
+            <div class="bg-amber-50 border border-amber-200 rounded-[2px] p-3">
+              <p class="font-semibold text-amber-700 mb-1">COMPOSITE_RATE：SQL 返回单行，列名须与配置中的 numerator_field / denominator_field 一一对应</p>
+              <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-amber-200 p-2">
+SELECT&#10;  DEATH_IN_OR_COUNT,  -- 术中死亡分子（numerator_field）&#10;  OR_PATIENT_COUNT,   -- 分母（denominator_field，所有子项共用）&#10;  DEATH_24H_COUNT,   -- 24h死亡分子（numerator_field）&#10;  DEATH_7D_COUNT     -- 7d死亡分子（numerator_field）&#10;FROM ...
+              </div>
+              <p class="text-[11px] text-red-500 mt-1.5">关键：SELECT 的列名必须与配置中 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">numerator_field</code> / <code class="font-mono text-[10px] bg-white/80 px-1 rounded">denominator_field</code> 的值完全一致，大小写敏感。SQL 只能返回一行结果。</p>
+            </div>
+            <div class="bg-sky-50 border border-sky-200 rounded-[2px] p-3">
+              <p class="font-semibold text-sky-700 mb-1">COMPOSITE_RANKING：SQL 返回多行排行榜数据，列名须与配置中的字段一一对应</p>
+              <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-sky-200 p-2">
+SELECT&#10;  ICD10_CODE AS DISEASE_CODE,   -- 排行维度（ranking_key_field）&#10;  COUNT(*) AS PATIENT_COUNT       -- 排行数值（ranking_value_field）&#10;FROM FACT_DIAG_RECORD&#10;WHERE ...&#10;GROUP BY ICD10_CODE&#10;ORDER BY PATIENT_COUNT DESC
+              </div>
+              <p class="text-[11px] text-sky-600 mt-1.5">SQL 应返回分组聚合后的结果，列名须与 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_key_field</code> 和 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_value_field</code> 配置一致。</p>
+            </div>
+            <div class="bg-gray-50 border border-gray-200 rounded-[2px] p-3">
+              <p class="font-semibold text-gray-600 mb-1">STRUCTURE / STRUCTURE-special（无需子项配置）：SQL 将结果写入 subitem_data 表</p>
+              <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-gray-200 p-2">
+-- STRUCTURE：排行榜，subitem_data 表包含 ranking_key 和 ranking_value 两列<br/>
+INSERT INTO subitem_data (indicator_execution_id, ranking_key, ranking_value)<br/>
+  SELECT ICD10_CODE, COUNT(*) FROM ... GROUP BY ICD10_CODE ORDER BY COUNT(*) DESC LIMIT 100
+              </div>
+              <div class="font-mono text-[11px] text-[#334155] mt-2 bg-white rounded border border-gray-200 p-2">
+-- STRUCTURE-special：双排行榜，通过 ranking_key 前缀区分类型<br/>
+-- 治疗性操作前缀 "OP_T_" + ICD9CM_CODE<br/>
+-- 诊断性操作前缀 "OP_D_" + DIAG_CODE
+INSERT INTO subitem_data (indicator_execution_id, ranking_key, ranking_value)<br/>
+  SELECT 'OP_T_'||ICD9CM_CODE, COUNT(*) FROM ... GROUP BY ICD9CM_CODE<br/>
+  UNION ALL<br/>
+  SELECT 'OP_D_'||DIAG_CODE, COUNT(*) FROM ... GROUP BY DIAG_CODE
+              </div>
+              <p class="text-[11px] text-gray-500 mt-1.5">系统从 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">subitem_data</code> 表读取 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_key</code> 和 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_value</code> 列，STRUCTURE-special 自动按 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">OP_T_</code> / <code class="font-mono text-[10px] bg-white/80 px-1 rounded">OP_D_</code> 前缀拆分为两个排行榜，无需子项配置。</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 注意事项 -->
+        <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
+          <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">注意事项</h3>
+          <ul class="text-[11px] text-[#596080] space-y-1.5 leading-relaxed">
+            <li class="flex items-start gap-2">
+              <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0"></span>
+              <span>COMPOSITE_RATE 中 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">denominator_field</code> 通常所有子项共用同一个分母列（如 OR_PATIENT_COUNT），也可为每个子项配置不同的分母字段。</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0"></span>
+              <span>JSON 中的字段名（numerator_field / ranking_key_field 等）与 SQL 返回的列名必须完全一致，<strong>大小写敏感</strong>。</span>
+            </li>
+            <li class="flex items-start gap-2">
+              <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-[#2E57E5] shrink-0"></span>
+              <span>不确定该用哪种类型时，先选择「自动推断」，系统会根据指标特征推荐合适的模板类型。</span>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft } from 'lucide-vue-next'
-import {
-  type Core18Indicator,
-  type FourElementIndicator,
-} from '@/data/indicatorManagementDefaults'
+import { ArrowLeft, X } from 'lucide-vue-next'
 import { indicatorsApi, type Indicator } from '@/api/indicators'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 
@@ -469,7 +689,59 @@ const form = ref({
   numInvolvedTables: [] as string[],
   denInvolvedTables: [] as string[],
   promptContent: '',
+  templateType: '' as '' | 'RATE' | 'STRUCTURE' | 'STRUCTURE-special' | 'COMPOSITE',
+  subitemConfig: '',
 })
+
+// subitemConfig JSON 编辑器状态（失焦锁定：焦点进入时编辑，失焦时验证）
+const subitemConfigInput = ref('')        // textarea 绑定的原始输入
+const subitemConfigFocused = ref(false)    // 是否处于编辑焦点中
+const subitemConfigDisplay = ref('')       // 失焦后展示的验证结果（错误或预览）
+const subitemConfigParseError = ref('')
+const subitemConfigHelpVisible = ref(false)
+
+// 失焦时将 subitemConfigInput 同步回 form，并验证
+function onSubitemConfigBlur() {
+  subitemConfigFocused.value = false
+  form.value.subitemConfig = subitemConfigInput.value
+  // 验证 JSON 格式
+  if (!form.value.subitemConfig.trim()) {
+    subitemConfigParseError.value = ''
+    subitemConfigDisplay.value = ''
+    return
+  }
+  try {
+    JSON.parse(form.value.subitemConfig)
+    subitemConfigParseError.value = ''
+    subitemConfigDisplay.value = buildSubitemConfigSummary(form.value.subitemConfig)
+  } catch (e: unknown) {
+    subitemConfigParseError.value = e instanceof Error ? e.message : String(e)
+    subitemConfigDisplay.value = ''
+  }
+}
+
+// 焦点进入时，从 form 同步到 textarea
+function onSubitemConfigFocus() {
+  subitemConfigFocused.value = true
+  subitemConfigInput.value = form.value.subitemConfig
+}
+
+// 根据已解析的 JSON 生成人类可读预览文本
+function buildSubitemConfigSummary(raw: string): string {
+  try {
+    const cfg = JSON.parse(raw)
+    if (cfg.type === 'COMPOSITE_RATE') {
+      const items = (cfg.items as Record<string, unknown>[] | undefined) ?? []
+      return `复合率型，共 ${items.length} 个子项：${items.map((i) => String(i.name || i.key)).join('、')}`
+    }
+    if (cfg.type === 'COMPOSITE_RANKING') {
+      return `复合排行型，维度字段：${cfg.ranking_key_field}，数值字段：${cfg.ranking_value_field}，TOP${cfg.limit || 20}`
+    }
+    return `type=${cfg.type}`
+  } catch {
+    return ''
+  }
+}
 
 const templateOptions = computed(() => {
   return templateList.value.map((r) => ({
@@ -512,6 +784,10 @@ function onTemplateChange() {
     form.value.numInvolvedTables = []
     form.value.denInvolvedTables = []
     form.value.promptContent = ''
+    // 同步清空子项配置编辑器和预览
+    subitemConfigInput.value = ''
+    subitemConfigParseError.value = ''
+    subitemConfigDisplay.value = ''
     if (form.value.kind === 'core18') {
       form.value.calcType = 'ratio'
       form.value.computable = '是'
@@ -548,6 +824,15 @@ function onTemplateChange() {
     form.value.useLlm = selected.use_llm ? '是' : '否'
     form.value.numInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
     form.value.denInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
+    // 新增字段
+    const rawTT = (selected as Record<string, unknown>).template_type as string | undefined
+    form.value.templateType = (rawTT || '') as typeof form.value.templateType
+    const rawSC = (selected as Record<string, unknown>).subitem_config
+    form.value.subitemConfig = rawSC ? JSON.stringify(rawSC, null, 2) : ''
+    // 同步到 textarea 输入和预览区
+    subitemConfigInput.value = form.value.subitemConfig
+    subitemConfigParseError.value = ''
+    subitemConfigDisplay.value = buildSubitemConfigSummary(form.value.subitemConfig)
   } else {
     form.value.scope = selected.scope || ''
     form.value.workContent = selected.work_content || ''
@@ -671,7 +956,18 @@ async function saveIndicator() {
       : form.value.numeratorSql.trim()
 
     if (form.value.kind === 'core18') {
-      const payload = {
+      // 解析 subitem_config JSON（如果有的话）
+      let parsedSubitemConfig: Record<string, unknown> | null = null
+      if (form.value.subitemConfig.trim()) {
+        try {
+          parsedSubitemConfig = JSON.parse(form.value.subitemConfig)
+        } catch {
+          alert('subitem_config JSON 格式错误，请检查后重试')
+          saving.value = false
+          return
+        }
+      }
+      const payload: Record<string, unknown> = {
         name: form.value.name.trim(),
         description: form.value.description.trim(),
         numerator_desc: form.value.numerator.trim(),
@@ -686,6 +982,12 @@ async function saveIndicator() {
         is_computable: form.value.computable === '是',
         use_llm: form.value.useLlm === '是',
         calc_method: 'sql',
+      }
+      if (form.value.templateType) {
+        payload.template_type = form.value.templateType
+      }
+      if (parsedSubitemConfig) {
+        payload.subitem_config = parsedSubitemConfig
       }
 
       if (isEditing.value && templateId.value) {
@@ -711,7 +1013,7 @@ async function saveIndicator() {
         sql_content: combinedSql,
         prompt_content: form.value.promptContent.trim(),
         involved_tables: form.value.numInvolvedTables,
-        calc_method: 'sql',
+        calc_method: 'sql' as const,
         calc_type: form.value.calcType,
       }
 

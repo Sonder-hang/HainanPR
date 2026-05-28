@@ -30,6 +30,10 @@ class Core18Indicator(Base):
     use_llm = Column(Boolean, default=False)
     priority = Column(String(20), default="")
     remark = Column(Text, default="")
+    calc_type = Column(String(20), default="ratio")
+    date_field = Column(String(20), default="discharge")
+    template_type = Column(String(30), nullable=True)
+    subitem_config = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -71,5 +75,6 @@ class Core18ExecutionLog(Base):
     status = Column(String(20), default="pending")
     execution_time = Column(DateTime, server_default=func.now())
     duration_seconds = Column(Float, nullable=True)
+    subitem_data = Column(JSON, nullable=True)
 
     indicator = relationship("Core18Indicator", back_populates="execution_logs")

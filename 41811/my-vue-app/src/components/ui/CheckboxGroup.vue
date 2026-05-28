@@ -45,18 +45,18 @@
 import { ref, computed, onUnmounted } from 'vue'
 
 interface Option {
-  value: string
+  value: string | number
   label: string
 }
 
 const props = defineProps<{
-  modelValue: string[]
+  modelValue: (string | number)[]
   options: Option[]
   placeholder?: string
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string[]]
+  'update:modelValue': [value: (string | number)[]]
 }>()
 
 const isOpen = ref(false)
@@ -72,9 +72,9 @@ const displayText = computed(() => {
   return selectedLabels.join('、')
 })
 
-const toggleOption = (value: string) => {
+const toggleOption = (value: string | number) => {
   const currentIndex = props.modelValue.indexOf(value)
-  let newValues: string[]
+  let newValues: (string | number)[]
 
   if (currentIndex > -1) {
     newValues = [...props.modelValue]

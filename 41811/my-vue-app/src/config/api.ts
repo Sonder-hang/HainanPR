@@ -1,7 +1,7 @@
 /**
  * API 配置
  */
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001'
 
 export const API_ENDPOINTS = {
   // 系统
@@ -55,4 +55,10 @@ export const API_ENDPOINTS = {
   core18Overview: `${API_BASE_URL}/api/core18/overview/`,
   core18Analysis: `${API_BASE_URL}/api/core18/analysis/`,
   core18Execute: `${API_BASE_URL}/api/core18/execute/`,
+  core18ExecutionData: `${API_BASE_URL}/api/core18/execution-data/`,
+  core18OverviewData: `${API_BASE_URL}/api/core18/overview-data/`,
+  core18DeathPatients: `${API_BASE_URL}/api/core18/death-patients/`,
+  // 十八项核心制度 - 指标分析台
+  core18IndicatorConfig: `${API_BASE_URL}/api/core18/indicator-config/`,
+  core18IndicatorData: `${API_BASE_URL}/api/core18/indicator-data/`,
 }

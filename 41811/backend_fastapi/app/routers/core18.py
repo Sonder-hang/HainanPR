@@ -5,6 +5,7 @@ import time
 
 from app.database import get_db
 from app.models.core18 import Core18Indicator, Core18ExecutionLog
+from app.models.indicator import Indicator, IndicatorExecution
 from app.schemas.core18 import (
     Core18IndicatorCreate, Core18IndicatorUpdate, Core18IndicatorResponse,
     Core18ExecutionLogResponse,
@@ -122,10 +123,60 @@ def core18_execute(indicator_id: int, db: Session = Depends(get_db)):
         conversation_id=result.get("conversation_id", ""),
         status="success" if result.get("ok") else "failed",
         duration_seconds=duration,
+        subitem_data=result.get("subitem_data"),
     )
     db.add(log)
+
+    # 同时写入 IndicatorExecution 表，使分析台页面可读取
+    # 先尝试通过 ID 匹配，再通过名称匹配
+    ind_obj = db.query(Indicator).filter(
+        Indicator.id == indicator.id,
+        Indicator.indicator_type == "core18"
+    ).first()
+    if ind_obj is None:
+        ind_obj = db.query(Indicator).filter(
+            Indicator.indicator_type == "core18",
+            Indicator.name == indicator.name,
+        ).first()
+    # 只有在找到对应 Indicator 记录时才写入
+    if ind_obj is not None:
+        exec_record = IndicatorExecution(
+            indicator_id=ind_obj.id,
+            indicator_name=indicator.name,
+            kind="core18",
+            run_mode="immediate",
+            time_range="全量",
+            result_type="ratio",
+            calc_method="SQL录入",
+            numerator_sql=result.get("numerator_sql", ""),
+            denominator_sql=result.get("denominator_sql", ""),
+            sql=result.get("sql", ""),
+            numerator_count=result.get("numerator_count"),
+            denominator_count=result.get("denominator_count"),
+            count=result.get("count"),
+            rate_percent=result.get("rate_percent"),
+            rate_formula=result.get("rate_formula", ""),
+            result_text=result.get("analysis", ""),
+            preview_data={"columns": result.get("preview_columns", []), "rows": result.get("preview_rows", [])},
+            denominator_preview_data={"columns": result.get("denominator_preview_columns", []), "rows": result.get("denominator_preview_rows", [])},
+            error=result.get("error", ""),
+            numerator_error=result.get("numerator_error", ""),
+            denominator_error=result.get("denominator_error", ""),
+            attempts=result.get("attempts", []),
+            llm_thinking=result.get("numerator_llm_thinking", "") or result.get("llm_thinking", ""),
+            llm_raw=result.get("numerator_llm_raw", "") or result.get("llm_raw", ""),
+            cache_hit=result.get("cache_hit", False),
+            request_id=result.get("request_id", ""),
+            conversation_id=result.get("conversation_id", ""),
+            status="success" if result.get("ok") else "failed",
+            duration_seconds=duration,
+            subitem_data=result.get("subitem_data"),
+        )
+        db.add(exec_record)
+
     if result.get("ok"):
         indicator.status = "success"
     db.commit()
     db.refresh(log)
+    db.refresh(exec_record)
     return log
