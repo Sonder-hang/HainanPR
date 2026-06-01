@@ -1,0 +1,159 @@
+# ============================
+# macOS System Files
+# ============================
+.DS_Store
+.DS_Store?
+._*
+
+# ============================
+# Python
+# ============================
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+venv/
+ENV/
+.venv
+
+# ============================
+# Node.js
+# ============================
+node_modules/
+pnpm-lock.yaml
+yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-test.log*
+package-lock.json
+package.json.bak
+
+# ============================
+# Vue / Vite
+# ============================
+dist-ssr/
+dist/
+*.local
+
+# ============================
+# Database
+# ============================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# ============================
+# Logs
+# ============================
+logs/
+41811/logs/
+*.log
+*.pid
+*.sock
+*.err
+logs/*.txt
+
+# ============================
+# Environment & Secrets
+# ============================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.*.local
+secrets.json
+credentials.json
+config.local.py
+config.local.json
+
+# ============================
+# IDE & Editor
+# ============================
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+*.sublime-workspace
+*.sublime-project
+
+# ============================
+# Temporary Files
+# ============================
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+
+# ============================
+# Build artifacts
+# ============================
+*.o
+*.a
+*.lib
+*.dll
+*.dylib
+
+# ============================
+# FastAPI / Django specific
+# ============================
+*.pot
+*.mo
+db.sqlite3
+media/
+staticfiles/
+
+# ============================
+# Project specific
+# ============================
+text2sql_app/venv/
+text2sql_app/__pycache__/
+text2sql_app/logs/
+text2sql_app_old/
+
+# ============================
+# 41811 Project specific
+# ============================
+41811/**/__pycache__/
+41811/**/*.pyc
+41811/**/*.pyo
+41811/logs/
+41811/**/logs/
+41811/**/*.log
+41811/**/*.pid
+41811/**/*.sock
+41811/**/*.err
+41811/**/*.txt
+41811/backend_fastapi/.env
+41811/backend_fastapi/.env.local
+41811/my-vue-app/.env
+41811/my-vue-app/.env.local
+41811/my-vue-app/.env.production
+41811/my-vue-app/.env.development
+
+# Keep requirements files but ignore lock files
+requirements.txt
+!requirements.txt
