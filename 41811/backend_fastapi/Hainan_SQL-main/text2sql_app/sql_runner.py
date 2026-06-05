@@ -240,16 +240,17 @@ def execute_full(
     sql: str,
 ) -> tuple[list[str], list[dict[str, Any]], Optional[str]]:
     """不带 LIMIT，取全部数据。适合导出、报表等场景。"""
+    import sys as _s
     if not sql.strip():
         return [], [], "SQL 为空"
     sql = _clean_sql(sql)
-
     try:
         conn = db_connect()
         try:
             with conn.cursor() as cur:
                 cur.execute(sql)
                 rows = cur.fetchall()
+                _s.stderr.write(f"[execute_full] sql_last60={repr(sql[-60:])}, rows_count={len(rows)}, rows={rows[:2]}\n")
                 if not rows:
                     cols: list[str] = []
                 else:
@@ -258,6 +259,7 @@ def execute_full(
         finally:
             conn.close()
     except Exception as e:
+        _s.stderr.write(f"[execute_full] EXCEPTION: {e}\n")
         return [], [], str(e)
 
 

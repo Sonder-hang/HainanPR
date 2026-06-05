@@ -9,8 +9,8 @@
     <!-- 触发按钮（显示当前选中项） -->
     <button
       type="button"
-      class="flex w-full cursor-pointer items-center justify-between rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-left text-[12px] text-[#1F264D] transition-colors hover:border-[#0A6EFD] focus:border-[#0A6EFD] focus:outline-none"
-      :class="{ 'border-[#0A6EFD]': isOpen, 'rounded-b-none': isOpen }"
+      class="flex min-h-9 w-full cursor-pointer items-center justify-between rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-left text-[12px] text-[#1F264D] transition-colors hover:border-emerald-400 focus:border-emerald-400 focus:outline-none"
+      :class="{ 'border-emerald-400': isOpen, 'rounded-b-none': isOpen }"
       @click="toggleOpen"
     >
       <span class="flex-1 truncate pr-2">
@@ -35,7 +35,7 @@
     <!-- 搜索框（仅展开时显示） -->
     <div
       v-if="isOpen"
-      class="absolute left-0 right-0 z-50 rounded-b-[2px] border border-t-0 border-[#0A6EFD] bg-white shadow-md"
+      class="absolute left-0 right-0 z-50 rounded-b-[2px] border border-t-0 border-[#b8c9e8]/60 bg-white shadow-md"
     >
       <div class="border-b border-[#e8eef9] px-2 py-1.5">
         <input
@@ -61,7 +61,7 @@
           :key="opt.value"
           class="flex cursor-pointer items-center px-3 py-2 text-[12px] transition-colors"
           :class="opt.value === modelValue
-            ? 'bg-[#e8f0fe] text-[#0A6EFD]'
+            ? 'bg-emerald-50 text-emerald-700'
             : 'text-[#1F264D] hover:bg-[#f0f4ff]'"
           @click="select(opt)"
         >

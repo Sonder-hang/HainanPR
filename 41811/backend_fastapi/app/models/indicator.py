@@ -35,7 +35,13 @@ class Indicator(Base):
     regex_match = Column(Boolean, default=False)
     regex_rule = Column(Text, default="")
     calc_type = Column(String(20), default="ratio")
-    date_field = Column(String(20), default="discharge")  # discharge=出院时间, admission=入院时间
+    # 比值型指标的分子/分母时间过滤字段（分开存储以支持不同口径）
+    # - 计数型：只用 numerator_date_field
+    # - 比值型：分子用 numerator_date_field，分母用 denominator_date_field
+    # - 兼容旧数据：date_field 保留作为默认值（优先级最低）
+    numerator_date_field = Column(String(50), nullable=True)    # 如 "PSCP_OPN_DT", "VST_DT_TM"
+    denominator_date_field = Column(String(50), nullable=True)  # 如 "DSCG_DT_TM", "ADMN_DT_TM"
+    date_field = Column(String(20), default="discharge")        # discharge=出院时间, admission=入院时间（兼容旧数据）
     template_type = Column(String(30), nullable=True)  # STRUCTURE | STRUCTURE-special | RATE | RATE-special | COMPOSITE
     subitem_config = Column(JSON, nullable=True)  # 复合指标子项配置（COMPOSITE_RATE/COMPOSITE_RANKING）
     created_at = Column(DateTime, server_default=func.now())

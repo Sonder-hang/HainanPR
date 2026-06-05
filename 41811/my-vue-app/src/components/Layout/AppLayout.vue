@@ -1,14 +1,25 @@
 <template>
   <div class="flex h-screen flex-col overflow-hidden bg-white font-sans text-[#1a1a1a]">
     <!-- 顶部导航栏 -->
-    <header class="flex h-[88px] shrink-0 flex-col border-b border-[#b8c9e8]/60 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-      <div class="flex h-[88px] shrink-0 items-center justify-between bg-[#cbd9f4] px-6">
-        <div class="flex items-center">
+    <header class="shrink-0 border-b border-[#b8c9e8]/60 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+      <div class="flex h-[88px] items-center justify-between bg-[#cbd9f4] px-6">
+        <!-- 左侧：Logo + 系统名称 -->
+        <div class="flex items-center" style="margin-left: 24px;">
+          <img
+            src="@/assets/hainan-logo.png"
+            alt="海南省医保局"
+            class="h-[60px] w-[60px] rounded-[4px] object-contain shadow-sm"
+          />
           <div
-            class="flex h-[52px] items-center bg-white px-4 text-[15px] font-semibold tracking-[0.35em] text-[#111827] shadow-sm"
-            style="margin-left: 24px;"
+            class="ml-4 flex flex-col"
+            style="margin-left: 18px; border-left: 2px solid rgba(26,46,109,0.25); padding-left: 18px;"
           >
-            三医联动监管与评价
+            <span
+              class="text-[18px] font-bold leading-tight tracking-[0.2em]"
+              style="color: #1e3a6e; text-shadow: 0 1px 1px rgba(0,0,0,0.06);"
+            >
+              三医联动监管与评价
+            </span>
           </div>
         </div>
         <div class="flex items-center gap-10 text-[#1e3a5f]">
@@ -148,7 +159,7 @@
         </div>
 
         <!-- 主内容 -->
-        <div class="relative flex-1 overflow-y-auto p-6">
+        <div class="flex-1 overflow-y-auto p-6">
           <RouterView v-slot="{ Component }">
             <Transition name="page-fade" mode="out-in">
               <component :is="Component" />

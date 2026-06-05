@@ -236,7 +236,7 @@
                 <option value="COMPOSITE">复合型（COMPOSITE）</option>
               </select>
               <p class="mt-0.5 text-[11px] text-[#B8BCCC]">
-                STRUCTURE 适用于子项有排行（如 ICD 编码分布）；COMPOSITE 适用于子项有比率（如围手术期各时间窗口死亡率）。绝大多数场景选择「自动推断」即可。
+                STRUCTURE适用于子项有排行（如ICD编码分布）；COMPOSITE适用于子项有比率（如围手术期各时间窗口死亡率）
               </p>
             </label>
 
@@ -245,7 +245,7 @@
               <label class="block text-[12px]">
                 <span class="mb-1 flex items-center gap-1.5 font-medium text-[#596080]">
                   子项配置（JSON）
-                  <span class="text-[#B8BCCC] font-normal">— 仅 COMPOSITE / STRUCTURE-special（含自定义多排行榜分组时）需要配置，普通指标留空</span>
+                  <span class="text-[#B8BCCC] font-normal">— 复合指标专用，如为普通指标请留空</span>
                   <button
                     type="button"
                     @click.stop="subitemConfigHelpVisible = true"
@@ -331,6 +331,31 @@
                 </div>
                 <p class="mb-2 text-[11px] text-[#94a3b8]">已选：<span class="font-mono text-[10px]">{{ form.numInvolvedTables.join(', ') || '—' }}</span></p>
               </div>
+              <!-- 分子时间过滤字段 -->
+              <div class="mb-3">
+                <p class="mb-1.5 text-[11px] font-medium text-[#596080]">分子时间过滤字段</p>
+                <div class="flex items-center gap-2">
+                  <select
+                    v-model="form.numeratorDateField"
+                    class="flex-1 cursor-pointer rounded-[2px] border border-purple-200 bg-purple-50/40 px-2 py-1.5 text-[11px] text-[#334155] focus:border-purple-400 focus:outline-none"
+                  >
+                    <option value="discharge">discharge（出院时间）</option>
+                    <option value="admission">admission（入院时间）</option>
+                    <option value="PSCP_OPN_DT">PSCP_OPN_DT（手术操作时间）</option>
+                    <option value="VST_DT_TM">VST_DT_TM（就诊时间）</option>
+                    <option value="ADMN_DT_TM">ADMN_DT_TM（入院时间）</option>
+                    <option value="DSCG_DT_TM">DSCG_DT_TM（出院时间）</option>
+                    <option value="custom">自定义…</option>
+                  </select>
+                  <input
+                    v-if="form.numeratorDateField === 'custom'"
+                    v-model="form.numeratorDateFieldCustom"
+                    type="text"
+                    placeholder="直接输入列名，如 t1.DSCG_DT_TM"
+                    class="flex-1 rounded-[2px] border border-purple-300 bg-purple-50 px-2 py-1.5 text-[11px] font-mono focus:border-purple-400 focus:outline-none"
+                  />
+                </div>
+              </div>
               <p class="mb-1.5 text-[11px] font-medium text-[#596080]">SQL 语句</p>
               <textarea
                 v-model="form.numeratorSql"
@@ -396,6 +421,31 @@
                   </label>
                 </div>
                 <p class="mb-2 text-[11px] text-[#94a3b8]">已选：<span class="font-mono text-[10px]">{{ form.denInvolvedTables.join(', ') || '—' }}</span></p>
+              </div>
+              <!-- 分母时间过滤字段 -->
+              <div class="mb-3">
+                <p class="mb-1.5 text-[11px] font-medium text-[#596080]">分母时间过滤字段</p>
+                <div class="flex items-center gap-2">
+                  <select
+                    v-model="form.denominatorDateField"
+                    class="flex-1 cursor-pointer rounded-[2px] border border-sky-200 bg-sky-50/40 px-2 py-1.5 text-[11px] text-[#334155] focus:border-sky-400 focus:outline-none"
+                  >
+                    <option value="discharge">discharge（出院时间）</option>
+                    <option value="admission">admission（入院时间）</option>
+                    <option value="PSCP_OPN_DT">PSCP_OPN_DT（手术操作时间）</option>
+                    <option value="VST_DT_TM">VST_DT_TM（就诊时间）</option>
+                    <option value="ADMN_DT_TM">ADMN_DT_TM（入院时间）</option>
+                    <option value="DSCG_DT_TM">DSCG_DT_TM（出院时间）</option>
+                    <option value="custom">自定义…</option>
+                  </select>
+                  <input
+                    v-if="form.denominatorDateField === 'custom'"
+                    v-model="form.denominatorDateFieldCustom"
+                    type="text"
+                    placeholder="直接输入列名，如 t1.DSCG_DT_TM"
+                    class="flex-1 rounded-[2px] border border-sky-300 bg-sky-50 px-2 py-1.5 text-[11px] font-mono focus:border-sky-400 focus:outline-none"
+                  />
+                </div>
               </div>
               <p class="mb-1.5 text-[11px] font-medium text-[#596080]">SQL 语句</p>
               <textarea
@@ -466,76 +516,38 @@
 
             <!-- 基础说明 -->
             <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
-              <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">子项配置（JSON）是什么？</h3>
+              <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">子项配置是什么？</h3>
               <p class="text-[12px] text-[#596080] leading-relaxed">
-                子项配置（JSON）用于定义复合指标（COMPOSITE）或自定义多排行榜分组（STRUCTURE-special + COMPOSITE_MULTI_RANKING）的<strong>子项结构</strong>和<strong>SQL 字段映射</strong>。
+                子项配置（JSON）仅用于 <strong>COMPOSITE（复合指标）</strong>，用于定义子项结构和 SQL 字段映射。其他类型（STRUCTURE / STRUCTURE-special / RATE）<strong>无需配置此项，留空即可</strong>。
               </p>
-              <p class="text-[12px] text-[#596080] leading-relaxed mt-1.5">
-                <strong class="text-emerald-600">以下类型无需配置，留空即可</strong>，后端会按约定规则自动处理：
-              </p>
-              <ul class="mt-1 space-y-1 text-[11px] text-[#596080]">
-                <li class="flex items-start gap-1.5">
-                  <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-                  <span><strong>RATE（比值型）</strong>：分子/分母 SQL 返回计数，后端自动计算比值</span>
-                </li>
-                <li class="flex items-start gap-1.5">
-                  <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-                  <span><strong>STRUCTURE（单一排行榜型）</strong>：SQL 返回 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_key</code> 和 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_value</code> 列，后端自动渲染排行榜</span>
-                </li>
-                <li class="flex items-start gap-1.5">
-                  <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-                  <span><strong>STRUCTURE-special（双排行榜型，默认模式）</strong>：SQL 返回含 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_key</code> 和 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_value</code> 列的排行榜数据，key 含 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_T_</code>/<code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_D_</code> 前缀区分治疗性/诊断性操作</span>
-                </li>
-                <li class="flex items-start gap-1.5">
-                  <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-                  <span><strong>RATE-special（率比型）</strong>：SQL 返回四级/三级手术的分子/分母，后端自动计算比值</span>
-                </li>
-              </ul>
-              <p class="text-[12px] text-[#596080] leading-relaxed mt-2">
-                <strong class="text-amber-600">仅以下情况才需要配置子项配置（JSON）：</strong>
-              </p>
-              <ul class="mt-1 space-y-1 text-[11px] text-[#596080]">
-                <li class="flex items-start gap-1.5">
-                  <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
-                  <span><strong>COMPOSITE（复合型）</strong>：定义多个子项的名称和 SQL 列名映射（如围手术期各时间窗口死亡率、各科室再入院率）</span>
-                </li>
-                <li class="flex items-start gap-1.5">
-                  <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
-                  <span><strong>STRUCTURE-special + <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_MULTI_RANKING</code></strong>：当需要用自定义前缀规则拆分多个独立排行榜时（如非 OP_T_/OP_D_ 前缀的分组）</span>
-                </li>
-              </ul>
             </div>
 
             <!-- 五种模板类型与子项配置的关系 -->
             <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
-              <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">模板类型与子项配置的关系</h3>
+              <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">五种模板类型一览</h3>
               <div class="space-y-2 text-[11px]">
                 <div class="flex items-start gap-2">
-                  <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">RATE</span>
-                  <span class="text-[#596080]">比值型，<strong>无需子项配置</strong>。SQL 返回分子/分母计数（列名不限），后端自动计算比值并渲染进度环和趋势图。</span>
-                </div>
-                <div class="flex items-start gap-2">
                   <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">STRUCTURE</span>
-                  <span class="text-[#596080]">单一排行榜型，<strong>无需子项配置</strong>。SQL 必须返回 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_key</code> 和 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_value</code> 两列（大小写敏感），后端自动渲染排行榜图表。可选通过 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">limit</code> 字段限制展示条数。</span>
+                  <span class="text-[#596080]">排行榜型，无需子项配置。SQL 直接返回分组聚合结果（见下方排行榜型 SQL 示例），系统自动渲染排行榜图表。</span>
                 </div>
                 <div class="flex items-start gap-2">
                   <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">STRUCTURE-special</span>
-                  <span class="text-[#596080]">双排行榜型，<strong>默认无需子项配置</strong>（使用固定 OP_T_/OP_D_ 前缀自动拆分）。SQL 返回含 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_key</code> 和 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_value</code> 列的排行榜数据，系统按前缀自动拆分为两个排行榜。仅当需要自定义多排行榜分组逻辑（如使用非 OP_T_/OP_D_ 的前缀规则）时，才需配置 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_MULTI_RANKING</code>。</span>
-                </div>
-                <div class="flex items-start gap-2">
-                  <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">RATE-special</span>
-                  <span class="text-[#596080]">率比型，<strong>无需子项配置</strong>。SQL 返回四级手术和三级手术的分子/分母（列名不限），后端自动计算比值（率比），常用于并发症/死亡率比指标。</span>
+                  <span class="text-[#596080]">双排行榜型，无需子项配置。SQL 通过 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">ranking_key</code> 前缀区分治疗性/诊断性（如 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_T_</code> / <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">OP_D_</code>），系统自动拆分渲染两个排行榜。当前 ICD-9-CM-3 指标先用单排行榜实现（降级），双排行榜支持后续按相同前缀规则扩展。</span>
                 </div>
                 <div class="flex items-start gap-2">
                   <span class="shrink-0 w-20 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">COMPOSITE</span>
-                  <span class="text-[#596080]"><strong>需要子项配置（JSON）</strong>。定义子项名称和 SQL 列名映射，后端根据配置读取对应列计算各子项率。适用于围手术期各时间窗口死亡率、多维度复合率等。</span>
+                  <span class="text-[#596080]"><strong>需要子项配置（JSON）</strong>。定义子项名称和 SQL 字段映射，系统根据配置渲染子项率图或子项排行榜。</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <span class="shrink-0 w-20 text-[10px] font-semibold text-[#1F264D] bg-[#e8eef9] px-1.5 py-0.5 rounded">RATE / RATE-special</span>
+                  <span class="text-[#596080]">比值型，无需子项配置。SQL 返回分子/分母计数，系统自动计算比值并渲染进度环和趋势图。</span>
                 </div>
               </div>
             </div>
 
-            <!-- COMPOSITE 子项配置类型 -->
+            <!-- COMPOSITE 两种配置类型 -->
             <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
-              <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">COMPOSITE / STRUCTURE-special 子项配置类型</h3>
+              <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">COMPOSITE 子项配置类型</h3>
               <div class="space-y-3 mt-2">
                 <div class="bg-amber-50 border border-amber-200 rounded-[2px] p-3">
                   <p class="text-[12px] font-semibold text-amber-700 mb-1">COMPOSITE_RATE — 复合率型</p>
@@ -552,8 +564,8 @@
                   </div>
                 </div>
                 <div class="bg-violet-50 border border-violet-200 rounded-[2px] p-3">
-                  <p class="text-[12px] font-semibold text-violet-700 mb-1">COMPOSITE_MULTI_RANKING — 多排行榜型（STRUCTURE-special 专用）</p>
-                  <p class="text-[11px] text-[#596080] leading-relaxed">适用于：STRUCTURE-special 模板下需要展示多个独立排行榜的指标。SQL 中排行榜维度的 key 需要加上对应 prefix（如 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">OP_T_</code> / <code class="font-mono text-[10px] bg-white/80 px-1 rounded">OP_D_</code>）以便系统分组。STRUCTURE-special 默认使用此配置，可覆盖默认的前缀规则。</p>
+                  <p class="text-[12px] font-semibold text-violet-700 mb-1">COMPOSITE_MULTI_RANKING — 多排行榜型（STRUCTURE-special）</p>
+                  <p class="text-[11px] text-[#596080] leading-relaxed">适用于：需要展示多个独立排行榜的指标（如治疗性/诊断性操作分离）。SQL 中排行榜维度的 key 需要加上对应 prefix 以便系统分组。</p>
                   <div class="mt-2 bg-white rounded-[2px] border border-violet-200 p-2 font-mono text-[11px] text-[#334155] leading-relaxed">
 {&#10;  "type": "COMPOSITE_MULTI_RANKING",&#10;  "rankings": [&#10;    { "id": "treatment", "name": "治疗性操作 TOP20", "key_prefix": "OP_T_", "color": "#12B881", "limit": 20 },&#10;    { "id": "diagnosis", "name": "诊断性操作 TOP20", "key_prefix": "OP_D_", "color": "#2E57E5", "limit": 20 }&#10;  ]&#10;}
                   </div>
@@ -563,164 +575,87 @@
 
             <!-- 字段详解 -->
             <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
-              <h3 class="font-bold text-[#1F264D] text-[13px] mb-3">各配置类型的必填字段</h3>
-              <div class="space-y-3">
-
-                <!-- COMPOSITE_RATE -->
-                <div class="bg-amber-50 border border-amber-200 rounded-[2px] p-3">
-                  <p class="text-[12px] font-semibold text-amber-700 mb-2">COMPOSITE_RATE 必填字段</p>
-                  <div class="space-y-1.5 text-[11px]">
-                    <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                      <span class="font-mono text-emerald-600 font-semibold">type</span>
-                      <span class="text-[#596080]">固定值 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">COMPOSITE_RATE</code></span>
-                    </div>
-                    <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                      <span class="font-mono text-emerald-600 font-semibold">items</span>
-                      <span class="text-[#596080]">子项数组，每个子项包含 key、name、numerator_col、denominator_col</span>
-                    </div>
-                    <div class="ml-6 space-y-1 text-[11px] text-[#596080]">
-                      <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">key</span>
-                        <span>子项唯一标识（英文），不可重复</span>
-                      </div>
-                      <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">name</span>
-                        <span>图表展示的子项名称（中文）</span>
-                      </div>
-                      <div class="grid grid-cols-[130px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">numerator_col</span>
-                        <span>SQL 返回结果中的分子计数字段名（列名须与 SQL 中 SELECT 的列名完全一致）</span>
-                      </div>
-                      <div class="grid grid-cols-[130px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">denominator_col</span>
-                        <span>SQL 返回结果中的分母计数字段名（列名须与 SQL 中 SELECT 的列名完全一致）</span>
-                      </div>
-                    </div>
+              <h3 class="font-bold text-[#1F264D] text-[13px] mb-3">字段详解</h3>
+              <div class="space-y-2">
+                <div class="grid grid-cols-[80px_1fr] gap-x-3 text-[11px]">
+                  <span class="font-mono text-emerald-600 font-semibold">type</span>
+                  <span class="text-[#596080]">必填。配置类型，取值 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RATE</code>、<code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code> 或 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_MULTI_RANKING</code></span>
+                </div>
+                <div class="border-t border-[#e8eef9]"></div>
+                <div class="grid grid-cols-[80px_1fr] gap-x-3 text-[11px]">
+                  <span class="font-mono text-emerald-600 font-semibold">items</span>
+                  <span class="text-[#596080]"><code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RATE</code> 必填，子项数组。每个子项字段含义如下：</span>
+                </div>
+                <div class="ml-6 space-y-1.5 text-[11px] text-[#596080]">
+                  <div class="grid grid-cols-[100px_1fr] gap-x-2">
+                    <span class="font-mono text-sky-600">key</span>
+                    <span>子项唯一标识（英文），不可重复</span>
+                  </div>
+                  <div class="grid grid-cols-[100px_1fr] gap-x-2">
+                    <span class="font-mono text-sky-600">name</span>
+                    <span>图表展示的子项名称（中文）</span>
+                  </div>
+                  <div class="grid grid-cols-[130px_1fr] gap-x-2">
+                    <span class="font-mono text-sky-600">numerator_col</span>
+                    <span>SQL 返回结果中的分子计数字段名（列名须与 SQL 中 SELECT 的列名完全一致）</span>
+                  </div>
+                  <div class="grid grid-cols-[130px_1fr] gap-x-2">
+                    <span class="font-mono text-sky-600">denominator_col</span>
+                    <span>SQL 返回结果中的分母计数字段名（列名须与 SQL 中 SELECT 的列名完全一致）</span>
                   </div>
                 </div>
-
-                <!-- COMPOSITE_RANKING -->
-                <div class="bg-sky-50 border border-sky-200 rounded-[2px] p-3">
-                  <p class="text-[12px] font-semibold text-sky-700 mb-2">COMPOSITE_RANKING 必填字段</p>
-                  <div class="space-y-1.5 text-[11px]">
-                    <div class="grid grid-cols-[140px_1fr] gap-x-2">
-                      <span class="font-mono text-emerald-600 font-semibold">type</span>
-                      <span class="text-[#596080]">固定值 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">COMPOSITE_RANKING</code></span>
-                    </div>
-                    <div class="grid grid-cols-[140px_1fr] gap-x-2">
-                      <span class="font-mono text-emerald-600 font-semibold">ranking_key_field</span>
-                      <span class="text-[#596080]">SQL 返回的排行维度字段名（如疾病编码、手术编码），列名须与 SELECT 的列名一致</span>
-                    </div>
-                    <div class="grid grid-cols-[140px_1fr] gap-x-2">
-                      <span class="font-mono text-emerald-600 font-semibold">ranking_value_field</span>
-                      <span class="text-[#596080]">SQL 返回的排行数值字段名（如病例数），列名须与 SELECT 的列名一致</span>
-                    </div>
-                    <div class="grid grid-cols-[140px_1fr] gap-x-2">
-                      <span class="font-mono text-emerald-600 font-semibold">limit</span>
-                      <span class="text-[#596080]">选填，排行榜展示上限，默认 20</span>
-                    </div>
-                  </div>
+                <div class="border-t border-[#e8eef9]"></div>
+                <div class="grid grid-cols-[140px_1fr] gap-x-3 text-[11px]">
+                  <span class="font-mono text-emerald-600 font-semibold">ranking_key_field</span>
+                  <span class="text-[#596080]"><code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code> 必填，SQL 返回的排行维度字段名（列名须与 SELECT 的列名一致）</span>
                 </div>
-
-                <!-- COMPOSITE_MULTI_RANKING -->
-                <div class="bg-violet-50 border border-violet-200 rounded-[2px] p-3">
-                  <p class="text-[12px] font-semibold text-violet-700 mb-2">COMPOSITE_MULTI_RANKING 必填字段（STRUCTURE-special 专用）</p>
-                  <div class="space-y-1.5 text-[11px]">
-                    <div class="grid grid-cols-[140px_1fr] gap-x-2">
-                      <span class="font-mono text-emerald-600 font-semibold">type</span>
-                      <span class="text-[#596080]">固定值 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">COMPOSITE_MULTI_RANKING</code></span>
-                    </div>
-                    <div class="grid grid-cols-[140px_1fr] gap-x-2">
-                      <span class="font-mono text-emerald-600 font-semibold">rankings</span>
-                      <span class="text-[#596080]">多排行榜配置数组，每个配置含 id、name、key_prefix、color、limit</span>
-                    </div>
-                    <div class="ml-6 space-y-1 text-[11px] text-[#596080]">
-                      <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">id</span>
-                        <span>排行榜唯一标识</span>
-                      </div>
-                      <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">name</span>
-                        <span>排行榜展示名称（中文）</span>
-                      </div>
-                      <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">key_prefix</span>
-                        <span>SQL 返回数据中该排行榜的 key 前缀（如 OP_T_），系统据此分组</span>
-                      </div>
-                      <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">color</span>
-                        <span>图表颜色，如 #12B881</span>
-                      </div>
-                      <div class="grid grid-cols-[100px_1fr] gap-x-2">
-                        <span class="font-mono text-sky-600">limit</span>
-                        <span>选填，该排行榜展示上限，默认 20</span>
-                      </div>
-                    </div>
-                  </div>
+                <div class="border-t border-[#e8eef9]"></div>
+                <div class="grid grid-cols-[140px_1fr] gap-x-3 text-[11px]">
+                  <span class="font-mono text-emerald-600 font-semibold">ranking_value_field</span>
+                  <span class="text-[#596080]"><code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code> 必填，SQL 返回的排行数值字段名（列名须与 SELECT 的列名一致）</span>
                 </div>
-
+                <div class="border-t border-[#e8eef9]"></div>
+                <div class="grid grid-cols-[80px_1fr] gap-x-3 text-[11px]">
+                  <span class="font-mono text-emerald-600 font-semibold">limit</span>
+                  <span class="text-[#596080]"><code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">COMPOSITE_RANKING</code> 选填，排行榜展示上限，默认 20</span>
+                </div>
               </div>
             </div>
 
             <!-- SQL 返回格式要求 -->
             <div class="bg-white border border-[#b8c9e8]/60 rounded-[2px] p-4">
               <h3 class="font-bold text-[#1F264D] text-[13px] mb-2">SQL 返回格式要求</h3>
-              <div class="space-y-3 text-[11px] text-[#596080]">
-                <div class="bg-emerald-50 border border-emerald-200 rounded-[2px] p-3">
-                  <p class="font-semibold text-emerald-700 mb-1">RATE（无需子项配置）：SQL 返回分子/分母计数</p>
-                  <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-emerald-200 p-2">
-SELECT COUNT(DISTINCT patient_id) FROM FACT_ADMN_MDC_HTR_RCD<br/>
-WHERE admission_time &gt;= :start_time AND admission_time &lt; :end_time
-                  </div>
-                  <p class="text-[11px] text-emerald-600 mt-1.5">SQL 只需返回 COUNT 计数（列名不限），系统自动用于比值计算。</p>
-                </div>
-                <div class="bg-gray-50 border border-gray-200 rounded-[2px] p-3">
-                  <p class="font-semibold text-gray-600 mb-1">STRUCTURE（无需子项配置）：SQL 返回分组聚合后的排行榜数据</p>
-                  <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-gray-200 p-2">
-SELECT ICD10_CODE AS ranking_key, COUNT(*) AS ranking_value FROM ...<br/>
-GROUP BY ICD10_CODE ORDER BY ranking_value DESC LIMIT 50
-                  </div>
-                  <p class="text-[11px] text-gray-500 mt-1.5">SQL 返回的列名须为 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_key</code>（维度）和 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_value</code>（数值），大小写敏感。无需配置 JSON。</p>
-                </div>
-                <div class="bg-sky-50 border border-sky-200 rounded-[2px] p-3">
-                  <p class="font-semibold text-sky-700 mb-1">STRUCTURE-special（默认模式，无需子项配置）：SQL 返回含 OP_T_/OP_D_ 前缀的排行榜数据</p>
-                  <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-sky-200 p-2">
--- 治疗性操作前缀 "OP_T_" + 手术编码<br/>
--- 诊断性操作前缀 "OP_D_" + 诊断编码<br/>
-SELECT 'OP_T_'||ICD9CM_CODE AS ranking_key, COUNT(*) AS ranking_value FROM ...<br/>
-WHERE operation_type = 'treatment'<br/>
-GROUP BY ICD9CM_CODE ORDER BY ranking_value DESC<br/>
-UNION ALL<br/>
-SELECT 'OP_D_'||DIAG_CODE AS ranking_key, COUNT(*) AS ranking_value FROM ...<br/>
-WHERE operation_type = 'diagnosis'<br/>
-GROUP BY DIAG_CODE ORDER BY ranking_value DESC
-                  </div>
-                  <p class="text-[11px] text-sky-600 mt-1.5">SQL 返回的列名须为 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_key</code>（含 OP_T_/OP_D_ 前缀）和 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_value</code>（数值），系统据此自动拆分为两个排行榜。</p>
-                </div>
+              <div class="space-y-2 text-[11px] text-[#596080]">
                 <div class="bg-amber-50 border border-amber-200 rounded-[2px] p-3">
-                  <p class="font-semibold text-amber-700 mb-1">COMPOSITE_RATE（需要子项配置）：SQL 返回单行，列名须与配置中的 numerator_col / denominator_col 一一对应</p>
+                  <p class="font-semibold text-amber-700 mb-1">COMPOSITE_RATE：SQL 返回单行，列名须与配置中的 numerator_col / denominator_col 一一对应</p>
                   <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-amber-200 p-2">
 SELECT&#10;  DEATH_IN_OR_COUNT,  -- 术中死亡分子（numerator_col）&#10;  OR_PATIENT_COUNT,   -- 分母（denominator_col，所有子项共用）&#10;  DEATH_24H_COUNT,   -- 24h死亡分子（numerator_col）&#10;  DEATH_7D_COUNT     -- 7d死亡分子（numerator_col）&#10;FROM ...
                   </div>
                   <p class="text-[11px] text-red-500 mt-1.5">关键：SELECT 的列名必须与配置中 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">numerator_col</code> / <code class="font-mono text-[10px] bg-white/80 px-1 rounded">denominator_col</code> 的值完全一致，大小写敏感。SQL 只能返回一行结果。</p>
                 </div>
                 <div class="bg-sky-50 border border-sky-200 rounded-[2px] p-3">
-                  <p class="font-semibold text-sky-700 mb-1">COMPOSITE_RANKING（需要子项配置）：SQL 返回多行排行榜数据，列名须与配置中的字段一一对应</p>
+                  <p class="font-semibold text-sky-700 mb-1">COMPOSITE_RANKING：SQL 返回多行排行榜数据，列名须与配置中的字段一一对应</p>
                   <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-sky-200 p-2">
 SELECT&#10;  ICD10_CODE AS DISEASE_CODE,   -- 排行维度（ranking_key_field）&#10;  COUNT(*) AS PATIENT_COUNT       -- 排行数值（ranking_value_field）&#10;FROM FACT_DIAG_RECORD&#10;WHERE ...&#10;GROUP BY ICD10_CODE&#10;ORDER BY PATIENT_COUNT DESC
                   </div>
                   <p class="text-[11px] text-sky-600 mt-1.5">SQL 应返回分组聚合后的结果，列名须与 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_key_field</code> 和 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_value_field</code> 配置一致。</p>
                 </div>
-                <div class="bg-violet-50 border border-violet-200 rounded-[2px] p-3">
-                  <p class="font-semibold text-violet-700 mb-1">COMPOSITE_MULTI_RANKING（STRUCTURE-special + 自定义多排行榜，需要子项配置）：SQL 返回多行排行榜数据，通过自定义 key_prefix 前缀区分多个排行榜</p>
-                  <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-violet-200 p-2">
+                <div class="bg-gray-50 border border-gray-200 rounded-[2px] p-3">
+                  <p class="font-semibold text-gray-600 mb-1">STRUCTURE / STRUCTURE-special（COMPOSITE_MULTI_RANKING 子配置）：SQL 结果存入 subitem_data</p>
+                  <div class="font-mono text-[11px] text-[#334155] mt-1 bg-white rounded border border-gray-200 p-2">
+-- STRUCTURE + COMPOSITE_RANKING：单一排行榜<br/>
+SELECT ICD10_CODE, COUNT(*) AS disease_cnt FROM ...<br/>
+GROUP BY ICD10_CODE ORDER BY disease_cnt DESC LIMIT 50
+                  </div>
+                  <div class="font-mono text-[11px] text-[#334155] mt-2 bg-white rounded border border-gray-200 p-2">
+-- STRUCTURE + COMPOSITE_MULTI_RANKING：多排行榜，通过 key_prefix 前缀区分<br/>
 -- 治疗性操作前缀 "OP_T_" + 手术编码<br/>
 -- 诊断性操作前缀 "OP_D_" + 诊断编码<br/>
 SELECT 'OP_T_'||ICD9CM_CODE AS ranking_key, COUNT(*) AS cnt FROM ...<br/>
 UNION ALL<br/>
 SELECT 'OP_D_'||DIAG_CODE AS ranking_key, COUNT(*) AS cnt FROM ...
                   </div>
-                  <p class="text-[11px] text-violet-600 mt-1.5">SQL 中 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">ranking_key</code> 列须包含对应排行榜配置的 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">key_prefix</code> 前缀，系统据此自动分组。可使用非 OP_T_/OP_D_ 的自定义前缀。</p>
+                  <p class="text-[11px] text-gray-500 mt-1.5">当 subitem_config.type 为 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">COMPOSITE_MULTI_RANKING</code> 时，分析台以 <code class="font-mono text-[10px] bg-white/80 px-1 rounded">multi</code> 模式渲染多排行榜；否则为单排行榜或原有双排行。</p>
                 </div>
               </div>
             </div>
@@ -731,15 +666,11 @@ SELECT 'OP_D_'||DIAG_CODE AS ranking_key, COUNT(*) AS cnt FROM ...
               <ul class="text-[11px] text-[#596080] space-y-1.5 leading-relaxed">
                 <li class="flex items-start gap-2">
                   <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0"></span>
-                  <span>COMPOSITE_RATE 中所有子项的 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">denominator_col</code> 通常共用同一个分母列（如 OR_PATIENT_COUNT），也可以为每个子项配置不同的分母字段。</span>
+                  <span>COMPOSITE_RATE 中 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">denominator_field</code> 通常所有子项共用同一个分母列（如 OR_PATIENT_COUNT），也可为每个子项配置不同的分母字段。</span>
                 </li>
                 <li class="flex items-start gap-2">
                   <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0"></span>
-                  <span>JSON 中的字段名（numerator_col / denominator_col / ranking_key_field 等）与 SQL 返回的列名必须完全一致，<strong>大小写敏感</strong>。</span>
-                </li>
-                <li class="flex items-start gap-2">
-                  <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-red-400 shrink-0"></span>
-                  <span>COMPOSITE_MULTI_RANKING 的 SQL 中排行榜维度的 key 必须包含对应 <code class="font-mono text-[10px] bg-[#f0f4ff] px-1 rounded">key_prefix</code> 前缀，否则无法被正确分组。</span>
+                  <span>JSON 中的字段名（numerator_field / ranking_key_field 等）与 SQL 返回的列名必须完全一致，<strong>大小写敏感</strong>。</span>
                 </li>
                 <li class="flex items-start gap-2">
                   <span class="mt-0.5 w-1.5 h-1.5 rounded-full bg-[#2E57E5] shrink-0"></span>
@@ -814,6 +745,10 @@ const form = ref({
   useLlm: '否',
   numeratorSql: '',
   denominatorSql: '',
+  numeratorDateField: 'discharge',
+  numeratorDateFieldCustom: '',
+  denominatorDateField: 'discharge',
+  denominatorDateFieldCustom: '',
   numInvolvedTables: [] as string[],
   denInvolvedTables: [] as string[],
   promptContent: '',
@@ -937,6 +872,19 @@ function onTemplateChange() {
     form.value.numeratorSql = selected.numerator_sql || ''
     form.value.denominatorSql = selected.denominator_sql || ''
     form.value.promptContent = selected.prompt_content || ''
+
+    // 时间过滤字段（优先读 numerator_date_field / denominator_date_field，兜底读 date_field）
+    const rawNumDate = (selected as Record<string, unknown>).numerator_date_field as string | undefined
+    const rawDenDate = (selected as Record<string, unknown>).denominator_date_field as string | undefined
+    const rawDate   = (selected as Record<string, unknown>).date_field as string | undefined
+    const numVal = rawNumDate || rawDate || 'discharge'
+    const denVal = rawDenDate || rawDate || 'discharge'
+    const known = ['discharge', 'admission', 'PSCP_OPN_DT', 'VST_DT_TM', 'ADMN_DT_TM', 'DSCG_DT_TM']
+    form.value.numeratorDateField = known.includes(numVal) ? numVal : 'custom'
+    form.value.numeratorDateFieldCustom = known.includes(numVal) ? '' : numVal
+    form.value.denominatorDateField = known.includes(denVal) ? denVal : 'custom'
+    form.value.denominatorDateFieldCustom = known.includes(denVal) ? '' : denVal
+
     if (selected.calc_type === 'ratio') {
       form.value.calcType = 'ratio'
     } else if (selected.calc_type === 'count') {
@@ -971,6 +919,16 @@ function onTemplateChange() {
       form.value.denominatorSql = selected.denominator_sql || ''
     }
     form.value.promptContent = selected.prompt_content || ''
+    const rawNumDate4 = (selected as Record<string, unknown>).numerator_date_field as string | undefined
+    const rawDenDate4 = (selected as Record<string, unknown>).denominator_date_field as string | undefined
+    const rawDate4    = (selected as Record<string, unknown>).date_field as string | undefined
+    const numVal4 = rawNumDate4 || rawDate4 || 'discharge'
+    const denVal4 = rawDenDate4 || rawDate4 || 'discharge'
+    const known = ['discharge', 'admission', 'PSCP_OPN_DT', 'VST_DT_TM', 'ADMN_DT_TM', 'DSCG_DT_TM']
+    form.value.numeratorDateField = known.includes(numVal4) ? numVal4 : 'custom'
+    form.value.numeratorDateFieldCustom = known.includes(numVal4) ? '' : numVal4
+    form.value.denominatorDateField = known.includes(denVal4) ? denVal4 : 'custom'
+    form.value.denominatorDateFieldCustom = known.includes(denVal4) ? '' : denVal4
     form.value.numInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
     form.value.denInvolvedTables = Array.isArray(selected.involved_tables) ? selected.involved_tables : []
     if (selected.calc_type === 'count') {
@@ -1060,6 +1018,10 @@ async function testDenSql() {
   }
 }
 
+function resolveDateField(selectVal: string, customVal: string): string {
+  return selectVal === 'custom' ? customVal.trim() : selectVal
+}
+
 async function saveIndicator() {
   if (!form.value.name.trim()) {
     alert('请填写指标名称')
@@ -1099,6 +1061,10 @@ async function saveIndicator() {
         is_computable: form.value.computable === '是',
         use_llm: form.value.useLlm === '是',
         calc_method: 'sql',
+        numerator_date_field: resolveDateField(form.value.numeratorDateField, form.value.numeratorDateFieldCustom),
+        ...(isRatio ? {
+          denominator_date_field: resolveDateField(form.value.denominatorDateField, form.value.denominatorDateFieldCustom),
+        } : {}),
       }
       if (form.value.templateType) {
         payload.template_type = form.value.templateType
@@ -1129,6 +1095,10 @@ async function saveIndicator() {
         involved_tables: form.value.numInvolvedTables,
         calc_method: 'sql' as const,
         calc_type: form.value.calcType,
+        numerator_date_field: resolveDateField(form.value.numeratorDateField, form.value.numeratorDateFieldCustom),
+        ...(isRatio ? {
+          denominator_date_field: resolveDateField(form.value.denominatorDateField, form.value.denominatorDateFieldCustom),
+        } : {}),
       }
 
       if (isEditing.value && templateId.value) {

@@ -10,6 +10,7 @@ from app.schemas.indicator import (
     IndicatorCreate, IndicatorUpdate, IndicatorResponse,
     IndicatorExecutionResponse, ExecuteRequest, TestSqlRequest,
     PreviewPageRequest, PreviewPageResponse, ExecutionHistoryResponse,
+    ExecuteTaskSubmitResponse, TaskStatusResponse,
 )
 from app.services.text2sql import Text2SQLService
 
@@ -228,8 +229,45 @@ def list_executions(
     db: Session = Depends(get_db),
 ):
     rows, total = _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
-    serialized = [IndicatorExecutionResponse.model_validate(r).model_dump(mode='json') for r in rows]
-    return {"records": serialized, "total": total}
+    import logging
+    _log = logging.getLogger("indicators")
+    _log.info(f"[list_executions] query returned {len(rows)} rows, total={total}")
+    for i, r in enumerate(rows):
+        _log.debug(f"[list_executions] row[{i}] id={r.id} logs={type(r.logs).__name__} attempts={type(r.attempts).__name__} preview_data={type(r.preview_data).__name__} hospital_results={type(r.hospital_results).__name__}")
+    records = []
+    for r in rows:
+        for field in ("rate_formula", "numerator_sql", "denominator_sql", "sql",
+                      "result_text", "llm_thinking", "llm_raw", "error"):
+            if getattr(r, field, None) is None:
+                setattr(r, field, "")
+        if r.logs is None:
+            r.logs = []
+        if r.attempts is None:
+            r.attempts = []
+        if r.preview_data is None:
+            r.preview_data = {}
+        if r.denominator_preview_data is None:
+            r.denominator_preview_data = {}
+        if r.hospital_codes is None:
+            r.hospital_codes = []
+        if r.hospital_results is None:
+            r.hospital_results = []
+        try:
+            records.append(IndicatorExecutionResponse.model_validate(r).model_dump(mode='json'))
+        except Exception:
+            import logging
+            import traceback
+            _log = logging.getLogger("indicators")
+            _log.error(
+                f"[list_executions] serialize failed id={r.id} | "
+                f"logs={type(r.logs).__name__}={repr(r.logs)[:200]} | "
+                f"attempts={type(r.attempts).__name__}={repr(r.attempts)[:200]} | "
+                f"preview_data={type(r.preview_data).__name__}={repr(r.preview_data)[:200]} | "
+                f"hospital_results={type(r.hospital_results).__name__}={repr(r.hospital_results)[:200]} | "
+                f"fields={ {f: type(getattr(r, f)).__name__ for f in ['logs','attempts','preview_data','denominator_preview_data','hospital_codes','hospital_results']} }"
+            )
+            _log.error(f"[list_executions] traceback:\n{traceback.format_exc()}")
+    return {"records": records, "total": total}
 
 
 @router.get("/execution", response_model=ExecutionHistoryResponse)
@@ -243,8 +281,43 @@ def list_executions_no_slash(
     db: Session = Depends(get_db),
 ):
     rows, total = _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
-    serialized = [IndicatorExecutionResponse.model_validate(r).model_dump(mode='json') for r in rows]
-    return {"records": serialized, "total": total}
+    import logging
+    _log = logging.getLogger("indicators")
+    _log.info(f"[list_executions_no_slash] query returned {len(rows)} rows, total={total}")
+    for i, r in enumerate(rows):
+        _log.debug(f"[list_executions_no_slash] row[{i}] id={r.id} logs={type(r.logs).__name__} attempts={type(r.attempts).__name__} preview_data={type(r.preview_data).__name__} hospital_results={type(r.hospital_results).__name__}")
+    records = []
+    for r in rows:
+        for field in ("rate_formula", "numerator_sql", "denominator_sql", "sql",
+                      "result_text", "llm_thinking", "llm_raw", "error"):
+            if getattr(r, field, None) is None:
+                setattr(r, field, "")
+        if r.logs is None:
+            r.logs = []
+        if r.attempts is None:
+            r.attempts = []
+        if r.preview_data is None:
+            r.preview_data = {}
+        if r.denominator_preview_data is None:
+            r.denominator_preview_data = {}
+        if r.hospital_codes is None:
+            r.hospital_codes = []
+        if r.hospital_results is None:
+            r.hospital_results = []
+        try:
+            records.append(IndicatorExecutionResponse.model_validate(r).model_dump(mode='json'))
+        except Exception:
+            import traceback
+            _log.error(
+                f"[list_executions_no_slash] serialize failed id={r.id} | "
+                f"logs={type(r.logs).__name__}={repr(r.logs)[:200]} | "
+                f"attempts={type(r.attempts).__name__}={repr(r.attempts)[:200]} | "
+                f"preview_data={type(r.preview_data).__name__}={repr(r.preview_data)[:200]} | "
+                f"hospital_results={type(r.hospital_results).__name__}={repr(r.hospital_results)[:200]} | "
+                f"fields={ {f: type(getattr(r, f)).__name__ for f in ['logs','attempts','preview_data','denominator_preview_data','hospital_codes','hospital_results']} }"
+            )
+            _log.error(f"[list_executions_no_slash] traceback:\n{traceback.format_exc()}")
+    return {"records": records, "total": total}
 
 
 @router.delete("/execution/{execution_id}", status_code=204)
@@ -256,32 +329,177 @@ def delete_execution(execution_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-@router.post("/execute/")
+@router.get("/execution/by-hospital/", response_model=Optional[IndicatorExecutionResponse])
+def get_execution_by_hospital(
+    indicator_id: int,
+    hospital_code: str,
+    time_mode: Optional[str] = None,
+    time_value: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    查询指定指标+医院下的最新一条 group_by_hospital=1 的执行记录。
+    hospital_results 中包含该医院对应的执行结果。
+    支持时间筛选：time_mode (monthly/quarterly) 和 time_value (如 2026-05 或 2026-Q1)
+    """
+    query = db.query(IndicatorExecution).filter(
+        IndicatorExecution.indicator_id == indicator_id,
+        IndicatorExecution.group_by_hospital == True,
+        IndicatorExecution.status == "success",
+    )
+
+    if time_mode and time_mode != 'immediate':
+        query = query.filter(IndicatorExecution.run_mode == time_mode)
+        if time_value:
+            query = query.filter(IndicatorExecution.time_value == time_value)
+
+    all_execs = query.order_by(IndicatorExecution.execution_time.desc()).all()
+
+    for exec in all_execs:
+        codes = exec.hospital_codes or []
+        if isinstance(codes, list) and hospital_code in codes:
+            return exec
+    return None
+
+
+@router.post("/execute/", response_model=ExecuteTaskSubmitResponse)
 def execute_indicator(data: ExecuteRequest, db: Session = Depends(get_db)):
-    service = Text2SQLService()
+    """
+    异步执行指标。
+
+    1. 先在数据库创建一条 pending 记录（让前端立即展示）
+    2. 提交 Celery 异步任务
+    3. 返回 task_id，前端轮询 /execution/task/{task_id} 获取结果
+    """
+    from app.tasks.indicator_tasks import execute_indicator_task
+    from datetime import datetime
+
     req_dict = data.model_dump()
+    indicator_name = ""
+    kind = data.business_type or "core18"
+
+    # 查询指标名称
     if data.indicator_id:
         indicator = db.query(Indicator).filter(Indicator.id == data.indicator_id).first()
         if not indicator:
             raise HTTPException(status_code=404, detail="指标不存在")
+        indicator_name = indicator.name
         ind_data = _obj_to_dict(indicator)
-        # 补充 ExecuteRequest 中传入的额外字段
-        ind_data["kind"] = data.business_type or "core18"
-        ind_data["run_mode"] = data.run_mode or "immediate"
-        ind_data["time_range"] = data.time_range or "全量"
-        ind_data["result_type"] = data.result_type or "ratio"
-        ind_data["calc_method"] = data.calc_method or "SQL录入"
-        # 补充医院和时间筛选参数
-        ind_data["hospital_codes"] = data.hospital_codes
-        ind_data["time_mode"] = data.time_mode
-        ind_data["time_value"] = data.time_value
-        ind_data["date_field"] = data.date_field or "discharge"
-        ind_data["group_by_hospital"] = data.group_by_hospital if data.group_by_hospital is not None else True
-        logger.info(f"[Execute] 接收到的请求数据: hospital_codes={data.hospital_codes}, time_mode={data.time_mode}, time_value={data.time_value}, date_field={ind_data['date_field']}, group_by_hospital={ind_data['group_by_hospital']}")
+        ind_data.update({
+            "kind": kind,
+            "run_mode": data.run_mode or "immediate",
+            "time_range": data.time_range or "全量",
+            "result_type": data.result_type or "ratio",
+            "calc_method": data.calc_method or "SQL录入",
+            "hospital_codes": data.hospital_codes,
+            "time_mode": data.time_mode,
+            "time_value": data.time_value,
+            "date_field": data.date_field or (indicator.date_field if indicator else "discharge"),
+            "numerator_date_field": data.numerator_date_field or (indicator.numerator_date_field if indicator else "discharge"),
+            "denominator_date_field": data.denominator_date_field or (indicator.denominator_date_field if indicator else "discharge"),
+            "group_by_hospital": data.group_by_hospital if data.group_by_hospital is not None else True,
+        })
     else:
         ind_data = {"id": None, **req_dict}
 
-    return service.execute_indicator(indicator_data=ind_data, db_session=db)
+    # 预先创建 pending 记录，确保前端能查到
+    exec_record = IndicatorExecution(
+        indicator_id=data.indicator_id,
+        indicator_name=indicator_name,
+        kind=kind,
+        run_mode=data.run_mode or "immediate",
+        time_range=data.time_range or "全量",
+        result_type=data.result_type or "ratio",
+        calc_method=data.calc_method or "SQL录入",
+        scope="",
+        hospital_codes=data.hospital_codes,
+        time_mode=data.time_mode,
+        time_value=data.time_value,
+        date_field=data.date_field or "discharge",
+        group_by_hospital=data.group_by_hospital if data.group_by_hospital is not None else True,
+        status="pending",
+        execution_time=datetime.now(),
+    )
+    db.add(exec_record)
+    db.commit()
+    db.refresh(exec_record)
+
+    # 提交 Celery 异步任务（传入 execution_id 以便更新预创建的记录）
+    task = execute_indicator_task.delay(ind_data, execution_id=exec_record.id)
+
+    logger.info(f"[Execute] 任务已提交 task_id={task.id}, execution_id={exec_record.id}")
+
+    return ExecuteTaskSubmitResponse(
+        task_id=task.id,
+        execution_id=exec_record.id,
+    )
+
+
+@router.get("/execution/task/{task_id}", response_model=TaskStatusResponse)
+def get_task_status(task_id: str):
+    """
+    查询 Celery 任务状态和执行结果。
+    前端轮询此接口直到 state 变为 SUCCESS 或 FAILURE。
+    """
+    from app.celery_app import celery_app
+
+    res = celery_app.AsyncResult(task_id)
+    state = res.state.upper()
+
+    execution_id = None
+    result_data = None
+
+    if state == "SUCCESS":
+        raw = res.result
+        if isinstance(raw, int):
+            execution_id = raw
+            result_data = {"execution_id": raw}
+        elif isinstance(raw, dict):
+            execution_id = raw.get("execution_id")
+            result_data = raw
+        else:
+            result_data = {"raw": str(raw)}
+    elif state == "FAILURE":
+        result_data = {"error": str(res.result)}
+
+    return TaskStatusResponse(
+        task_id=task_id,
+        state=state,
+        ready=res.ready(),
+        result=result_data,
+        execution_id=execution_id,
+    )
+
+
+@router.get("/execution/{execution_id}/detail", response_model=IndicatorExecutionResponse)
+def get_execution_detail(execution_id: int, db: Session = Depends(get_db)):
+    """
+    根据执行记录 ID 获取完整结果。
+    前端在任务完成后调用此接口拉取结果详情。
+    """
+    row = db.query(IndicatorExecution).filter(IndicatorExecution.id == execution_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="执行记录不存在")
+    # FastAPI response_model 严格校验：None 值须转为空字符串以匹配 schema
+    for field in ("rate_formula", "numerator_sql", "denominator_sql", "sql",
+                  "result_text", "llm_thinking", "llm_raw"):
+        if getattr(row, field, None) is None:
+            setattr(row, field, "")
+    if row.logs is None:
+        row.logs = []
+    if row.attempts is None:
+        row.attempts = []
+    if row.preview_data is None:
+        row.preview_data = {}
+    if row.denominator_preview_data is None:
+        row.denominator_preview_data = {}
+    if row.hospital_codes is None:
+        row.hospital_codes = []
+    if row.hospital_results is None:
+        row.hospital_results = []
+    if row.error is None:
+        row.error = ""
+    return row
 
 
 @router.post("/test-sql/")
@@ -312,7 +530,7 @@ def prompt_preview(data: dict):
 
 @router.post("/execution/preview-page", response_model=PreviewPageResponse)
 def get_preview_page(data: PreviewPageRequest, db: Session = Depends(get_db)):
-    """根据执行记录 ID 获取指定页的预览数据（分子/分母），支持翻页"""
+    """根据执行记录 ID 获取指定页的预览数据（分子/分母），支持翻页和按医院筛选"""
     service = Text2SQLService()
     result = service.fetch_preview_page(
         execution_id=data.execution_id,
@@ -320,5 +538,6 @@ def get_preview_page(data: PreviewPageRequest, db: Session = Depends(get_db)):
         page=data.page,
         page_size=data.page_size,
         db_session=db,
+        hospital_code=data.hospital_code,
     )
     return result

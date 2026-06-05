@@ -1,7 +1,7 @@
 """迁移数据，处理空字符串和保留字列名"""
 import sqlite3, pymysql
 
-SRC = r"d:\41811_fullstack\41811\backend_fastapi\db.sqlite3"
+SRC = "/Users/lichong/hainan/HainanPR-main/41811/db.sqlite3"
 DEST = dict(host="127.0.0.1", user="root", password="123456", database="hainan_41811", charset="utf8mb4")
 
 conn = pymysql.connect(**DEST)

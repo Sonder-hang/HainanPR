@@ -5,7 +5,7 @@ from app.models.monitoring import (
     Hospital, FourElementsMonitoringRecord,
     PersonnelViolation, InstitutionAnomaly, TechnologyWarning, EquipmentAnomaly,
 )
-# Department,
+
 from app.models.dashboard import DashboardAlert, DashboardStatistics
 from app.models.user import User
 from app.models.admission import HospitalAdmissionStandard

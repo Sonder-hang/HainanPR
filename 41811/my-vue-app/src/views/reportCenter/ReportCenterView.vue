@@ -2,92 +2,110 @@
   <div class="flex h-full min-h-0 flex-col bg-white">
     <!-- 执行发起区 -->
     <div class="shrink-0 border-b border-emerald-100 p-5">
-      <h3 class="mb-4 flex items-center text-[13px] font-semibold text-[#1F264D]">
-        <FileSpreadsheet class="mr-2 h-4 w-4 text-emerald-500" />
-        报表中心
-      </h3>
-      <div class="flex flex-wrap items-end gap-3">
-        <!-- 报表类型 -->
-        <label class="flex flex-col gap-1 text-[12px]">
-          <span class="text-[#596080]">报表类型</span>
-          <select
-            v-model="selectedReportType"
-            class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-          >
-            <option v-for="report in reportTypes" :key="report.id" :value="report.id">
-              {{ report.name }}
-            </option>
-          </select>
-        </label>
+      <div class="flex items-start gap-6">
+        <div class="flex-1">
+          <h3 class="mb-4 flex items-center text-[13px] font-semibold text-[#1F264D]">
+            <FileSpreadsheet class="mr-2 h-4 w-4 text-emerald-500" />
+            报表中心
+          </h3>
+          <div class="flex flex-wrap items-end gap-3">
+            <!-- 报表类型 -->
+            <label class="flex flex-col gap-1 text-[12px]">
+              <span class="text-[#596080]">报表类型</span>
+              <select
+                v-model="selectedReportType"
+                class="h-9 min-h-9 w-[200px] cursor-pointer appearance-none rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 pr-8 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                style="background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1em;"
+              >
+                <option v-for="report in reportTypes" :key="report.id" :value="report.id">
+                  {{ report.name }}
+                </option>
+              </select>
+            </label>
 
-        <!-- 时间范围 -->
-        <label class="flex flex-col gap-1 text-[12px]">
-          <span class="text-[#596080]">时间范围</span>
-          <select
-            v-model="timeRange"
-            class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-          >
-            <option value="month">本月</option>
-            <option value="quarter">本季度</option>
-            <option value="year">本年</option>
-            <option value="custom">自定义</option>
-          </select>
-        </label>
+            <!-- 执行方式 + 时间选择（始终渲染，用 v-show 切换，高度固定） -->
+            <div class="rounded border border-[#b8c9e8]/40 bg-[#f8faff] p-3">
+              <div class="flex items-end gap-3">
+                <!-- 执行方式 -->
+                <label class="flex flex-col gap-1 text-[12px]">
+                  <span class="text-[#596080]">执行方式</span>
+                  <div class="flex gap-1">
+                    <button
+                      v-for="m in REPORT_MODE_OPTIONS"
+                      :key="m.value"
+                      type="button"
+                      class="rounded-[2px] border px-3 py-2 text-[12px] transition-colors"
+                      :class="reportMode === m.value
+                        ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-medium'
+                        : 'border-[#b8c9e8] bg-white text-[#596080] hover:border-emerald-200'"
+                      @click="reportMode = m.value"
+                    >{{ m.label }}</button>
+                  </div>
+                </label>
 
-        <!-- 自定义时间范围 -->
-        <template v-if="timeRange === 'custom'">
-          <label class="flex flex-col gap-1 text-[12px]">
-            <span class="text-[#596080]">开始日期</span>
-            <input
-              v-model="startDate"
-              type="date"
-              class="rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-            />
-          </label>
-          <label class="flex flex-col gap-1 text-[12px]">
-            <span class="text-[#596080]">结束日期</span>
-            <input
-              v-model="endDate"
-              type="date"
-              class="rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-            />
-          </label>
-        </template>
+                <!-- 月份选择 -->
+                <label v-show="reportMode === 'monthly'" class="flex flex-col gap-1 text-[12px]">
+                  <span class="text-[#596080]">选择月份</span>
+                  <div class="flex gap-1">
+                    <select
+                      v-model="selectedMonthYear"
+                      class="h-9 min-h-9 cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-2 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                    >
+                      <option v-for="y in monthYearOptions" :key="y" :value="y">{{ y }}年</option>
+                    </select>
+                    <select
+                      v-model="selectedMonthNum"
+                      class="h-9 min-h-9 cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-2 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                    >
+                      <option v-for="m in MONTH_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+                    </select>
+                  </div>
+                </label>
 
-        <!-- 医疗机构 -->
-        <label class="flex flex-col gap-1 text-[12px]">
-          <span class="text-[#596080]">医疗机构</span>
-          <select
-            v-model="selectedHospital"
-            class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-          >
-            <option value="all">全部机构</option>
-            <option v-for="h in hospitalOptions" :key="h.value" :value="h.value">
-              {{ h.label }}
-            </option>
-          </select>
-        </label>
+                <!-- 季度选择 -->
+                <label v-show="reportMode === 'quarterly'" class="flex flex-col gap-1 text-[12px]">
+                  <span class="text-[#596080]">选择年份</span>
+                  <select
+                    v-model="selectedQuarterYear"
+                    class="h-9 min-h-9 cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                  >
+                    <option v-for="y in quarterYearOptions" :key="y" :value="y">{{ y }}年</option>
+                  </select>
+                </label>
+                <label v-show="reportMode === 'quarterly'" class="flex flex-col gap-1 text-[12px]">
+                  <span class="text-[#596080]">选择季度</span>
+                  <select
+                    v-model="selectedQuarterNum"
+                    class="h-9 min-h-9 cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                  >
+                    <option v-for="q in quarterOptionsOfYear" :key="q.value" :value="q.value">{{ q.label }}</option>
+                  </select>
+                </label>
+              </div>
+            </div>
 
-        <!-- 生成简报按钮 -->
-        <button
-          type="button"
-          class="flex items-center gap-1.5 rounded-[2px] border border-blue-400 bg-white px-4 py-2 text-[12px] text-blue-600 transition-colors hover:bg-blue-50"
-          @click="showBriefModal = true"
-        >
-          <FileText class="h-4 w-4" />
-          生成简报
-        </button>
+            <!-- 生成简报按钮 -->
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-[2px] border border-blue-400 bg-white px-4 py-2 text-[12px] text-blue-600 transition-colors hover:bg-blue-50"
+              @click="showBriefModal = true"
+            >
+              <FileText class="h-4 w-4" />
+              生成简报
+            </button>
 
-        <!-- 生成按钮 -->
-        <button
-          type="button"
-          class="flex items-center gap-1.5 rounded-[2px] bg-emerald-600 px-5 py-2 text-[12px] text-white transition-colors hover:bg-emerald-700"
-          :disabled="generating"
-          @click="generateReport"
-        >
-          <Download class="h-4 w-4" />
-          {{ generating ? '生成中...' : '生成报表' }}
-        </button>
+            <!-- 生成按钮 -->
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-[2px] bg-emerald-600 px-5 py-2 text-[12px] text-white transition-colors hover:bg-emerald-700"
+              :disabled="generating"
+              @click="generateReport"
+            >
+              <Download class="h-4 w-4" />
+              {{ generating ? '生成中...' : '生成报表' }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -264,7 +282,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Download, Eye, FileDown, FileSpreadsheet, FileText, X } from 'lucide-vue-next'
 import * as XLSX from 'xlsx'
 
@@ -280,29 +298,53 @@ type ReportData = {
   summary?: Record<string, string>
 }
 
-// 报表类型定义
+// 报表类型定义（对应赛思7个附件，删除超范围用药）
 const reportTypes: ReportType[] = [
-  { id: 'bedAreaRatio', name: '医疗机构床位面积比符合性监测', description: '监测医疗机构床位面积是否符合标准要求' },
-  { id: 'antibioticManagement', name: '抗菌药物分级管理监测', description: '监测抗菌药物分级管理执行情况' },
-  { id: 'crossInstitutionDiagnosis', name: '医师跨机构诊疗异常数据监测', description: '监测医师跨机构诊疗异常情况' },
-  { id: 'villageClinicWarning', name: '村卫生室年度服务量低线预警', description: '预警村卫生室年度服务量低于标准的机构' },
-  { id: 'restrictedTechUsage', name: '国家级限制性技术使用监测', description: '监测国家级限制性技术使用情况' },
-  { id: 'duplicateCharging', name: '重复收费监测', description: '监测可能存在重复收费的情况' },
+  { id: 'antibioticManagement',      name: '抗菌药物分级管理监测',       description: '附件1：抗菌药物分级管理监测，监测特殊使用级抗菌药物越权使用情况' },
+  { id: 'crossInstitutionDiagnosis', name: '医师跨机构诊疗异常数据监测', description: '附件2：医师跨机构诊疗异常监测，监测同一医师短时间内不同机构开医嘱情况' },
+  { id: 'restrictedTechUsage',       name: '国家级限制性技术使用监测',    description: '附件3：国家级限制性技术使用监测，监测限制类技术超范围开展情况' },
+  { id: 'practiceOverdue',          name: '医师执业超期异常监控',        description: '附件4：医师执业超期异常监控，监测诊疗时间超出多点执业备案有效期的情况' },
+  { id: 'practiceLocation',         name: '医师执业地点异常监控',        description: '附件5：医师执业地点异常监控，监测在未备案机构开展诊疗活动的情况' },
+  { id: 'minorProtection',          name: '未成年人异常诊疗情形监测',    description: '附件7：未成年人异常诊疗情形监测，识别疑似侵害未成年人线索' },
 ]
 
-const hospitalOptions = [
-  { value: 'hospitalA', label: '省立第一医院' },
-  { value: 'hospitalB', label: '市中心医院' },
-  { value: 'hospitalC', label: '省肿瘤医院' },
-  { value: 'hospitalD', label: '县人民医院' },
-  { value: 'hospitalE', label: '康华医院' },
-]
+const selectedReportType = ref('minorProtection')
 
-const selectedReportType = ref('bedAreaRatio')
-const timeRange = ref('month')
-const startDate = ref('')
-const endDate = ref('')
-const selectedHospital = ref('all')
+type ReportMode = 'immediate' | 'monthly' | 'quarterly'
+const REPORT_MODE_OPTIONS = [
+  { value: 'monthly'   as ReportMode, label: '按月' },
+  { value: 'quarterly' as ReportMode, label: '按季度' },
+]
+const reportMode = ref<ReportMode>('monthly')
+
+const MONTH_OPTIONS = [
+  { value: '01', label: '1月' }, { value: '02', label: '2月' }, { value: '03', label: '3月' },
+  { value: '04', label: '4月' }, { value: '05', label: '5月' }, { value: '06', label: '6月' },
+  { value: '07', label: '7月' }, { value: '08', label: '8月' }, { value: '09', label: '9月' },
+  { value: '10', label: '10月' }, { value: '11', label: '11月' }, { value: '12', label: '12月' },
+]
+const monthYearOptions = computed(() => {
+  const now = new Date()
+  const cur = now.getFullYear()
+  return [cur - 1, cur, cur + 1]
+})
+const selectedMonthYear = ref(new Date().getFullYear())
+const selectedMonthNum = ref(String(new Date().getMonth() + 1).padStart(2, '0'))
+
+const quarterYearOptions = computed(() => {
+  const now = new Date()
+  const cur = now.getFullYear()
+  return [cur - 3, cur - 2, cur - 1, cur, cur + 1]
+})
+const selectedQuarterYear = ref(new Date().getFullYear())
+const selectedQuarterNum = ref('1')
+const quarterOptionsOfYear = computed(() => [
+  { value: '1', label: 'Q1（一季度）' },
+  { value: '2', label: 'Q2（二季度）' },
+  { value: '3', label: 'Q3（三季度）' },
+  { value: '4', label: 'Q4（四季度）' },
+])
+
 const generating = ref(false)
 const generatingBrief = ref(false)
 const reportData = ref<ReportData | null>(null)
@@ -318,12 +360,14 @@ const briefPeriodMonth = ref(new Date().getMonth() + 1)
 const currentReport = computed(() => reportTypes.find(r => r.id === selectedReportType.value))
 
 const timeRangeLabel = computed(() => {
-  switch (timeRange.value) {
-    case 'month': return '本月'
-    case 'quarter': return '本季度'
-    case 'year': return '本年'
-    case 'custom': return `${startDate.value} 至 ${endDate.value}`
-    default: return ''
+  switch (reportMode.value) {
+    case 'monthly':
+      return `${selectedMonthYear.value}年${Number(selectedMonthNum.value)}月`
+    case 'quarterly':
+      const qmap: Record<string, string> = { '1': '一', '2': '二', '3': '三', '4': '四' }
+      return `${selectedQuarterYear.value}年${qmap[selectedQuarterNum.value]}季度`
+    default:
+      return ''
   }
 })
 
@@ -342,161 +386,107 @@ function getCellClass(cell: string | number): string {
 // 生成报表数据
 async function generateReport() {
   generating.value = true
-  
-  // 模拟生成延迟
-  await new Promise(resolve => setTimeout(resolve, 1500))
-  
-  reportData.value = generateMockData(selectedReportType.value)
+  try {
+    const body: Record<string, unknown> = {
+      report_type: selectedReportType.value,
+    }
+    if (reportMode.value === 'monthly') {
+      body.time_mode = 'monthly'
+      body.time_value = `${selectedMonthYear.value}-${selectedMonthNum.value}`
+    } else {
+      body.time_mode = 'quarterly'
+      body.time_value = `${selectedQuarterYear.value}-Q${selectedQuarterNum.value}`
+    }
+
+    const res = await fetch('/api/report/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: '未知错误' }))
+      alert('生成报表失败：' + (err.detail || res.statusText))
+      reportData.value = null
+    } else {
+      const json = await res.json()
+      if (json.headers && json.headers.length > 0) {
+        reportData.value = {
+          headers: json.headers,
+          rows: json.rows,
+          summary: json.summary || {},
+        }
+      } else {
+        reportData.value = {
+          headers: [],
+          rows: [],
+          summary: { '预警总数': json.total_count || 0, '执行状态': json.ok ? '成功' : '失败' },
+        }
+      }
+    }
+  } catch (e) {
+    console.error('报表生成失败', e)
+    alert('报表生成失败，请检查后端服务是否启动')
+    reportData.value = null
+  }
   generating.value = false
 }
 
-// 根据报表类型生成模拟数据
-function generateMockData(reportType: string): ReportData {
-  switch (reportType) {
-    case 'bedAreaRatio':
-      return {
-        headers: ['序号', '机构名称', '床位数', '实际面积(㎡)', '标准面积(㎡)', '面积比', '是否符合', '备注'],
-        rows: [
-          ['1', '省立第一医院', 1200, 15600, 14400, '1.08', '符合', '-'],
-          ['2', '市中心医院', 800, 9800, 9600, '1.02', '符合', '-'],
-          ['3', '省肿瘤医院', 600, 6800, 7200, '0.94', '不符合', '需增加面积或减少床位'],
-          ['4', '县人民医院', 400, 5200, 4800, '1.08', '符合', '-'],
-          ['5', '康华医院', 300, 3600, 3600, '1.00', '符合', '-'],
-        ],
-        summary: {
-          '总机构数': '5家',
-          '符合标准': '4家',
-          '不符合标准': '1家',
-          '符合率': '80%'
-        }
-      }
-    
-    case 'antibioticManagement':
-      return {
-        headers: ['序号', '机构名称', '非限制级使用率', '限制级使用率', '特殊级使用率', '越级使用次数', '管理评级', '备注'],
-        rows: [
-          ['1', '省立第一医院', '68%', '25%', '7%', 3, 'A级', '-'],
-          ['2', '市中心医院', '72%', '22%', '6%', 5, 'B级', '-'],
-          ['3', '省肿瘤医院', '65%', '28%', '7%', 8, 'B级', '越级使用略多'],
-          ['4', '县人民医院', '75%', '20%', '5%', 2, 'A级', '-'],
-          ['5', '康华医院', '70%', '24%', '6%', 4, 'A级', '-'],
-        ],
-        summary: {
-          '总机构数': '5家',
-          'A级机构': '3家',
-          'B级机构': '2家',
-          '平均越级使用': '4.4次'
-        }
-      }
-    
-    case 'crossInstitutionDiagnosis':
-      return {
-        headers: ['序号', '医师姓名', '执业机构', '诊疗机构', '跨机构诊疗次数', '异常类型', '风险等级', '备注'],
-        rows: [
-          ['1', '张某某', '省立第一医院', '市中心医院', 45, '频繁跨机构', '高', '需核查'],
-          ['2', '李某某', '市中心医院', '省肿瘤医院', 32, '正常', '低', '-'],
-          ['3', '王某某', '省肿瘤医院', '康华医院', 28, '正常', '低', '-'],
-          ['4', '赵某某', '县人民医院', '省立第一医院', 56, '频繁跨机构', '高', '需重点核查'],
-          ['5', '孙某某', '康华医院', '市中心医院', 18, '正常', '低', '-'],
-        ],
-        summary: {
-          '监测医师数': '5人',
-          '异常人数': '2人',
-          '高风险人数': '2人',
-          '需核查次数': '101次'
-        }
-      }
-    
-    case 'villageClinicWarning':
-      return {
-        headers: ['序号', '机构名称', '所属区域', '年度服务量', '标准下限', '完成率', '预警等级', '备注'],
-        rows: [
-          ['1', '阳光村卫生室', '城东区', 850, 1000, '85%', '黄色预警', '接近标准'],
-          ['2', '幸福村卫生室', '城西区', 620, 1000, '62%', '红色预警', '需重点关注'],
-          ['3', '和平村卫生室', '城南镇', 1100, 1000, '110%', '正常', '-'],
-          ['4', '团结村卫生室', '城北镇', 980, 1000, '98%', '黄色预警', '接近标准'],
-          ['5', '进步村卫生室', '开发区', 450, 1000, '45%', '红色预警', '严重不足'],
-        ],
-        summary: {
-          '监测机构数': '5家',
-          '达标机构': '1家',
-          '黄色预警': '2家',
-          '红色预警': '2家'
-        }
-      }
-    
-    case 'restrictedTechUsage':
-      return {
-        headers: ['序号', '机构名称', '技术名称', '备案数量', '实际开展', '开展率', '人员资质', '备注'],
-        rows: [
-          ['1', '省立第一医院', '器官移植', 20, 18, '90%', '符合', '-'],
-          ['2', '市中心医院', '心脏支架介入', 50, 48, '96%', '符合', '-'],
-          ['3', '省肿瘤医院', '造血干细胞移植', 15, 10, '67%', '基本符合', '开展率偏低'],
-          ['4', '县人民医院', '心导管检查', 30, 28, '93%', '符合', '-'],
-          ['5', '康华医院', '射频消融术', 25, 22, '88%', '符合', '-'],
-        ],
-        summary: {
-          '监测机构数': '5家',
-          '符合要求': '5家',
-          '需关注': '1家',
-          '平均开展率': '86.8%'
-        }
-      }
-    
-    case 'duplicateCharging':
-      return {
-        headers: ['序号', '机构名称', '患者ID', '收费项目', '收费次数', '涉及金额(元)', '疑似重复类型', '备注'],
-        rows: [
-          ['1', '省立第一医院', 'P001234', '常规心电图', 3, 90, '同日重复收费', '待核实'],
-          ['2', '市中心医院', 'P005678', '血常规检查', 2, 40, '跨日重复收费', '待核实'],
-          ['3', '省肿瘤医院', 'P008901', 'CT平扫', 2, 600, '剂量重复', '需核查'],
-          ['4', '县人民医院', 'P002345', '超声检查', 4, 320, '项目拆分', '疑似违规'],
-          ['5', '康华医院', 'P006789', '生化全套', 2, 160, '同日重复收费', '待核实'],
-        ],
-        summary: {
-          '监测机构数': '5家',
-          '疑似重复条目': '5条',
-          '涉及金额': '1,210元',
-          '需重点核查': '2条'
-        }
-      }
-    
-    default:
-      return { headers: [], rows: [] }
-  }
-}
-
-// 导出 Excel
-function exportExcel() {
+// 导出 Excel（全量数据，不走预览的 limit）
+async function exportExcel() {
   if (!reportData.value) return
-  
-  const ws = XLSX.utils.aoa_to_sheet([
-    [currentReport.value?.name || ''],
-    [`统计周期：${timeRangeLabel.value}`],
-    [`生成时间：${new Date().toLocaleString('zh-CN')}`],
-    [],
-    reportData.value.headers,
-    ...reportData.value.rows,
-  ])
-  
-  // 添加汇总
-  if (reportData.value.summary) {
-    const summaryRows = Object.entries(reportData.value.summary).map(([key, value]) => [key, value])
-    ws['!rows'] = [
-      { hpt: 30 }, // 标题行高度
-      { hpt: 20 }, // 统计周期行
-      { hpt: 20 }, // 生成时间行
-      { hpt: 10 }, // 空行
-      ...Array(reportData.value.headers.length + 1).fill({ hpt: 25 }), // 表头和数据行
-      ...Array(summaryRows.length).fill({ hpt: 20 }), // 汇总行
-    ]
+
+  generating.value = true
+  try {
+    const body: Record<string, unknown> = {
+      report_type: selectedReportType.value,
+    }
+    if (reportMode.value === 'monthly') {
+      body.time_mode = 'monthly'
+      body.time_value = `${selectedMonthYear.value}-${selectedMonthNum.value}`
+    } else {
+      body.time_mode = 'quarterly'
+      body.time_value = `${selectedQuarterYear.value}-Q${selectedQuarterNum.value}`
+    }
+
+    const res = await fetch('/api/report/export-full', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: '未知错误' }))
+      alert('导出失败：' + (err.detail || res.statusText))
+      return
+    }
+
+    const fullData = await res.json()
+    const headers = fullData.headers || []
+    const rows = fullData.rows || []
+
+    const ws = XLSX.utils.aoa_to_sheet([
+      [currentReport.value?.name || ''],
+      [`统计周期：${timeRangeLabel.value}`],
+      [`导出时间：${new Date().toLocaleString('zh-CN')}`],
+      [`数据总量：${fullData.total || rows.length} 条`],
+      [],
+      headers,
+      ...rows,
+    ])
+
+    ws['!cols'] = headers.map(() => ({ wch: 18 }))
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '报表')
+    const fileName = `${currentReport.value?.name}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`
+    XLSX.writeFile(wb, fileName)
+  } catch (e) {
+    console.error('导出失败', e)
+    alert('导出失败，请检查后端服务')
+  } finally {
+    generating.value = false
   }
-  
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '报表')
-  
-  const fileName = `${currentReport.value?.name}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`
-  XLSX.writeFile(wb, fileName)
 }
 
 // 确认生成简报

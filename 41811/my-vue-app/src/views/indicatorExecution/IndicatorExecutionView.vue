@@ -15,7 +15,8 @@
               <span class="text-[#596080]">指标类别</span>
               <select
                 v-model="runKind"
-                class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                class="h-9 min-h-9 w-[200px] cursor-pointer appearance-none rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 pr-8 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
+                style="background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1em;"
               >
                 <option value="four">四要素监管指标</option>
                 <option value="core18">十八项核心制度指标</option>
@@ -33,19 +34,14 @@
             </label>
 
             <!-- 指标名称 -->
-            <label class="flex flex-col gap-1 text-[12px]">
+            <label class="flex flex-col gap-1 text-[12px]" style="min-width: 200px;">
               <span class="text-[#596080]">指标名称</span>
-              <select
+              <SearchableSelect
                 v-model="runIndicatorId"
-                class="cursor-pointer rounded-[2px] border border-[#b8c9e8]/60 bg-white px-3 py-2 text-[12px] text-[#1F264D] focus:border-emerald-400 focus:outline-none"
-              >
-                <option value="">全部</option>
-                <option
-                  v-for="ind in currentIndicatorOptions"
-                  :key="ind.id"
-                  :value="ind.id"
-                >{{ ind.label }}</option>
-              </select>
+                :options="currentIndicatorOptions"
+                placeholder="全部"
+                search-placeholder="搜索指标名称…"
+              />
             </label>
 
             <!-- 执行方式 + 时间选择（按月/按季度时包裹在一个框内） -->
@@ -479,7 +475,7 @@
         </div>
 
         <!-- 详情内容 -->
-        <div class="flex min-h-0 flex-1 gap-4 rounded-[2px] border border-[#b8c9e8]/40 bg-white">
+        <div class="flex min-h-0 flex-1 rounded-[2px] border border-[#b8c9e8]/40 bg-white">
           <!-- 左侧：分子/分母数据 -->
           <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
             <!-- 分子结果 -->
@@ -513,7 +509,7 @@
                   <div v-for="i in 5" :key="i" class="h-8 bg-[#f0f4ff] rounded animate-pulse" />
                 </div>
                 <div class="border-t border-[#b8c9e8]/60 bg-[#f8faff] px-3 py-1.5 text-[11px] text-[#596080] flex items-center justify-between gap-2">
-                  <span>共 {{ selectedRecord.numeratorCount?.toLocaleString() ?? '—' }} 条记录</span>
+                  <span>共 {{ effectiveNumTotal.toLocaleString() }} 条记录</span>
                   <div class="flex items-center gap-1">
                     <button
                       class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
@@ -566,7 +562,7 @@
                   <div v-for="i in 5" :key="i" class="h-8 bg-[#f0f4ff] rounded animate-pulse" />
                 </div>
                 <div class="border-t border-[#b8c9e8]/60 bg-[#f8faff] px-3 py-1.5 text-[11px] text-[#596080] flex items-center justify-between gap-2">
-                  <span>共 {{ selectedRecord.denominatorCount?.toLocaleString() ?? '—' }} 条记录</span>
+                  <span>共 {{ effectiveDenTotal.toLocaleString() }} 条记录</span>
                   <div class="flex items-center gap-1">
                     <button
                       class="shrink-0 rounded px-1.5 py-0.5 transition-colors"
@@ -595,9 +591,8 @@
               <div class="rounded-[2px] border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{{ selectedRecord.errorMessage }}</div>
             </div>
           </div>
-
-          <!-- 右侧：执行日志 -->
         </div>
+
       </template>
 
       <!-- 无选中记录时显示空状态 -->
@@ -611,7 +606,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, nextTick, watch } from 'vue'
+import { computed, ref, reactive, onMounted, nextTick, watch } from 'vue'
 import {
   Activity,
   AlertCircle,
@@ -629,6 +624,7 @@ import {
 } from 'lucide-vue-next'
 import VirtualTable from '@/components/VirtualTable.vue'
 import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown.vue'
+import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import { indicatorsApi, type Indicator } from '@/api/indicators'
 import { DEFAULT_CORE18, DEFAULT_FOUR_ELEMENTS } from '@/data/indicatorManagementDefaults'
 import { MOCK_RECORDS, type ExecutionRecord, type RunMode, type RunStatus } from '@/data/indicatorExecutionDefaults'
@@ -692,6 +688,7 @@ const historyTotal = ref(0)
 const historyOpen = ref(false)
 const loadingMore = ref(false)
 const selectedRecord = ref<ExecutionRecord | null>(null)
+const selectedDetailHospCode = ref<string>('')
 const executingIds = ref<Set<string>>(new Set())
 const detailContainer = ref<HTMLElement | null>(null)
 
@@ -702,20 +699,37 @@ watch(statusFilter, async () => {
   }
 })
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 200
+const MAX_DISPLAY = 2000
 const numPage = ref(1)
 const denPage = ref(1)
+const numTotal = ref(0)
+const denTotal = ref(0)
 
 // 切换记录时重置医院筛选和分页
 watch(selectedRecord, () => {
   selectedDetailHospCode.value = ''
   numPage.value = 1
   denPage.value = 1
+  numTotal.value = 0
+  denTotal.value = 0
+})
+
+// 切换医院时重新加载分子分母数据
+watch(selectedDetailHospCode, () => {
+  const rec = selectedRecord.value
+  if (!rec || !rec.hospitalResults?.length) return
+  numPage.value = 1
+  denPage.value = 1
+  if (selectedDetailHospCode.value) {
+    loadNumPage(1)
+    loadDenPage(1)
+  }
 })
 
 // 分页缓存（key = `${executionId}_${target}_${page}`）
-const numRowsCache = new Map<string, Record<string, unknown>[]>()
-const denRowsCache = new Map<string, Record<string, unknown>[]>()
+const numRowsCache = reactive(new Map<string, Record<string, unknown>[]>())
+const denRowsCache = reactive(new Map<string, Record<string, unknown>[]>())
 const numRowsLoading = ref(false)
 const denRowsLoading = ref(false)
 
@@ -725,7 +739,7 @@ async function loadNumPage(page: number) {
   if (rec.status === 'running' || rec.status === 'pending') return
   // 优先使用数据库记录ID（执行后返回），否则降级到前端临时ID
   const apiId: number | string = rec.dbRecordId ?? rec.id
-  const cacheKey = `${rec.id}_numerator_${page}`
+  const cacheKey = `${rec.id}_numerator_${selectedDetailHospCode.value || 'all'}_${page}`
   if (numRowsCache.has(cacheKey)) {
     numPage.value = page
     return
@@ -737,10 +751,12 @@ async function loadNumPage(page: number) {
       target: 'numerator',
       page,
       page_size: PAGE_SIZE,
+      hospital_code: selectedDetailHospCode.value || undefined,
     })
     if (res.ok && res.rows) {
       numRowsCache.set(cacheKey, res.rows)
       numPage.value = page
+      if (res.total_count != null) numTotal.value = res.total_count
     } else {
       console.warn('loadNumPage failed:', res.error)
     }
@@ -757,7 +773,7 @@ async function loadDenPage(page: number) {
   if (rec.status === 'running' || rec.status === 'pending') return
   // 优先使用数据库记录ID（执行后返回），否则降级到前端临时ID
   const apiId: number | string = rec.dbRecordId ?? rec.id
-  const cacheKey = `${rec.id}_denominator_${page}`
+  const cacheKey = `${rec.id}_denominator_${selectedDetailHospCode.value || 'all'}_${page}`
   if (denRowsCache.has(cacheKey)) {
     denPage.value = page
     return
@@ -769,10 +785,12 @@ async function loadDenPage(page: number) {
       target: 'denominator',
       page,
       page_size: PAGE_SIZE,
+      hospital_code: selectedDetailHospCode.value || undefined,
     })
     if (res.ok && res.rows) {
       denRowsCache.set(cacheKey, res.rows)
       denPage.value = page
+      if (res.total_count != null) denTotal.value = res.total_count
     } else {
       console.warn('loadDenPage failed:', res.error)
     }
@@ -783,22 +801,42 @@ async function loadDenPage(page: number) {
   }
 }
 
-const numTotalPages = computed(() =>
-  selectedRecord.value?.numeratorCount
-    ? Math.max(1, Math.ceil(selectedRecord.value.numeratorCount / PAGE_SIZE))
-    : 1
-)
+const numTotalPages = computed(() => {
+  const effectiveTotal = Math.min(effectiveNumTotal.value, MAX_DISPLAY)
+  return Math.max(1, Math.ceil(effectiveTotal / PAGE_SIZE))
+})
 
-const denTotalPages = computed(() =>
-  selectedRecord.value?.denominatorCount
-    ? Math.max(1, Math.ceil(selectedRecord.value.denominatorCount / PAGE_SIZE))
-    : 1
-)
+const denTotalPages = computed(() => {
+  const effectiveTotal = Math.min(effectiveDenTotal.value, MAX_DISPLAY)
+  return Math.max(1, Math.ceil(effectiveTotal / PAGE_SIZE))
+})
+
+const effectiveNumTotal = computed(() => {
+  const rec = selectedRecord.value
+  const hospCode = selectedDetailHospCode.value
+  if (hospCode && rec?.hospitalResults?.length) {
+    const h = rec.hospitalResults.find((x: any) => x.hospitalCode === hospCode)
+    if (h?.numeratorCount != null) return h.numeratorCount
+  }
+  return numTotal.value || rec?.numeratorCount || 0
+})
+
+const effectiveDenTotal = computed(() => {
+  const rec = selectedRecord.value
+  const hospCode = selectedDetailHospCode.value
+  if (hospCode && rec?.hospitalResults?.length) {
+    const h = rec.hospitalResults.find((x: any) => x.hospitalCode === hospCode)
+    if (h?.denominatorCount != null) return h.denominatorCount
+  }
+  return denTotal.value || rec?.denominatorCount || 0
+})
 
 const canPaginateByApi = computed(() => !!selectedRecord.value?.id)
 
+const numHasReachedMax = computed(() => effectiveNumTotal.value > MAX_DISPLAY)
+const denHasReachedMax = computed(() => effectiveDenTotal.value > MAX_DISPLAY)
+
 // 详情区：按医院筛选
-const selectedDetailHospCode = ref<string>('')
 
 const detailHospOptions = computed(() => {
   if (!selectedRecord.value?.groupByHospital || !selectedRecord.value?.hospitalResults?.length) return []
@@ -811,27 +849,31 @@ const detailHospOptions = computed(() => {
 const paginatedNumRows = computed(() => {
   const rec = selectedRecord.value
   if (!rec) return []
-  if (rec.groupByHospital && selectedDetailHospCode.value && rec.hospitalResults?.length) {
-    const hosp = rec.hospitalResults.find((h) => h.hospitalCode === selectedDetailHospCode.value)
-    return hosp?.previewData ?? []
+  const hospCode = selectedDetailHospCode.value
+  const cacheKey = `${rec.id}_numerator_${hospCode || 'all'}_${numPage.value}`
+  const cached = numRowsCache.get(cacheKey)
+  if (cached) return cached
+  // 有缓存则直接返回；无缓存时：
+  // - 未选医院 → 回退到执行时返回的原始 preview 数据
+  if (!hospCode && numPage.value === 1) {
+    return rec.resultData ?? []
   }
-  const data = rec.resultData ?? []
-  if (data.length > 0) return data
-  const cacheKey = `${rec.id}_numerator_${numPage.value}`
-  return numRowsCache.get(cacheKey) ?? []
+  return []
 })
 
 const paginatedDenRows = computed(() => {
   const rec = selectedRecord.value
   if (!rec) return []
-  if (rec.groupByHospital && selectedDetailHospCode.value && rec.hospitalResults?.length) {
-    const hosp = rec.hospitalResults.find((h) => h.hospitalCode === selectedDetailHospCode.value)
-    return hosp?.denominatorPreviewData ?? []
+  const hospCode = selectedDetailHospCode.value
+  const cacheKey = `${rec.id}_denominator_${hospCode || 'all'}_${denPage.value}`
+  const cached = denRowsCache.get(cacheKey)
+  if (cached) return cached
+  // 有缓存则直接返回；无缓存时：
+  // - 未选医院 → 回退到执行时返回的原始 preview 数据
+  if (!hospCode && denPage.value === 1) {
+    return rec.denominatorPreviewData?.rows ?? []
   }
-  const data = rec.denominatorPreviewData?.rows ?? []
-  if (data.length > 0) return data
-  const cacheKey = `${rec.id}_denominator_${denPage.value}`
-  return denRowsCache.get(cacheKey) ?? []
+  return []
 })
 
 const allIndicators = ref<Indicator[]>([])
@@ -1046,12 +1088,13 @@ const currentIndicatorOptions = computed(() => {
   const filtered = allIndicators.value.filter((x: any) => x.indicator_type === runKind.value)
   if (filtered.length === 0) {
     return runKind.value === 'four'
-      ? DEFAULT_FOUR_ELEMENTS.map((x) => ({ id: x.id, label: `序号 ${x.seq} — ${x.category}：${x.workContent.slice(0, 20)}...` }))
-      : DEFAULT_CORE18.map((x) => ({ id: x.id, label: x.name }))
+      ? DEFAULT_FOUR_ELEMENTS.map((x) => ({ value: x.id, id: x.id, label: `序号 ${x.seq} — ${x.category}：${x.workContent.slice(0, 20)}...` }))
+      : DEFAULT_CORE18.map((x) => ({ value: x.id, id: x.id, label: x.name }))
   }
   return filtered.map((x: any) => ({
-    id: x.id,
+    value: x.id,
     label: x.name,
+    id: x.id,
     numerator_sql: x.numerator_sql,
     denominator_sql: x.denominator_sql,
     sql: x.sql_content,
@@ -1116,9 +1159,14 @@ async function handleRun() {
       result_type: (selectedInd?.calc_type as 'ratio' | 'count') || 'ratio',
       calc_method: 'SQL录入',
       scope: runScopes.value.includes('__all__') ? '' : runScopes.value.join(','),
-      group_by_hospital: runScopes.value.length > 0 && !runScopes.value.includes('__all__'),
+      // 全省：展开所有医院列表；单选医院：传对应列表
+      group_by_hospital: true,
     }
-    reqData.hospital_codes = runScopes.value.includes('__all__') ? [] : runScopes.value.filter(Boolean)
+    reqData.hospital_codes = runScopes.value.includes('__all__')
+      ? (hospitalList.value.length > 0
+          ? hospitalList.value.filter(h => h.value !== '__all__').map(h => h.value)
+          : null)  // 后端会走 _sql_runner_get_hospitals 展开全省
+      : runScopes.value.filter(Boolean)
     // 存储完整医院列表用于重跑
     const finalHospitalCodes = runScopes.value.includes('__all__')
       ? hospitalList.value.filter(h => h.value !== '__all__').map(h => h.value)
@@ -1134,88 +1182,48 @@ async function handleRun() {
     if (selectedInd?.date_field) {
       reqData.date_field = selectedInd.date_field
     }
-    const result = await indicatorsApi.executeIndicator(reqData)
+    // 异步执行：提交任务 → 轮询状态 → 完成时拉取详情
+    const taskRes = await indicatorsApi.executeIndicator(reqData)
+    const realExecId = taskRes.execution_id ?? execId
+
+    // 用真实数据库 ID 替换前端临时 ID（让轮询能查到记录）
     const idx = records.value.findIndex((r) => r.id === execId)
-    if (idx < 0) return
-    const exec = result as any
-    if (exec.error && !exec.ok) {
-      records.value[idx] = {
-        ...records.value[idx],
-        status: 'failed',
-        duration: 0,
-        errorMessage: exec.error,
-        logs: [
-          ...records.value[idx].logs,
-          { time: new Date().toLocaleTimeString('zh-CN'), level: 'error', message: `执行失败：${exec.error}` },
-        ],
-      }
-      window.alert(`执行失败：${exec.error}`)
-    } else {
-      const numCnt = exec.numerator_count ?? 0
-      const denCnt = exec.denominator_count ?? 0
-      const rate = exec.rate_percent
-      const rawCalcType = exec.calc_type ?? exec.indicator?.calc_type ?? selectedInd?.calc_type
-      const isRatio = rawCalcType !== 'count'
-      const resultType: 'ratio' | 'count' = isRatio ? 'ratio' : 'count'
-      const previewRows = exec.preview_data?.rows ?? exec.preview_rows ?? exec.result_data ?? []
-      const countVal = isRatio ? numCnt : (exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0))
-      const updatedRecord = {
-        ...records.value[idx],
-        status: 'success',
-        duration: exec.duration_seconds || 0,
-        outputCount: countVal,
-        ratioPercent: isRatio ? (rate ?? undefined) : undefined,
-        denominatorCount: isRatio ? denCnt : undefined,
-        numeratorCount: isRatio ? numCnt : (exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0)),
-        resultType,
-        resultColumns: exec.preview_data?.columns
-          ?? exec.preview_columns
-          ?? (exec.result_data ? Object.keys(exec.result_data?.[0] ?? {}) : undefined),
-        resultData: exec.preview_data?.rows ?? exec.preview_rows ?? exec.result_data,
-        denominatorPreviewColumns: exec.denominator_preview_columns
-          ?? exec.denominator_preview_data?.columns
-          ?? (exec.denominator_preview_data?.rows?.length ? Object.keys(exec.denominator_preview_data.rows[0]) : undefined),
-        denominatorPreviewData: exec.denominator_preview_data ?? { columns: exec.denominator_preview_columns ?? [], rows: exec.denominator_preview_rows ?? [] },
-        calcMethod: (exec.numerator_sql || exec.sql) ? 'SQL录入' : '大模型Prompt',
-        usedScript: isRatio
-          ? (exec.numerator_sql ? `【分子 SQL】\n${exec.numerator_sql}\n\n【分母 SQL】\n${exec.denominator_sql || '—'}` : (exec.sql || ''))
-          : (exec.sql || exec.numerator_sql || ''),
-        logs: [
-          ...records.value[idx].logs,
-          ...(isRatio
-            ? [
-                { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `分子 SQL 执行完成：${numCnt} 条记录。` },
-                { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `分母 SQL 执行完成：${denCnt} 条记录。` },
-                { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `执行完成。指标值：${rate ?? '—'}%（${numCnt}/${denCnt}）` },
-              ]
-            : [
-                { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `SQL 执行完成：${countVal} 条记录。` },
-              ]),
-        ],
-        dbRecordId: exec.db_record_id ?? null,
-        groupByHospital: exec.group_by_hospital || false,
-        hospitalResults: (exec.hospital_results || []).map((h: any) => ({
-          hospitalCode: h.hospital_code ?? '',
-          hospitalName: h.hospital_name ?? '',
-          status: h.status ?? 'pending',
-          numeratorCount: h.numerator_count,
-          denominatorCount: h.denominator_count,
-          ratioPercent: h.ratio_percent,
-          previewData: h.preview_data || [],
-          denominatorPreviewData: h.denominator_preview_data || [],
-          error: h.error || undefined,
-        })),
-      }
-      console.log('[DEBUG] runIndicator resultColumns:', updatedRecord.resultColumns, 'resultData length:', updatedRecord.resultData?.length)
-      console.log('[DEBUG] runIndicator raw exec.preview_data:', exec.preview_data, 'preview_rows:', exec.preview_rows)
-      records.value[idx] = updatedRecord
-      if (selectedRecord.value?.id === execId) {
-        selectedRecord.value = updatedRecord
-      }
-      window.alert(isRatio
-        ? `执行成功！指标值：${rate ?? '—'}%`
-        : `执行成功！共 ${countVal} 条记录。`)
+    if (idx >= 0) {
+      records.value[idx].id = realExecId
+      records.value[idx].dbRecordId = realExecId
     }
+    const currentExecId = realExecId
+
+    // 轮询任务状态
+    const pollInterval = 2500 // ms
+    const maxWait = 10 * 60 * 1000 // 10 分钟超时
+    const startPoll = Date.now()
+
+    function scheduleNextPoll() {
+      setTimeout(async () => {
+        // 如果记录已被删除或用户已切换，停止轮询
+        if (!records.value.find(r => r.id === currentExecId)) return
+        try {
+          const status = await indicatorsApi.getTaskStatus(taskRes.task_id)
+          if (status.state === 'SUCCESS' || status.state === 'FAILURE') {
+            await fetchExecutionResult(currentExecId, status)
+          } else if (Date.now() - startPoll < maxWait) {
+            scheduleNextPoll()
+          } else {
+            applyResultToRecord(currentExecId, {
+              status: 'failed',
+              errorMessage: '执行超时（超过10分钟）',
+            })
+          }
+        } catch (e: any) {
+          // 网络抖动时继续重试
+          if (Date.now() - startPoll < maxWait) {
+            scheduleNextPoll()
+          }
+        }
+      }, pollInterval)
+    }
+    scheduleNextPoll()
   } catch (e: any) {
     const idx = records.value.findIndex((r) => r.id === execId)
     if (idx >= 0) {
@@ -1225,7 +1233,7 @@ async function handleRun() {
         errorMessage: e.message || String(e),
         logs: [
           ...records.value[idx].logs,
-          { time: new Date().toLocaleTimeString('zh-CN'), level: 'error', message: `请求失败：${e.message || e}` },
+          { time: new Date().toLocaleTimeString('zh-CN'), level: 'error' as const, message: `请求失败：${e.message || e}` },
         ],
       }
     }
@@ -1235,9 +1243,83 @@ async function handleRun() {
   }
 }
 
+// 任务完成后拉取完整结果并更新页面记录
+async function fetchExecutionResult(execId: number | string, statusResp: { state: string; result: Record<string, unknown> | null; execution_id: number | null }) {
+  try {
+    const detail = await indicatorsApi.getExecutionDetail(Number(execId))
+    const exec = detail as any
+    if (exec.error && !exec.ok) {
+      applyResultToRecord(execId, {
+        status: 'failed',
+        errorMessage: exec.error,
+      })
+      window.alert(`执行失败：${exec.error}`)
+      return
+    }
+    const numCnt = exec.numerator_count ?? 0
+    const denCnt = exec.denominator_count ?? 0
+    const rate = exec.rate_percent
+    const rawResultType = exec.result_type ?? exec.calc_type ?? exec.indicator?.result_type
+    const isRatio = rawResultType !== 'count'
+    const resultType: 'ratio' | 'count' = isRatio ? 'ratio' : 'count'
+    const previewRows = exec.preview_data?.rows ?? exec.preview_rows ?? []
+    const countVal = isRatio ? numCnt : (exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0))
+
+    applyResultToRecord(execId, {
+      status: 'success',
+      duration: exec.duration_seconds || 0,
+      outputCount: countVal,
+      ratioPercent: isRatio ? (rate ?? undefined) : undefined,
+      denominatorCount: isRatio ? denCnt : undefined,
+      numeratorCount: isRatio ? numCnt : countVal,
+      resultType,
+      resultColumns: exec.preview_data?.columns ?? exec.preview_columns,
+      resultData: exec.preview_data?.rows ?? exec.preview_rows,
+      denominatorPreviewColumns: exec.denominator_preview_columns ?? exec.denominator_preview_data?.columns,
+      denominatorPreviewData: exec.denominator_preview_data ?? { columns: exec.denominator_preview_columns ?? [], rows: exec.denominator_preview_rows ?? [] },
+      usedScript: isRatio
+        ? (exec.numerator_sql ? `【分子 SQL】\n${exec.numerator_sql}\n\n【分母 SQL】\n${exec.denominator_sql || '—'}` : (exec.sql || ''))
+        : (exec.sql || exec.numerator_sql || ''),
+      hospitalResults: (exec.hospital_results || []).map((h: any) => ({
+        hospitalCode: h.hospital_code ?? '',
+        hospitalName: h.hospital_name ?? '',
+        status: h.status ?? 'pending',
+        numeratorCount: h.numerator_count,
+        denominatorCount: h.denominator_count,
+        ratioPercent: h.ratio_percent,
+        previewData: h.preview_data || [],
+        denominatorPreviewData: h.denominator_preview_data || [],
+        error: h.error || undefined,
+      })),
+    })
+
+    window.alert(isRatio
+      ? `执行成功！指标值：${rate ?? '—'}%`
+      : `执行成功！共 ${countVal} 条记录。`)
+  } catch (e: any) {
+    applyResultToRecord(execId, {
+      status: 'failed',
+      errorMessage: `拉取结果失败：${e.message || e}`,
+    })
+  }
+}
+
+// 统一将结果应用到记录
+function applyResultToRecord(execId: number | string, updates: Partial<typeof records.value[0]>) {
+  const idx = records.value.findIndex((r) => r.id === execId)
+  if (idx < 0) return
+  const prev = records.value[idx]
+  records.value[idx] = { ...prev, ...updates }
+  if (selectedRecord.value?.id === execId) {
+    selectedRecord.value = records.value[idx]
+  }
+}
+
 function selectRecord(row: ExecutionRecord) {
   numPage.value = 1
   denPage.value = 1
+  numTotal.value = row.numeratorCount ?? 0
+  denTotal.value = row.denominatorCount ?? 0
   selectedRecord.value = row
   historyOpen.value = false
   nextTick(() => {
@@ -1247,10 +1329,10 @@ function selectRecord(row: ExecutionRecord) {
   const hasNum = row.resultData?.length
   const hasDen = row.denominatorPreviewData?.rows?.length
   if (row.id && !isNaN(Number(row.id))) {
-    const numKey = `${row.id}_numerator_1`
-    const denKey = `${row.id}_denominator_1`
-    if (hasNum) numRowsCache.set(numKey, row.resultData)
-    if (hasDen) denRowsCache.set(denKey, row.denominatorPreviewData.rows)
+    const numKey = `${row.id}_numerator_all_1`
+    const denKey = `${row.id}_denominator_all_1`
+    if (hasNum) numRowsCache.set(numKey, (row.resultData ?? []).slice(0, PAGE_SIZE))
+    if (hasDen) denRowsCache.set(denKey, (row.denominatorPreviewData?.rows ?? []).slice(0, PAGE_SIZE))
     // 预加载第2页（仅当记录已持久化且数据量超过一页时）
     if (!executingIds.value.has(String(row.id))) {
       if (hasNum && (row.numeratorCount ?? 0) > PAGE_SIZE) {
@@ -1317,7 +1399,8 @@ async function rerun(row: ExecutionRecord) {
         timeValue = `${match[1]}-Q${qmap[match[2]] || '1'}`
       }
     }
-    const result = await indicatorsApi.executeIndicator({
+    // 异步重跑：提交任务 → 轮询 → 拉取结果
+    const taskRes = await indicatorsApi.executeIndicator({
       business_type: copy.kind,
       indicator_id: Number(copy.indicatorId) || undefined,
       kind: copy.kind,
@@ -1326,7 +1409,6 @@ async function rerun(row: ExecutionRecord) {
       result_type: copy.resultType,
       calc_method: copy.calcMethod,
       scope: copy.scope || '',
-      // 优先使用已存储的完整医院列表（全省重跑时包含所有医院）
       hospital_codes: copy.hospitalCodes && copy.hospitalCodes.length > 0
         ? copy.hospitalCodes.filter(Boolean)
         : (copy.scope ? [copy.scope] : []),
@@ -1334,64 +1416,27 @@ async function rerun(row: ExecutionRecord) {
       time_mode: timeMode,
       time_value: timeValue,
     })
-    const i = records.value.findIndex((r) => r.id === execId)
-    if (i < 0) return
-    const exec = result as any
-    const numCnt = exec.numerator_count ?? 0
-    const denCnt = exec.denominator_count ?? 0
-    const rate = exec.rate_percent
-    if (exec.error && !exec.ok) {
-      records.value[i] = {
-        ...records.value[i],
-        status: 'failed',
-        errorMessage: exec.error,
-        logs: [
-          ...records.value[i].logs,
-          { time: new Date().toLocaleTimeString('zh-CN'), level: 'error', message: `执行失败：${exec.error}` },
-        ],
-      }
-    } else {
-      const rawCalcType = row.resultType
-      const isRatio = rawCalcType !== 'count'
-      const previewRows = exec.preview_data?.rows ?? exec.preview_rows ?? exec.result_data ?? []
-      const countVal = isRatio ? numCnt : ((exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0)) || 0)
-      records.value[i] = {
-        ...records.value[i],
-        status: 'success',
-        duration: exec.duration_seconds || 0,
-        outputCount: countVal,
-        ratioPercent: isRatio ? (rate ?? undefined) : undefined,
-        denominatorCount: isRatio ? denCnt : undefined,
-        numeratorCount: isRatio ? numCnt : (exec.count ?? (Array.isArray(previewRows) ? previewRows.length : 0)),
-        resultType: isRatio ? 'ratio' : 'count',
-        resultColumns: exec.preview_data?.columns
-          ?? exec.preview_columns
-          ?? (exec.result_data ? Object.keys(exec.result_data?.[0] ?? {}) : undefined),
-        resultData: exec.preview_data?.rows ?? exec.preview_rows ?? exec.result_data,
-        denominatorPreviewColumns: exec.denominator_preview_columns
-          ?? exec.denominator_preview_data?.columns
-          ?? (exec.denominator_preview_data?.rows?.length ? Object.keys(exec.denominator_preview_data.rows[0]) : undefined),
-        denominatorPreviewData: exec.denominator_preview_data ?? { columns: exec.denominator_preview_columns ?? [], rows: exec.denominator_preview_rows ?? [] },
-        usedScript: isRatio
-          ? (exec.numerator_sql ? `【分子 SQL】\n${exec.numerator_sql}\n\n【分母 SQL】\n${exec.denominator_sql || '—'}` : (exec.sql || ''))
-          : (exec.sql || exec.numerator_sql || ''),
-        logs: [
-          ...records.value[i].logs,
-          ...(isRatio
-            ? [
-                { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `分子 SQL 执行完成：${numCnt} 条记录。` },
-                { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `分母 SQL 执行完成：${denCnt} 条记录。` },
-                { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `执行完成。指标值：${rate ?? '—'}%（${numCnt}/${denCnt}）` },
-              ]
-            : [
-                { time: new Date().toLocaleTimeString('zh-CN'), level: 'info' as const, message: `SQL 执行完成：${countVal} 条记录。` },
-              ]),
-        ],
-      }
+    const realExecId = taskRes.execution_id ?? execId
+    const copyIdx = records.value.findIndex((r) => r.id === execId)
+    if (copyIdx >= 0) {
+      records.value[copyIdx].id = realExecId
+      records.value[copyIdx].dbRecordId = realExecId
     }
-    if (selectedRecord.value?.id === execId) {
-      selectedRecord.value = records.value[i]
-    }
+
+    const pollRerun = () => setTimeout(async () => {
+      if (!records.value.find(r => r.id === realExecId)) return
+      try {
+        const status = await indicatorsApi.getTaskStatus(taskRes.task_id)
+        if (status.state === 'SUCCESS' || status.state === 'FAILURE') {
+          await fetchExecutionResult(realExecId, status)
+        } else {
+          pollRerun()
+        }
+      } catch {
+        pollRerun()
+      }
+    }, 2500)
+    pollRerun()
   } catch (e: any) {
     const i = records.value.findIndex((r) => r.id === execId)
     if (i >= 0) {
@@ -1401,7 +1446,7 @@ async function rerun(row: ExecutionRecord) {
         errorMessage: e.message || String(e),
         logs: [
           ...records.value[i].logs,
-          { time: new Date().toLocaleTimeString('zh-CN'), level: 'error', message: `请求失败：${e.message || e}` },
+          { time: new Date().toLocaleTimeString('zh-CN'), level: 'error' as const, message: `请求失败：${e.message || e}` },
         ],
       }
     }

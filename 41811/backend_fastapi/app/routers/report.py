@@ -1,8 +1,16 @@
-"""简报生成路由"""
+"""报表生成路由（静态简报 + 实时数据报表）"""
 import io
+import sys
+import logging
 from datetime import datetime
-from fastapi import APIRouter
+from pathlib import Path
+from typing import Optional, List, Any
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -10,7 +18,11 @@ from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-router = APIRouter(tags=["简报生成"])
+from app.database import get_db
+from app.models.indicator import Indicator
+
+router = APIRouter(tags=["报表生成"])
+logger = logging.getLogger(__name__)
 
 
 def set_cell_bg(cell, hex_color):
@@ -377,3 +389,296 @@ def download_brief_report(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": cd},
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 实时数据报表生成
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ReportGenerateRequest(BaseModel):
+    report_type: str                          # 报表类型 ID，如 "minorProtection"
+    time_range: Optional[str] = None           # "month" | "quarter" | "year" | "custom"（兼容旧格式）
+    time_mode: Optional[str] = None            # "immediate" | "monthly" | "quarterly"（与指标执行一致）
+    time_value: Optional[str] = None           # 如 "2026-05" 或 "2026-Q1"
+    start_date: Optional[str] = None           # custom 模式起始日期 "YYYY-MM-DD"
+    end_date: Optional[str] = None            # custom 模式结束日期 "YYYY-MM-DD"
+    hospital_codes: Optional[List[str]] = None  # 空/null = 全省
+    group_by_hospital: bool = True             # 是否按医院分组
+
+
+def _time_mode_from_range(time_range: str) -> Optional[str]:
+    return {"month": "monthly", "quarter": "quarterly", "year": "year"}.get(time_range)
+
+
+def _time_value_from_range(
+    time_range: str,
+    time_value: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+) -> str:
+    if time_range == "custom" and start_date:
+        return start_date[:7]  # "YYYY-MM"
+    if time_value:
+        return time_value
+    now = datetime.now()
+    if time_range == "month":
+        return now.strftime("%Y-%m")
+    if time_range == "quarter":
+        q = (now.month - 1) // 3 + 1
+        return f"{now.year}-Q{q}"
+    if time_range == "year":
+        return str(now.year)
+    return ""
+
+
+class ReportGenerateResponse(BaseModel):
+    ok: bool
+    report_type: str
+    headers: List[str]
+    rows: List[List[Any]]
+    total_count: int
+    summary: dict
+    preview_columns: List[str]
+    preview_rows: List[dict]
+    message: Optional[str] = None
+
+
+@router.post("/generate", response_model=ReportGenerateResponse)
+def generate_report(data: ReportGenerateRequest, db: Session = Depends(get_db)):
+    """
+    生成实时数据报表。
+
+    支持真实数据：
+    - antibioticManagement      → id=63  抗菌药物分级管理监测（越权开具抗生素）
+    - crossInstitutionDiagnosis → id=2   医师跨机构诊疗异常监测（时空轨迹异常）
+    - restrictedTechUsage       → id=7   国家级限制性技术使用监测
+    - practiceOverdue          → id=3   医师执业超期异常监控
+    - practiceLocation         → id=64  医师执业地点异常监控
+    - minorProtection          → id=10  未成年人异常诊疗情形监测
+    """
+    # ── 1. 查指标配置 ──────────────────────────────────────────────────────
+    indicator_id_map = {
+        "antibioticManagement":      63,
+        "crossInstitutionDiagnosis": 2,
+        "restrictedTechUsage":       7,
+        "practiceOverdue":           3,
+        "practiceLocation":         64,
+        "minorProtection":           10,
+    }
+
+    indicator_id = indicator_id_map.get(data.report_type)
+
+    if indicator_id is None:
+        raise HTTPException(status_code=400, detail=f"未知报表类型: {data.report_type}")
+
+    ind = db.query(Indicator).filter(Indicator.id == indicator_id).first()
+    if not ind:
+        raise HTTPException(status_code=404, detail=f"指标 id={indicator_id} 不存在")
+
+    ind_dict = {
+        "id": ind.id,
+        "name": ind.name,
+        "calc_type": ind.calc_type,
+        "sql_content": ind.sql_content,
+        "indicator_type": ind.indicator_type,
+        "date_field": ind.date_field or "VST_DT_TM",
+        "numerator_sql": ind.numerator_sql,
+        "denominator_sql": ind.denominator_sql,
+        "subitem_config": ind.subitem_config,
+    }
+
+    # ── 调试日志：打印 SQL 内容 ─────────────────────────────────────────────
+    logger.info(f"[报表生成] 指标ID={ind.id}，名称={ind.name}")
+    num_sql_raw = ind.numerator_sql or ""
+    den_sql_raw = ind.denominator_sql or ""
+    logger.info(f"[报表生成] 分子SQL前100字符: {num_sql_raw[:100]!r}")
+    logger.info(f"[报表生成] 分母SQL前100字符: {den_sql_raw[:100]!r}")
+    logger.info(f"[报表生成] 分子SQL含反斜杠n数量: {num_sql_raw.count(chr(92)+'n')}")
+    logger.info(f"[报表生成] 分母SQL含反斜杠n数量: {den_sql_raw.count(chr(92)+'n')}")
+
+    # ── 2. 构建执行参数 ──────────────────────────────────────────────────────
+    ind_dict["hospital_codes"] = data.hospital_codes
+    ind_dict["group_by_hospital"] = data.group_by_hospital
+    # 优先使用 time_mode（与指标执行一致），否则兼容 time_range
+    time_mode = data.time_mode or _time_mode_from_range(data.time_range or "")
+    ind_dict["time_mode"] = time_mode
+    # time_value: 优先用前端传入的，否则按 time_mode 推算
+    if data.time_value:
+        ind_dict["time_value"] = data.time_value
+    elif time_mode == "monthly":
+        now = datetime.now()
+        ind_dict["time_value"] = now.strftime("%Y-%m")
+    elif time_mode == "quarterly":
+        now = datetime.now()
+        q = (now.month - 1) // 3 + 1
+        ind_dict["time_value"] = f"{now.year}-Q{q}"
+    else:
+        ind_dict["time_value"] = None
+
+    # ── 3. 调用 Text2SQLService 执行 ─────────────────────────────────────────
+    try:
+        from app.services.text2sql import Text2SQLService
+        service = Text2SQLService()
+        result = service.execute_indicator(ind_dict, db_session=db, skip_save=True)
+    except Exception as e:
+        logger.exception(f"[报表生成] 执行指标 {indicator_id} 失败")
+        raise HTTPException(status_code=500, detail=f"指标执行失败: {str(e)}")
+
+    # ── 4. 解析结果 ───────────────────────────────────────────────────────────
+    preview_data = result.get("preview_data") or {}
+    cols: List[str] = preview_data.get("columns") or result.get("preview_columns") or []
+    rows: List[dict] = preview_data.get("rows") or result.get("preview_rows") or []
+
+    # 转换 rows 为普通列表（兼容前端）
+    plain_rows: List[List[Any]] = []
+    for r in rows:
+        if isinstance(r, dict):
+            plain_rows.append([r.get(c) for c in cols])
+        elif hasattr(r, "__iter__"):
+            plain_rows.append(list(r))
+
+    total_count = result.get("count") or result.get("numerator_count") or 0
+    if isinstance(total_count, dict):
+        total_count = sum(v for v in total_count.values()) if total_count else 0
+
+    # 汇总行
+    summary = {}
+    if data.group_by_hospital:
+        hosp_results = result.get("hospital_results") or []
+        summary = {
+            "监测机构数": len(hosp_results),
+            "预警总数": total_count,
+            "执行状态": "成功" if result.get("ok") else "部分失败",
+        }
+    else:
+        summary = {
+            "预警总数": total_count,
+            "执行状态": "成功" if result.get("ok") else "失败",
+        }
+
+    return ReportGenerateResponse(
+        ok=result.get("ok", True),
+        report_type=data.report_type,
+        headers=cols,
+        rows=plain_rows,
+        total_count=total_count,
+        summary=summary,
+        preview_columns=cols,
+        preview_rows=rows,
+        message=result.get("error"),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 完整数据导出（绕过预览 limit，取全量数据）
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/export-full")
+def export_report_full(data: ReportGenerateRequest):
+    """
+    导出报表全量数据（不限条数，用于 Excel 完整下载）。
+    与 /generate 的区别在于：始终取全量数据，不做 limit 100 截断。
+    """
+    # 复用 generate 的指标映射和配置逻辑
+    indicator_id_map = {
+        "antibioticManagement":      63,
+        "crossInstitutionDiagnosis": 2,
+        "restrictedTechUsage":      7,
+        "practiceOverdue":          3,
+        "practiceLocation":        64,
+        "minorProtection":         10,
+    }
+    indicator_id = indicator_id_map.get(data.report_type)
+    if indicator_id is None:
+        raise HTTPException(status_code=400, detail=f"未知报表类型: {data.report_type}")
+
+    # 直接查库获取指标配置（不走 db session dependency 以简化）
+    import pymysql, json as _json
+    conn = pymysql.connect(
+        host="127.0.0.1", port=3306,
+        user="root", password="123456",
+        database="hainan_41811", charset="utf8mb4"
+    )
+    cur = conn.cursor(pymysql.cursors.DictCursor)
+    cur.execute(
+        "SELECT * FROM indicator WHERE id = %s", (indicator_id,)
+    )
+    ind = cur.fetchone()
+    conn.close()
+    if not ind:
+        raise HTTPException(status_code=404, detail=f"指标 {indicator_id} 不存在")
+
+    ind_dict = {
+        "id": ind["id"],
+        "name": ind["name"],
+        "calc_type": ind["calc_type"],
+        "sql_content": ind["sql_content"],
+        "indicator_type": ind["indicator_type"],
+        "date_field": ind["date_field"] or "VST_DT_TM",
+        "numerator_date_field": ind["numerator_date_field"] or "discharge",
+        "denominator_date_field": ind["denominator_date_field"] or "discharge",
+        "numerator_sql": ind["numerator_sql"],
+        "denominator_sql": ind["denominator_sql"],
+        "subitem_config": (
+            _json.loads(ind["subitem_config"])
+            if ind.get("subitem_config") and ind["subitem_config"].strip()
+            else None
+        ),
+    }
+
+    # 时间参数
+    time_mode = data.time_mode or _time_mode_from_range(data.time_range or "")
+    ind_dict["time_mode"] = time_mode
+    if data.time_value:
+        ind_dict["time_value"] = data.time_value
+    elif time_mode == "monthly":
+        now = datetime.now()
+        ind_dict["time_value"] = now.strftime("%Y-%m")
+    elif time_mode == "quarterly":
+        now = datetime.now()
+        q = (now.month - 1) // 3 + 1
+        ind_dict["time_value"] = f"{now.year}-Q{q}"
+    else:
+        ind_dict["time_value"] = None
+
+    ind_dict["hospital_codes"] = data.hospital_codes
+    ind_dict["group_by_hospital"] = data.group_by_hospital
+
+    # 直接执行 SQL（不通过 Celery），绕过 limit
+    from app.services.text2sql import Text2SQLService
+    service = Text2SQLService()
+
+    # 注入过滤
+    raw_sql = ind_dict.get("numerator_sql") or ind_dict.get("sql_content") or ""
+    if not raw_sql:
+        return {"headers": [], "rows": [], "total": 0}
+
+    raw_date_field = ind_dict.get("numerator_date_field") or ind_dict.get("date_field") or "discharge"
+    time_col = service._resolve_time_col(raw_date_field)
+    injected = service._inject_filters(
+        raw_sql,
+        hospital_codes=data.hospital_codes,
+        time_mode=time_mode,
+        time_value=ind_dict.get("time_value"),
+        time_col_name=time_col,
+        is_aggregate=False,
+    )
+
+    # 全量执行
+    cnt, err, cols, rows = service._exec_sql(injected, include_rows=True, fetch_all=True)
+    if err:
+        raise HTTPException(status_code=500, detail=f"SQL执行失败: {err}")
+
+    # 转为列表格式
+    plain_rows_out = []
+    for r in rows:
+        if isinstance(r, dict):
+            plain_rows_out.append([r.get(c) for c in cols])
+        else:
+            plain_rows_out.append(list(r))
+
+    return {
+        "headers": cols,
+        "rows": plain_rows_out,
+        "total": len(plain_rows_out),
+    }

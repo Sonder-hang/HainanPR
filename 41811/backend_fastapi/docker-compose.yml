@@ -1,26 +1,52 @@
+version: '3.3'
+
 services:
+  # 1. Redis 消息中间件
+  redis:
+    image: redis:alpine
+    container_name: medical_redis
+    restart: always
+    pull_policy: never
+
+  # 2. FastAPI 主后端服务
   fastapi_service:
     image: backend_41811:latest
-    container_name: fastapi_41811
-    ports:
-      - "43320:43320"
-    environment:
-      - TEXT2SQL_BACKEND_URL=http://text2sql_service:8000
-    command: uvicorn main:app --host 0.0.0.0 --port 43320 --app-dir /app
+    container_name: medical_fastapi
     restart: always
+    pull_policy: never
+    command: uvicorn main:app --host 0.0.0.0 --port 43320 --app-dir . --log-level debug
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:hainan@medical_mysql:3306/medical_41811?charset=utf8mb4
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
-      - ./Hainan_SQL-main:/app/Hainan_SQL-main
-      - ./main.py:/app/main.py
-      - ./db.sqlite3:/app/db.sqlite3
-
-  text2sql_service:
+      - ./data:/app/data
+      # 【核心必杀技 1】：强行覆盖 config.py (解决跳板机超时问题)
+      - ./backend_fastapi/Hainan_SQL-main/text2sql_app/config.py:/app/Hainan_SQL-main/text2sql_app/config.py
+      # 【核心必杀技 2】：强行覆盖 text2sql.py (解决 SQL 畸形拼接和 count 崩溃问题)
+      - ./backend_fastapi/app/services/text2sql.py:/app/app/services/text2sql.py
+      - ./backend_fastapi/app/schemas/indicator.py:/app/app/schemas/indicator.py
+      - ./backend_fastapi/app/routers/indicators.py:/app/app/routers/indicators.py
+  # 3. Celery 异步任务执行器
+  celery_worker:
     image: backend_41811:latest
-    container_name: text2sql_41811
-    ports:
-      - "8000:8000"
-    environment:
-      - TEXT2SQL_MODEL_PATH=/app/Hainan_SQL-main/models
-    command: python Hainan_SQL-main/text2sql_app/run.py
+    container_name: medical_celery_worker
     restart: always
+    pull_policy: never
+    command: celery -A app.celery_app worker --loglevel=info
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:hainan@medical_mysql:3306/medical_41811?charset=utf8mb4
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
-      - ./Hainan_SQL-main:/app/Hainan_SQL-main
+      - ./data:/app/data
+      # 【核心必杀技 1】：Celery 也要同步覆盖 config.py
+      - ./backend_fastapi/Hainan_SQL-main/text2sql_app/config.py:/app/Hainan_SQL-main/text2sql_app/config.py
+      # 【核心必杀技 2】：Celery 也要同步覆盖 text2sql.py
+      - ./backend_fastapi/app/services/text2sql.py:/app/app/services/text2sql.py
+      - ./backend_fastapi/app/schemas/indicator.py:/app/app/schemas/indicator.py
+      - ./backend_fastapi/app/routers/indicators.py:/app/app/routers/indicators.py
+networks:
+  default:
+    external:
+      name: 41811_deploy_default

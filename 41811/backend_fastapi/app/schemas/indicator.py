@@ -1,39 +1,41 @@
 """Pydantic Schema - 指标管理"""
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime as dt
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 
 class IndicatorBase(BaseModel):
-    name: str
-    indicator_type: str = "four"
-    category: str = ""
-    seq: int = 0
-    scope: str = ""
-    work_content: str = ""
-    rule_logic: str = ""
-    formula: str = ""
-    description: str = ""
-    calc_method: str = "none"
-    sql_content: str = ""
-    prompt_content: str = ""
-    involved_tables: list = []
-    numerator_desc: str = ""
-    denominator_desc: str = ""
-    numerator_sql: str = ""
-    denominator_sql: str = ""
-    status: str = "pending"
-    is_computable: bool = True
-    use_llm: bool = False
-    platform_data_ready: bool = False
-    priority: str = ""
-    remark: str = ""
-    regex_match: bool = False
-    regex_rule: str = ""
-    calc_type: str = "ratio"
-    date_field: str = "discharge"  # discharge=出院时间, admission=入院时间
-    template_type: Optional[str] = None  # STRUCTURE | STRUCTURE-special | RATE | RATE-special | COMPOSITE
-    subitem_config: Optional[dict] = None  # 复合指标子项配置（COMPOSITE_RATE/COMPOSITE_RANKING）
+    name: Optional[str] = ""
+    indicator_type: Optional[str] = "four"
+    category: Optional[str] = ""
+    seq: Optional[int] = 0
+    scope: Optional[str] = ""
+    work_content: Optional[str] = ""
+    rule_logic: Optional[str] = ""
+    formula: Optional[str] = ""
+    description: Optional[str] = ""
+    calc_method: Optional[str] = "none"
+    sql_content: Optional[str] = ""
+    prompt_content: Optional[str] = ""
+    involved_tables: Optional[list] = []
+    numerator_desc: Optional[str] = ""
+    denominator_desc: Optional[str] = ""
+    numerator_sql: Optional[str] = ""
+    denominator_sql: Optional[str] = ""
+    status: Optional[str] = "pending"
+    is_computable: Optional[bool] = True
+    use_llm: Optional[bool] = False
+    platform_data_ready: Optional[bool] = False
+    priority: Optional[str] = ""
+    remark: Optional[str] = ""
+    regex_match: Optional[bool] = False
+    regex_rule: Optional[str] = ""
+    calc_type: Optional[str] = "ratio"
+    date_field: Optional[str] = "discharge"
+    numerator_date_field: Optional[str] = "discharge"  # 分子时间过滤字段
+    denominator_date_field: Optional[str] = "discharge"  # 分母时间过滤字段
+    template_type: Optional[str] = None
+    subitem_config: Optional[dict] = None
 
 
 class IndicatorCreate(IndicatorBase):
@@ -78,36 +80,36 @@ class IndicatorResponse(IndicatorBase):
 
 
 class IndicatorExecutionResponse(BaseModel):
-    id: int
-    indicator_id: int
+    id: Optional[int] = None
+    indicator_id: Optional[int] = None
     indicator_name: Optional[str] = ""
-    execution_type: str = "manual"
-    kind: str = "core18"
-    run_mode: str = "immediate"
-    time_range: str = "全量"
-    result_type: str = "ratio"
-    calc_method: str = "SQL录入"
-    scope: str = ""
-    logs: list = []
-    numerator_sql: str = ""
-    denominator_sql: str = ""
-    sql: str = ""
+    execution_type: Optional[str] = None
+    kind: Optional[str] = None
+    run_mode: Optional[str] = None
+    time_range: Optional[str] = None
+    result_type: Optional[str] = None
+    calc_method: Optional[str] = None
+    scope: Optional[str] = None
+    logs: Optional[list] = None
+    numerator_sql: Optional[str] = None
+    denominator_sql: Optional[str] = None
+    sql: Optional[str] = None
     numerator_count: Optional[int] = None
     denominator_count: Optional[int] = None
     count: Optional[int] = None  # 计数型指标的总数量
     rate_percent: Optional[float] = None
-    rate_formula: str = ""
-    result_text: str = ""
-    preview_data: dict = {}
-    denominator_preview_data: dict = {}
-    error: str = ""
-    attempts: list = []
-    llm_thinking: str = ""
-    llm_raw: str = ""
-    cache_hit: bool = False
-    request_id: str = ""
-    conversation_id: str = ""
-    status: str = "pending"
+    rate_formula: Optional[str] = None
+    result_text: Optional[str] = None
+    preview_data: Optional[dict] = None
+    denominator_preview_data: Optional[dict] = None
+    error: Optional[str] = None
+    attempts: Optional[list] = None
+    llm_thinking: Optional[str] = None
+    llm_raw: Optional[str] = None
+    cache_hit: Optional[bool] = None
+    request_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    status: Optional[str] = None
     execution_time: Optional[dt] = None
     duration_seconds: Optional[float] = None
     # 批量执行相关字段
@@ -115,10 +117,44 @@ class IndicatorExecutionResponse(BaseModel):
     time_mode: Optional[str] = None  # monthly=月度, quarterly=季度
     time_value: Optional[str] = None  # 如 "2026-04" 或 "2026-Q1"
     date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间, visit=就诊时间
-    group_by_hospital: Optional[bool] = False  # 是否按医院分组执行
-    hospital_results: Optional[list] = []  # 各医院执行结果列表
+    group_by_hospital: Optional[bool] = None  # 是否按医院分组执行
+    hospital_results: Optional[list] = None  # 各医院执行结果列表
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _safe_normalize(cls, data):
+        if not hasattr(data, "__dict__"):
+            return data
+        raw_text_fields = (
+            "rate_formula", "numerator_sql", "denominator_sql", "sql",
+            "result_text", "llm_thinking", "llm_raw", "error",
+        )
+        json_fields = (
+            "logs", "attempts", "preview_data", "denominator_preview_data",
+            "hospital_codes", "hospital_results",
+        )
+        for f in raw_text_fields:
+            val = getattr(data, f, None)
+            if val is not None and not isinstance(val, str):
+                setattr(data, f, str(val))
+        for f in json_fields:
+            val = getattr(data, f, None)
+            if val is None or val == "" or val == {}:
+                setattr(data, f, None)
+            elif isinstance(val, str):
+                import json as _json
+                try:
+                    setattr(data, f, _json.loads(val))
+                except Exception:
+                    setattr(data, f, [])
+        # execution_time 可能是 datetime 对象、字符串或 None，保持原样由 Pydantic 解析
+        # group_by_hospital 从 DB 取出可能是 int(0/1) 或 bool，强制转 bool
+        if hasattr(data, "group_by_hospital"):
+            val = getattr(data, "group_by_hospital")
+            setattr(data, "group_by_hospital", bool(val) if val is not None else None)
+        return data
 
 
 class PreviewPageRequest(BaseModel):
@@ -126,6 +162,10 @@ class PreviewPageRequest(BaseModel):
     target: str = "numerator"  # "numerator" | "denominator"
     page: int = 1
     page_size: int = 50
+    hospital_code: Optional[str] = Field(
+        default=None,
+        description="指定医院代码，传入则仅返回该医院的分页数据（支持按医院筛选）",
+    )
 
 
 class PreviewPageResponse(BaseModel):
@@ -133,6 +173,7 @@ class PreviewPageResponse(BaseModel):
     error: Optional[str] = None
     columns: list = []
     rows: list = []
+    total_count: int = 0  # 该执行记录的分子/分母总条数，用于前端判断是否还有更多数据
 
 
 class ExecuteRequest(BaseModel):
@@ -168,6 +209,8 @@ class ExecuteRequest(BaseModel):
     time_mode: Optional[str] = None  # monthly=月度, quarterly=季度
     time_value: Optional[str] = None  # 如 "2026-04" 或 "2026-Q1"
     date_field: Optional[str] = "discharge"  # discharge=出院时间(DSCG_DT_TM), admission=入院时间(ADMN_DT_TM)
+    numerator_date_field: Optional[str] = "discharge"  # 分子时间过滤字段
+    denominator_date_field: Optional[str] = "discharge"  # 分母时间过滤字段
     group_by_hospital: Optional[bool] = True  # 是否按医院分组执行
 
 
@@ -190,3 +233,18 @@ class TestSqlResponse(BaseModel):
     count: Optional[int] = None
     error: Optional[str] = None
     count_error: Optional[str] = None
+
+
+class ExecuteTaskSubmitResponse(BaseModel):
+    """异步任务提交响应"""
+    task_id: str
+    execution_id: Optional[int] = None  # 先创建的 pending 记录 ID
+
+
+class TaskStatusResponse(BaseModel):
+    """任务状态查询响应"""
+    task_id: str
+    state: str          # PENDING / STARTED / SUCCESS / FAILURE
+    ready: bool
+    result: Optional[dict] = None
+    execution_id: Optional[int] = None

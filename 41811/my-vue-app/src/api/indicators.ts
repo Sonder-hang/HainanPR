@@ -37,8 +37,6 @@ export interface Indicator {
   regex_match: boolean
   regex_rule: string
   calc_type: string
-  template_type: string | null
-  subitem_config: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -202,6 +200,19 @@ export interface TestSqlResponse {
   count_error: string | null
 }
 
+export interface ExecuteTaskSubmitResponse {
+  task_id: string
+  execution_id: number | null
+}
+
+export interface TaskStatusResponse {
+  task_id: string
+  state: string
+  ready: boolean
+  result: Record<string, unknown> | null
+  execution_id: number | null
+}
+
 export interface TableInfo {
   table_name: string
   business_definition: string
@@ -213,6 +224,7 @@ export interface PreviewPageRequest {
   target: 'numerator' | 'denominator'
   page: number
   page_size: number
+  hospital_code?: string  // 指定医院代码，传则按医院筛选
 }
 
 export interface PreviewPageResponse {
@@ -220,6 +232,7 @@ export interface PreviewPageResponse {
   error?: string | null
   columns: string[]
   rows: Record<string, unknown>[]
+  total_count?: number
 }
 
 export interface PromptPreviewResponse {
@@ -321,7 +334,19 @@ export const indicatorsApi = {
    * 执行指标（同步）
    */
   executeIndicator: (data: ExecuteRequest) =>
-    httpClient.post<ExecuteResponse>(API_ENDPOINTS.executeIndicator, data),
+    httpClient.post<ExecuteTaskSubmitResponse>(API_ENDPOINTS.executeIndicator, data),
+
+  /**
+   * 查询异步任务状态（轮询）
+   */
+  getTaskStatus: (taskId: string) =>
+    httpClient.get<TaskStatusResponse>(API_ENDPOINTS.taskStatus(taskId)),
+
+  /**
+   * 获取执行记录详情（任务完成后拉取完整结果）
+   */
+  getExecutionDetail: (executionId: number) =>
+    httpClient.get<IndicatorExecution>(API_ENDPOINTS.executionDetail(executionId)),
 
   /**
    * 获取预览数据分页（分子/分母）
@@ -333,7 +358,7 @@ export const indicatorsApi = {
    * 获取医院列表
    */
   getHospitals: () =>
-    httpClient.get<Array<{ MDC_ORG_CD: string; MDC_ORG_NM: string }>>(API_ENDPOINTS.hospitals),
+    httpClient.get<Array<{ MDC_ORG_CD: string; MDC_ORG_NM: string }>>(API_ENDPOINTS.indicatorHospitals),
 
   /**
    * 测试 SQL

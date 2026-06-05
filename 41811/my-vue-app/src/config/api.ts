@@ -1,7 +1,7 @@
 /**
  * API 配置
  */
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001'
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001'
 
 export const API_ENDPOINTS = {
   // 系统
@@ -39,12 +39,16 @@ export const API_ENDPOINTS = {
 
   // 执行相关
   indicatorExecution: `${API_BASE_URL}/api/indicators/execution/`,
+  executionByHospital: (indicatorId: number, hospitalCode: string) =>
+    `${API_BASE_URL}/api/indicators/execution/by-hospital/?indicator_id=${indicatorId}&hospital_code=${hospitalCode}`,
   deleteExecution: (id: number) => `${API_BASE_URL}/api/indicators/execution/${id}`,
   executeIndicator: `${API_BASE_URL}/api/indicators/execute/`,
   executeIndicatorStream: `${API_BASE_URL}/api/indicators/execute/stream/`,
+  taskStatus: (taskId: string) => `${API_BASE_URL}/api/indicators/execution/task/${taskId}`,
+  executionDetail: (id: number) => `${API_BASE_URL}/api/indicators/execution/${id}/detail`,
   previewPage: `${API_BASE_URL}/api/indicators/execution/preview-page/`,
   testSql: `${API_BASE_URL}/api/indicators/test-sql/`,
-  hospitals: `${API_BASE_URL}/api/indicators/hospitals/`,
+  indicatorHospitals: `${API_BASE_URL}/api/indicators/hospitals/`,
 
   // 表结构
   tables: `${API_BASE_URL}/api/indicators/tables/`,
