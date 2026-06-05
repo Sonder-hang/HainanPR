@@ -487,6 +487,15 @@ def generate_report(data: ReportGenerateRequest, db: Session = Depends(get_db)):
         "subitem_config": ind.subitem_config,
     }
 
+    # ── 调试日志：打印 SQL 内容 ─────────────────────────────────────────────
+    logger.info(f"[报表生成] 指标ID={ind.id}，名称={ind.name}")
+    num_sql_raw = ind.numerator_sql or ""
+    den_sql_raw = ind.denominator_sql or ""
+    logger.info(f"[报表生成] 分子SQL前100字符: {num_sql_raw[:100]!r}")
+    logger.info(f"[报表生成] 分母SQL前100字符: {den_sql_raw[:100]!r}")
+    logger.info(f"[报表生成] 分子SQL含反斜杠n数量: {num_sql_raw.count(chr(92)+'n')}")
+    logger.info(f"[报表生成] 分母SQL含反斜杠n数量: {den_sql_raw.count(chr(92)+'n')}")
+
     # ── 2. 构建执行参数 ──────────────────────────────────────────────────────
     ind_dict["hospital_codes"] = data.hospital_codes
     ind_dict["group_by_hospital"] = data.group_by_hospital

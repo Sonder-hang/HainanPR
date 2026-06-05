@@ -1,6 +1,7 @@
 """十八项核心制度总览路由"""
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import cast, String
 from typing import Optional
 from collections import defaultdict
 
@@ -87,7 +88,7 @@ def get_execution_data(
     """
     获取指标执行数据
     根据医院和时间筛选，查询各指标的最近执行结果
-    直接匹配 time_mode 和 time_value 字段
+    直接匹配 time_mode 和 time_value 字段（time_value 为空时不过滤）
     """
     indicators = db.query(Indicator).filter(
         Indicator.indicator_type == "core18"
@@ -98,12 +99,14 @@ def get_execution_data(
         query = db.query(IndicatorExecution).filter(
             IndicatorExecution.indicator_id == ind.id,
             IndicatorExecution.status == "success",
+            IndicatorExecution.kind == "core18",
             IndicatorExecution.time_mode == time_mode,
-            IndicatorExecution.time_value == time_value,
         )
+        # time_value 为空时不过滤（查任意时间）
+        if time_value is not None:
+            query = query.filter(IndicatorExecution.time_value == time_value)
 
         if hospital_code and hospital_code != "province":
-            from sqlalchemy import cast, String
             query = query.filter(
                 cast(IndicatorExecution.hospital_codes, String).contains(hospital_code)
             )
@@ -195,12 +198,15 @@ def get_overview_data(
     ).distinct().all()
     categories = [cat[0] for cat in all_indicators_query if cat[0]]
 
-    # 查询所有 core18 指标的执行记录（成功状态、匹配时间）
+    # 查询 core18 指标的执行记录（成功状态、匹配时间，只取 core18 类型）
     base_query = db.query(IndicatorExecution).filter(
         IndicatorExecution.status == "success",
+        IndicatorExecution.kind == "core18",
         IndicatorExecution.time_mode == time_mode,
-        IndicatorExecution.time_value == time_value,
     )
+    # time_value 为空时不过滤（查任意时间的历史记录）
+    if time_value is not None:
+        base_query = base_query.filter(IndicatorExecution.time_value == time_value)
     all_executions = base_query.all()
 
     # 按指标分组
@@ -208,9 +214,10 @@ def get_overview_data(
     for rec in all_executions:
         executions_by_indicator[rec.indicator_id].append(rec)
 
-    # 兜底：time_mode=NULL 的历史数据（追加所有记录，由 _pick_execution 选最优）
+    # 兜底：time_mode=NULL 的历史数据（只取 core18 类型）
     fallback_executions = db.query(IndicatorExecution).filter(
         IndicatorExecution.status == "success",
+        IndicatorExecution.kind == "core18",
         IndicatorExecution.time_mode.is_(None),
     ).all()
     for rec in fallback_executions:
@@ -231,7 +238,6 @@ def get_overview_data(
         if exec_record:
             calc_type = ind.calc_type or "ratio"
             has_data = True
-            # 用 getattr 避免 count 列名和 list.count() 方法冲突
             if calc_type == "ratio":
                 rate_percent = float(exec_record.rate_percent) if exec_record.rate_percent is not None else None
                 numerator_count = exec_record.numerator_count

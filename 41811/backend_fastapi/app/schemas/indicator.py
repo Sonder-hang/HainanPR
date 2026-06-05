@@ -1,7 +1,7 @@
 """Pydantic Schema - 指标管理"""
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime as dt
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 
 class IndicatorBase(BaseModel):
@@ -80,8 +80,8 @@ class IndicatorResponse(IndicatorBase):
 
 
 class IndicatorExecutionResponse(BaseModel):
-    id: int
-    indicator_id: int
+    id: Optional[int] = None
+    indicator_id: Optional[int] = None
     indicator_name: Optional[str] = ""
     execution_type: Optional[str] = None
     kind: Optional[str] = None
@@ -121,6 +121,40 @@ class IndicatorExecutionResponse(BaseModel):
     hospital_results: Optional[list] = None  # 各医院执行结果列表
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _safe_normalize(cls, data):
+        if not hasattr(data, "__dict__"):
+            return data
+        raw_text_fields = (
+            "rate_formula", "numerator_sql", "denominator_sql", "sql",
+            "result_text", "llm_thinking", "llm_raw", "error",
+        )
+        json_fields = (
+            "logs", "attempts", "preview_data", "denominator_preview_data",
+            "hospital_codes", "hospital_results",
+        )
+        for f in raw_text_fields:
+            val = getattr(data, f, None)
+            if val is not None and not isinstance(val, str):
+                setattr(data, f, str(val))
+        for f in json_fields:
+            val = getattr(data, f, None)
+            if val is None or val == "" or val == {}:
+                setattr(data, f, None)
+            elif isinstance(val, str):
+                import json as _json
+                try:
+                    setattr(data, f, _json.loads(val))
+                except Exception:
+                    setattr(data, f, [])
+        # execution_time 可能是 datetime 对象、字符串或 None，保持原样由 Pydantic 解析
+        # group_by_hospital 从 DB 取出可能是 int(0/1) 或 bool，强制转 bool
+        if hasattr(data, "group_by_hospital"):
+            val = getattr(data, "group_by_hospital")
+            setattr(data, "group_by_hospital", bool(val) if val is not None else None)
+        return data
 
 
 class PreviewPageRequest(BaseModel):

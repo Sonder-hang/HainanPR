@@ -229,8 +229,45 @@ def list_executions(
     db: Session = Depends(get_db),
 ):
     rows, total = _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
-    serialized = [IndicatorExecutionResponse.model_validate(r).model_dump(mode='json') for r in rows]
-    return {"records": serialized, "total": total}
+    import logging
+    _log = logging.getLogger("indicators")
+    _log.info(f"[list_executions] query returned {len(rows)} rows, total={total}")
+    for i, r in enumerate(rows):
+        _log.debug(f"[list_executions] row[{i}] id={r.id} logs={type(r.logs).__name__} attempts={type(r.attempts).__name__} preview_data={type(r.preview_data).__name__} hospital_results={type(r.hospital_results).__name__}")
+    records = []
+    for r in rows:
+        for field in ("rate_formula", "numerator_sql", "denominator_sql", "sql",
+                      "result_text", "llm_thinking", "llm_raw", "error"):
+            if getattr(r, field, None) is None:
+                setattr(r, field, "")
+        if r.logs is None:
+            r.logs = []
+        if r.attempts is None:
+            r.attempts = []
+        if r.preview_data is None:
+            r.preview_data = {}
+        if r.denominator_preview_data is None:
+            r.denominator_preview_data = {}
+        if r.hospital_codes is None:
+            r.hospital_codes = []
+        if r.hospital_results is None:
+            r.hospital_results = []
+        try:
+            records.append(IndicatorExecutionResponse.model_validate(r).model_dump(mode='json'))
+        except Exception:
+            import logging
+            import traceback
+            _log = logging.getLogger("indicators")
+            _log.error(
+                f"[list_executions] serialize failed id={r.id} | "
+                f"logs={type(r.logs).__name__}={repr(r.logs)[:200]} | "
+                f"attempts={type(r.attempts).__name__}={repr(r.attempts)[:200]} | "
+                f"preview_data={type(r.preview_data).__name__}={repr(r.preview_data)[:200]} | "
+                f"hospital_results={type(r.hospital_results).__name__}={repr(r.hospital_results)[:200]} | "
+                f"fields={ {f: type(getattr(r, f)).__name__ for f in ['logs','attempts','preview_data','denominator_preview_data','hospital_codes','hospital_results']} }"
+            )
+            _log.error(f"[list_executions] traceback:\n{traceback.format_exc()}")
+    return {"records": records, "total": total}
 
 
 @router.get("/execution", response_model=ExecutionHistoryResponse)
@@ -244,8 +281,43 @@ def list_executions_no_slash(
     db: Session = Depends(get_db),
 ):
     rows, total = _list_executions(indicator_id, keyword, status, kind, limit, offset, db)
-    serialized = [IndicatorExecutionResponse.model_validate(r).model_dump(mode='json') for r in rows]
-    return {"records": serialized, "total": total}
+    import logging
+    _log = logging.getLogger("indicators")
+    _log.info(f"[list_executions_no_slash] query returned {len(rows)} rows, total={total}")
+    for i, r in enumerate(rows):
+        _log.debug(f"[list_executions_no_slash] row[{i}] id={r.id} logs={type(r.logs).__name__} attempts={type(r.attempts).__name__} preview_data={type(r.preview_data).__name__} hospital_results={type(r.hospital_results).__name__}")
+    records = []
+    for r in rows:
+        for field in ("rate_formula", "numerator_sql", "denominator_sql", "sql",
+                      "result_text", "llm_thinking", "llm_raw", "error"):
+            if getattr(r, field, None) is None:
+                setattr(r, field, "")
+        if r.logs is None:
+            r.logs = []
+        if r.attempts is None:
+            r.attempts = []
+        if r.preview_data is None:
+            r.preview_data = {}
+        if r.denominator_preview_data is None:
+            r.denominator_preview_data = {}
+        if r.hospital_codes is None:
+            r.hospital_codes = []
+        if r.hospital_results is None:
+            r.hospital_results = []
+        try:
+            records.append(IndicatorExecutionResponse.model_validate(r).model_dump(mode='json'))
+        except Exception:
+            import traceback
+            _log.error(
+                f"[list_executions_no_slash] serialize failed id={r.id} | "
+                f"logs={type(r.logs).__name__}={repr(r.logs)[:200]} | "
+                f"attempts={type(r.attempts).__name__}={repr(r.attempts)[:200]} | "
+                f"preview_data={type(r.preview_data).__name__}={repr(r.preview_data)[:200]} | "
+                f"hospital_results={type(r.hospital_results).__name__}={repr(r.hospital_results)[:200]} | "
+                f"fields={ {f: type(getattr(r, f)).__name__ for f in ['logs','attempts','preview_data','denominator_preview_data','hospital_codes','hospital_results']} }"
+            )
+            _log.error(f"[list_executions_no_slash] traceback:\n{traceback.format_exc()}")
+    return {"records": records, "total": total}
 
 
 @router.delete("/execution/{execution_id}", status_code=204)
@@ -417,6 +489,16 @@ def get_execution_detail(execution_id: int, db: Session = Depends(get_db)):
         row.logs = []
     if row.attempts is None:
         row.attempts = []
+    if row.preview_data is None:
+        row.preview_data = {}
+    if row.denominator_preview_data is None:
+        row.denominator_preview_data = {}
+    if row.hospital_codes is None:
+        row.hospital_codes = []
+    if row.hospital_results is None:
+        row.hospital_results = []
+    if row.error is None:
+        row.error = ""
     return row
 
 

@@ -204,17 +204,28 @@ class Text2SQLService:
             raise ValueError(f"占位符未替换: {sql[:100]}")
 
         if self._sql_runner_execute_full is None:
+            logger.warning(f"[_exec_sql] sql_runner不可用，走HTTP回退: {sql[:100]!r}")
             result = self.test_sql(sql, limit=10000)
+            logger.warning(f"[_exec_sql] HTTP回退完成，count={result.get('count')}, err={result.get('error')}")
             return result.get("count"), result.get("error"), [], []
 
         try:
+            import time as _t2
+            t0 = _t2.time()
             if fetch_all:
                 cols, rows, err = self._sql_runner_execute_full(sql)
+                elapsed = _t2.time() - t0
+                logger.info(f"[_exec_sql] sql_runner成功，fetch_all耗时{elapsed:.1f}s，行数={len(rows) if rows else 0}, err={err}")
                 return len(rows) if rows else 0, err, cols, rows or []
             elif include_rows:
                 cnt, cnt_err = self._sql_runner_execute_count(sql)
                 if cnt_err or cnt is None:
+                    logger.warning(f"[_exec_sql] execute_count 失败: {cnt_err}，尝试降级使用 execute_limited 获取行数...")
+                    cols, rows, prev_err = self._sql_runner_execute_limited(sql, limit=10000)
+                    if not prev_err and rows is not None:
+                        return len(rows), None, cols, rows
                     return None, cnt_err or "计数失败", [], []
+
                 cols, rows, prev_err = self._sql_runner_execute_limited(sql, limit=200)
                 return cnt, prev_err, cols, rows or []
             else:
@@ -282,6 +293,10 @@ class Text2SQLService:
         if not sql:
             return sql
 
+        # ── 调试日志 ─────────────────────────────────────────────────────────
+        logger.info(f"[_inject_filters] 入口 SQL 前150字符: {sql[:150]!r}")
+        logger.info(f"[_inject_filters] 含反斜杠n数量: {sql.count(chr(92)+'n')}")
+
         # ① 时间条件（主）
         time_cond_1 = ""
         if time_mode and time_value and time_col_name:
@@ -292,26 +307,163 @@ class Text2SQLService:
         if time_mode and time_value and time_col_name_2:
             time_cond_2 = self._build_time_conditions(time_mode, time_value, time_col_name_2)
 
-        # ② 医院 IN 列表（始终用 t1.MDC_ORG_CD）
+        # ── 辅助：按占位符锚点局部推断该层级的表别名 ────────────────────────
+        def _find_effective_alias(sql_segment: str, placeholder: str) -> str:
+            """
+            从占位符位置向前扫描，寻找括号深度=0层级最近的有效表别名。
+            核心：跟踪括号深度，只处理括号深度=0的FROM，避免被子查询内部FROM干扰。
+            """
+            if not sql_segment or not placeholder:
+                return ""
+
+            idx = sql_segment.find(placeholder)
+            if idx == -1:
+                return ""
+
+            prefix = sql_segment[:idx].strip()
+            if not prefix:
+                return ""
+
+            # 预处理1：移除所有 SQL 注释
+            prefix = re.sub(r'/\*.*?\*/', '', prefix, flags=re.DOTALL)
+            prefix = re.sub(r'--.*?$', '', prefix, flags=re.MULTILINE)
+
+            # 预处理2：统一处理反引号
+            prefix = prefix.replace('`', '')
+
+            tokens = re.split(r'\s+', prefix.upper())
+            orig_tokens = re.split(r'\s+', prefix)
+
+            # 关键字列表：这些词绝对不可能是别名
+            KEYWORDS = {
+                'JOIN', 'LEFT', 'RIGHT', 'INNER', 'FULL',
+                'WHERE', 'GROUP', 'ORDER', 'HAVING', 'LIMIT',
+                'UNION', 'AND', 'OR', 'ON', 'SELECT', 'FROM', 'WITH',
+            }
+
+            # 核心：从后往前扫描，跟踪括号深度，只处理括号深度=0的FROM
+            bracket_depth = 0
+            for i in range(len(tokens) - 1, -1, -1):
+                token = tokens[i]
+
+                # 先更新括号深度（遇到)加1，遇到(减1）
+                bracket_depth += token.count(')')
+                bracket_depth -= token.count('(')
+
+                # 只有括号深度=0时，才处理FROM关键字
+                if bracket_depth == 0 and token == 'FROM':
+                    j = i + 1
+                    if j >= len(tokens):
+                        continue
+
+                    # 情况1：FROM 后面是子查询
+                    if tokens[j].startswith('('):
+                        sub_bracket_depth = 0
+                        while j < len(tokens):
+                            sub_bracket_depth += tokens[j].count('(')
+                            sub_bracket_depth -= tokens[j].count(')')
+
+                            if sub_bracket_depth == 0:
+                                j += 1
+                                while j < len(tokens) and tokens[j] == 'AS':
+                                    j += 1
+                                if j < len(tokens) and tokens[j] and tokens[j] not in KEYWORDS:
+                                    alias = orig_tokens[j]
+                                    alias = re.sub(r'[;,)]$', '', alias)
+                                    return alias
+                                else:
+                                    # 子查询没有别名，返回空
+                                    return ""
+                            j += 1
+
+                    # 情况2：FROM 后面是普通表 / CTE
+                    else:
+                        # 跳过表名
+                        j += 1
+
+                        # 跳过 AS
+                        while j < len(tokens) and tokens[j] == 'AS':
+                            j += 1
+
+                        # 有显式别名，且不是关键字
+                        if j < len(tokens) and tokens[j] and tokens[j] not in KEYWORDS:
+                            alias = orig_tokens[j]
+                            alias = re.sub(r'[;,)]$', '', alias)
+                            return alias
+                        # 没有显式别名，使用表名本身
+                        else:
+                            table_name = orig_tokens[i + 1]
+                            alias = re.sub(r'[;,)]$', '', table_name)
+                            if '.' in alias:
+                                alias = alias.split('.')[-1]
+                            return alias
+
+            # 兜底正则
+            match = re.search(
+                r"FROM\s*(?:\([^)]*\)\s*|\w+\.)?(\w+)\s*(?:AS\s+)?(\w+)?",
+                prefix,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if match:
+                return match.group(2) or match.group(1)
+
+            return ""
+
+        # ── 占位符存在性检测（需在 has_ph1/has_ph2 使用前定义） ───────────
+        clean_sql = sql.rstrip().rstrip("；").rstrip(";").strip()
+        has_ph1 = bool(re.search(r"\{\s*FILTER_PLACEHOLDER\s*\}", clean_sql, re.IGNORECASE))
+        has_ph2 = bool(re.search(r"\{\s*FILTER_PLACEHOLDER_2\s*\}", clean_sql, re.IGNORECASE))
+
+        # ── 主占位符别名（占位符所在层级局部推断） ────────────────────────
+        alias_for_ph1 = ""
+        if time_col_name and "." in time_col_name:
+            alias_for_ph1 = time_col_name.split(".")[0]
+        elif time_col_name_2 and "." in time_col_name_2:
+            alias_for_ph1 = time_col_name_2.split(".")[0]
+        elif has_ph1:
+            alias_for_ph1 = _find_effective_alias(sql, "{FILTER_PLACEHOLDER}")
+
+        # ── 次占位符别名 ────────────────────────────────────────────────
+        alias_for_ph2 = ""
+        if time_col_name_2 and "." in time_col_name_2:
+            alias_for_ph2 = time_col_name_2.split(".")[0]
+        elif has_ph2:
+            alias_for_ph2 = _find_effective_alias(sql, "{FILTER_PLACEHOLDER_2}")
+        # 如果次占位符没有专属别名，降级沿用主占位符的
+        if not alias_for_ph2 and alias_for_ph1:
+            alias_for_ph2 = alias_for_ph1
+
+        # ── 医院条件（主占位符层级） ────────────────────────────────────
         hosp_cond = ""
         if hospital_codes and len(hospital_codes) > 0:
             codes_str = "','".join(str(c) for c in hospital_codes)
-            hosp_cond = f"t1.MDC_ORG_CD IN ('{codes_str}')"
+            if alias_for_ph1:
+                hosp_cond = f"{alias_for_ph1}.MDC_ORG_CD IN ('{codes_str}')"
+            else:
+                hosp_cond = f"MDC_ORG_CD IN ('{codes_str}')"
 
-        # 合并第一组占位符条件（时间1 + 医院）
+        # ── 医院条件（次占位符层级） ────────────────────────────────────
+        hosp_cond_2 = ""
+        if hospital_codes and len(hospital_codes) > 0:
+            codes_str = "','".join(str(c) for c in hospital_codes)
+            if alias_for_ph2:
+                hosp_cond_2 = f"{alias_for_ph2}.MDC_ORG_CD IN ('{codes_str}')"
+            else:
+                hosp_cond_2 = f"MDC_ORG_CD IN ('{codes_str}')"
+
+        # ── 合并第一组占位符条件（时间1 + 医院） ───────────────────────
         parts_1: List[str] = []
         if time_cond_1:
             parts_1.append(time_cond_1)
         if hosp_cond:
             parts_1.append(hosp_cond)
 
-        # 合并第二组占位符条件（时间2 + 医院）
-        # 注意：hosp_cond 只加入 parts_2（对应第二个占位符），不要重复加入 parts_1
+        # ── 合并第二组占位符条件（时间2 + 医院） ───────────────────────
         parts_2: List[str] = []
         if time_cond_2:
             parts_2.append(time_cond_2)
-            if hosp_cond:
-                parts_2.append(hosp_cond)
+            if hosp_cond_2:
+                parts_2.append(hosp_cond_2)
 
         # 无任何条件时，删除所有占位符
         if not parts_1 and not parts_2:
@@ -324,49 +476,52 @@ class Text2SQLService:
             )
 
         # ③ 占位符替换模式
-        # 注意：判断占位符是否存在时，用原始 SQL（sql）而非中间结果（replaced）
-        # 避免 parts_1 替换后 parts_2 误以为自己的占位符不见了
-        replaced = sql
-        has_ph1 = "{FILTER_PLACEHOLDER}" in sql
-        has_ph2 = "{FILTER_PLACEHOLDER_2}" in sql
+        replaced = clean_sql
 
         if parts_1 and has_ph1:
             combined_1 = " AND ".join(parts_1)
-            before_ph = replaced.split("{FILTER_PLACEHOLDER}")[0].rstrip()
+            before_ph_match = re.search(r"\{\s*FILTER_PLACEHOLDER\s*\}", replaced, re.IGNORECASE)
+            before_ph = replaced[:before_ph_match.start()].rstrip() if before_ph_match else replaced.rstrip()
             last_word = before_ph.upper().split()[-1] if before_ph.split() else ""
             if before_ph == "":
-                replaced = replaced.replace("{FILTER_PLACEHOLDER}", combined_1)
+                replaced = re.sub(r"\{\s*FILTER_PLACEHOLDER\s*\}", combined_1, replaced, flags=re.IGNORECASE)
             elif last_word in ("AND", "OR"):
-                replaced = replaced.replace("{FILTER_PLACEHOLDER}", combined_1)
+                replaced = re.sub(r"\{\s*FILTER_PLACEHOLDER\s*\}", combined_1, replaced, flags=re.IGNORECASE)
             else:
-                replaced = replaced.replace("{FILTER_PLACEHOLDER}", f"AND {combined_1}")
+                replaced = re.sub(r"\{\s*FILTER_PLACEHOLDER\s*\}", f"AND {combined_1}", replaced, flags=re.IGNORECASE)
         elif parts_1 and not has_ph1:
-            combined_1 = " AND ".join(parts_1)
-            replaced = f"AND {combined_1} " + replaced
+            logger.warning(f"[_inject_filters] 未找到占位符，跳过头部强制拼接。SQL前100字符: {replaced[:100]}")
+            pass
         else:
-            replaced = re.sub(r"\s+(AND|OR)\s*\{FILTER_PLACEHOLDER\}", "", replaced)
-            replaced = replaced.replace("{FILTER_PLACEHOLDER}", "")
+            replaced = re.sub(r"\s+(AND|OR)\s*\{\s*FILTER_PLACEHOLDER\s*\}", "", replaced, flags=re.IGNORECASE)
+            replaced = re.sub(r"\{\s*FILTER_PLACEHOLDER\s*\}", "", replaced, flags=re.IGNORECASE)
 
         if parts_2 and has_ph2:
             combined_2 = " AND ".join(parts_2)
-            before_ph2 = replaced.split("{FILTER_PLACEHOLDER_2}")[0].rstrip()
+            before_ph2_match = re.search(r"\{\s*FILTER_PLACEHOLDER_2\s*\}", replaced, re.IGNORECASE)
+            before_ph2 = replaced[:before_ph2_match.start()].rstrip() if before_ph2_match else replaced.rstrip()
             last_word2 = before_ph2.upper().split()[-1] if before_ph2.split() else ""
             if before_ph2 == "":
-                replaced = replaced.replace("{FILTER_PLACEHOLDER_2}", combined_2)
+                replaced = re.sub(r"\{\s*FILTER_PLACEHOLDER_2\s*\}", combined_2, replaced, flags=re.IGNORECASE)
             elif last_word2 in ("AND", "OR"):
-                replaced = replaced.replace("{FILTER_PLACEHOLDER_2}", combined_2)
+                replaced = re.sub(r"\{\s*FILTER_PLACEHOLDER_2\s*\}", combined_2, replaced, flags=re.IGNORECASE)
             else:
-                replaced = replaced.replace("{FILTER_PLACEHOLDER_2}", f"AND {combined_2}")
+                replaced = re.sub(r"\{\s*FILTER_PLACEHOLDER_2\s*\}", f"AND {combined_2}", replaced, flags=re.IGNORECASE)
         elif parts_2 and not has_ph2:
             pass
         else:
-            replaced = replaced.replace("{FILTER_PLACEHOLDER_2}", "")
+            replaced = re.sub(r"\{\s*FILTER_PLACEHOLDER_2\s*\}", "", replaced, flags=re.IGNORECASE)
 
         # 清理末尾悬空的 AND/OR
         replaced = replaced.strip().rstrip(";").strip()
 
         # ④ 回退兼容模式（无占位符时，在最外层 WHERE 注入）
-        if "{FILTER_PLACEHOLDER}" not in sql and "{FILTER_PLACEHOLDER_2}" not in sql:
+        if not has_ph1 and not has_ph2:
+            logger.warning(
+                f"[_inject_filters] SQL未添加 {{FILTER_PLACEHOLDER}} 占位符，"
+                f"将在最外层注入过滤条件，这会导致谓词下推失效，严重影响查询性能！SQL前100: {replaced[:100]}"
+            )
+
             parts_all: List[str] = []
             if time_cond_1:
                 parts_all.append(time_cond_1)
@@ -422,6 +577,13 @@ class Text2SQLService:
                 indicator_data.get("name") or indicator_data.get("indicator_name") or ""
             )
             indicator_id = indicator_data.get("indicator_id") or indicator_data.get("id")
+
+            if indicator_id is None:
+                logger.warning(
+                    f"[_save_execution_record] indicator_id 为 None，跳过保存执行记录。"
+                    f"indicator_name={indicator_name}"
+                )
+                return None
 
             exec_record = IndicatorExecution(
                 indicator_id=indicator_id,
@@ -563,6 +725,8 @@ class Text2SQLService:
                 time_col_name=time_col_num,
                 is_aggregate=True,
             )
+            logger.info(f"[_execute_ratio_indicator] 分子注入后SQL前200字符: {final_num_sql[:200]!r}")
+            logger.info(f"[_execute_ratio_indicator] 分子含反斜杠n数量: {final_num_sql.count(chr(92)+'n')}")
             num_total_cnt, num_err, num_cols, num_rows = self._exec_sql(
                 final_num_sql, include_rows=True, fetch_all=True
             )
@@ -2068,13 +2232,24 @@ class Text2SQLService:
         return None
 
     def test_sql(self, sql: str, limit: int = 200) -> Dict[str, Any]:
+        import time as _t
+        t0 = _t.time()
         try:
             resp = self.client.post(
-                self._make_url("/api/test_sql"), json={"sql": sql, "limit": limit}
+                self._make_url("/api/test_sql"), json={"sql": sql, "limit": limit}, timeout=300
             )
+            elapsed = _t.time() - t0
             resp.raise_for_status()
-            return resp.json()
+            result = resp.json()
+            logger.info(f"[test_sql] HTTP成功，耗时{elapsed:.1f}s，count={result.get('count')}, err={result.get('error')}")
+            return result
+        except httpx.TimeoutException:
+            elapsed = _t.time() - t0
+            logger.error(f"[test_sql] HTTP超时，耗时{elapsed:.1f}s，SQL前150: {sql[:150]!r}")
+            return {"ok": False, "columns": [], "rows": [], "count": None, "error": f"HTTP请求超时({elapsed:.0f}s)"}
         except Exception as e:
+            elapsed = _t.time() - t0
+            logger.error(f"[test_sql] HTTP失败，耗时{elapsed:.1f}s，错误={e}")
             return {"ok": False, "columns": [], "rows": [], "count": None, "error": str(e)}
 
     def refresh_tables(self) -> Dict[str, Any]:
