@@ -97,7 +97,6 @@ export interface IndicatorConfigData {
 }
 
 export interface IndicatorConfigItem {
-  indicator_key: string
   indicator_id: number
   indicator_name: string
   template_type: TemplateType
@@ -122,7 +121,6 @@ export interface IndicatorConfigItem {
 }
 
 export interface IndicatorDataResponse {
-  indicator_key: string
   indicator_id: number
   template_type: TemplateType
   has_data: boolean
@@ -215,10 +213,10 @@ export const core18Api = {
 
   /**
    * 获取单个指标的图表数据（各子组件按自身时间筛选调用）
-   * @param params indicator_key, hospital_code, time_mode, time_value, data_type, selected_hospitals, death_type_filter
+   * @param params indicator_id, hospital_code, time_mode, time_value, data_type, selected_hospitals, death_type_filter
    */
   getIndicatorData: (params: {
-    indicator_key: string
+    indicator_id: number
     hospital_code?: string
     time_mode?: string
     time_value?: string

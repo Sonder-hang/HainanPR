@@ -288,7 +288,7 @@ import { core18Api } from '@/api/core18'
 defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
-  indicator_key: { type: String, default: '' },
+  indicator_id: { type: Number, default: null },
   title: { type: String, default: '指标分析' },
   leftTitle: { type: String, default: '排行榜' },
   leftChartTitle: { type: String, default: '排行榜' },
@@ -328,24 +328,6 @@ const fetchHospitals = async () => {
 const selectedHospitals = ref<string[]>(['all'])
 // 当前生效的医院范围（由 initHospital 初始化，受顶部筛选器控制）
 const appliedHospital = ref('all')
-watch(() => props.initHospital, (val) => {
-  if (val) appliedHospital.value = val
-}, { immediate: true })
-watch(
-  () => [props.indicator_key, props.initTimeMode, props.initTimeValue],
-  () => {
-    hasConsumedRouteTrendAnchor.value = false
-    if (props.initTimeMode === 'quarterly' || props.initTimeMode === 'monthly') {
-      timeComparisonType.value = props.initTimeMode
-    }
-  },
-  { immediate: true }
-)
-// appliedHospital 变化时重新拉取排行榜和趋势数据（不受子组件自身时间筛选影响）
-watch(appliedHospital, () => {
-  fetchLeftData()
-  fetchTrendData()
-})
 const leftQueryType = ref<'monthly' | 'quarterly'>('monthly')
 const leftSelectedYearForMonth = ref(currentYear)
 const leftSelectedMonth = ref(1)
@@ -362,6 +344,25 @@ const selectedComparisonQuarter = ref('1')
 const selectedComparisonYearForMonth = ref(currentYear)
 const selectedComparisonMonth = ref(1)
 const hospitalComparisonDataType = ref('actual')
+
+watch(() => props.initHospital, (val) => {
+  if (val) appliedHospital.value = val
+}, { immediate: true })
+watch(
+  () => [props.indicator_id, props.initTimeMode, props.initTimeValue],
+  () => {
+    hasConsumedRouteTrendAnchor.value = false
+    if (props.initTimeMode === 'quarterly' || props.initTimeMode === 'monthly') {
+      timeComparisonType.value = props.initTimeMode
+    }
+  },
+  { immediate: true }
+)
+// appliedHospital 变化时重新拉取排行榜和趋势数据（不受子组件自身时间筛选影响）
+watch(appliedHospital, () => {
+  fetchLeftData()
+  fetchTrendData()
+})
 
 const singleChartRef = ref<HTMLElement | null>(null)
 const leftChartRef1 = ref<HTMLElement | null>(null)
@@ -609,11 +610,11 @@ const handleResize = () => {
 }
 
 const fetchLeftData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingLeft.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: leftQueryType.value,
       time_value: buildLeftTimeValue(),
       data_type: 'left',
@@ -674,11 +675,11 @@ const fetchLeftData = async () => {
 }
 
 const fetchTrendData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingTrend.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: timeComparisonType.value,
       time_value: buildTrendTimeValue(),
       data_type: 'trend',
@@ -696,11 +697,11 @@ const fetchTrendData = async () => {
 }
 
 const fetchHospitalData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingHospital.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: hospitalComparisonType.value,
       time_value: buildHospitalTimeValue(),
       data_type: 'hospital',

@@ -311,7 +311,7 @@ const fetchHospitals = async () => {
 }
 
 const props = defineProps({
-  indicator_key: { type: String, default: '' },
+  indicator_id: { type: Number, default: null },
   title: { type: String, default: '指标分析' },
   leftTitle: { type: String, default: '百分率直观展示' },
   timeComparisonTitle: { type: String, default: '趋势分析' },
@@ -409,11 +409,11 @@ const buildHospitalTimeValue = () => {
 
 // ---- 三个独立拉取函数 ----
 const fetchCardData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingCard.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: cardQueryType.value,
       time_value: buildCardTimeValue(),
       data_type: 'card',
@@ -432,11 +432,11 @@ const fetchCardData = async () => {
 }
 
 const fetchTrendData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingTrend.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: timeComparisonType.value,
       time_value: buildTrendTimeValue(),
       data_type: 'trend',
@@ -454,11 +454,11 @@ const fetchTrendData = async () => {
 }
 
 const fetchHospitalData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingHospital.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: hospitalComparisonType.value,
       time_value: buildHospitalTimeValue(),
       data_type: 'hospital',

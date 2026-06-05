@@ -4,13 +4,14 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models.indicator import Indicator, IndicatorExecution
+from app.models.indicator import Indicator
 from app.schemas.core18_overview import (
     Core18OverviewResponse,
     IndicatorCardItem,
     OverviewResponse,
     IndicatorExecutionData,
 )
+from app.services.core18_execution_selector import get_latest_execution_for_scope
 
 router = APIRouter(tags=["十八项核心制度-总览"])
 
@@ -95,26 +96,13 @@ def get_execution_data(
 
     results = []
     for ind in indicators:
-        # 构建查询条件
-        query = db.query(IndicatorExecution).filter(
-            IndicatorExecution.indicator_id == ind.id,
-            IndicatorExecution.status == "success",
-            IndicatorExecution.time_mode == time_mode,
-            IndicatorExecution.time_value == time_value,
+        execution = get_latest_execution_for_scope(
+            db=db,
+            indicator_id=ind.id,
+            time_mode=time_mode,
+            time_value=time_value,
+            hospital_code=hospital_code,
         )
-
-        # 医院筛选（如果指定了医院）
-        # hospital_codes 存储为 JSON 数组
-        if hospital_code and hospital_code != "province":
-            from sqlalchemy import cast, String
-            query = query.filter(
-                cast(IndicatorExecution.hospital_codes, String).contains(hospital_code)
-            )
-
-        # 取最新一条记录
-        execution = query.order_by(
-            IndicatorExecution.execution_time.desc()
-        ).first()
 
         results.append(IndicatorExecutionData(
             indicator_id=ind.id,
@@ -170,56 +158,16 @@ def get_overview_data(
     ).distinct().all()
     categories = [cat[0] for cat in all_indicators_query if cat[0]]
 
-    # 查询所有 core18 指标的执行记录（仅成功状态、匹配时间）
-    base_query = db.query(IndicatorExecution).filter(
-        IndicatorExecution.status == "success",
-        IndicatorExecution.time_mode == time_mode,
-        IndicatorExecution.time_value == time_value,
-    )
-    all_executions = base_query.all()
-
-    def pick_execution(exec_list: list, prefer_grouped: bool):
-        """从多条记录中选取最合适的一条。
-
-        - 全省/无医院（prefer_grouped=False）：优先取 group_by_hospital=False 的纯全省执行记录；
-          若无则降级取 group_by_hospital=True 的记录。
-        - 指定医院（prefer_grouped=True）：只取 group_by_hospital=True 且包含该医院的记录。
-
-        每组内按 execution_time 取最新一条。
-        """
-        if not exec_list:
-            return None
-        if prefer_grouped:
-            # 指定医院：严格筛选 group_by_hospital=True 且包含目标医院的记录
-            filtered = [
-                r for r in exec_list
-                if r.group_by_hospital
-                and isinstance(r.hospital_codes, list)
-                and any(h == hospital_code for h in r.hospital_codes)
-            ]
-            if not filtered:
-                return None
-            return max(filtered, key=lambda r: r.execution_time)
-        else:
-            # 全省/无医院：优先取 group_by_hospital=False 的记录
-            non_grouped = [r for r in exec_list if not r.group_by_hospital]
-            if non_grouped:
-                return max(non_grouped, key=lambda r: r.execution_time)
-            # 降级：取 group_by_hospital=True 中 execution_time 最新的
-            return max(exec_list, key=lambda r: r.execution_time)
-
     # 按指标分组，每组取最合适的一条执行记录
-    # 结构: {indicator_id: [execution_records...]}
-    from collections import defaultdict
-    executions_by_indicator: dict = defaultdict(list)
-    for rec in all_executions:
-        executions_by_indicator[rec.indicator_id].append(rec)
-
-    # 构建指标卡片数据
     indicator_cards = []
     for ind in indicators:
-        exec_list = executions_by_indicator.get(ind.id, [])
-        exec_record = pick_execution(exec_list, prefer_grouped=(hospital_code and hospital_code != "province"))
+        exec_record = get_latest_execution_for_scope(
+            db=db,
+            indicator_id=ind.id,
+            time_mode=time_mode,
+            time_value=time_value,
+            hospital_code=hospital_code,
+        )
 
         # 根据医院筛选逻辑获取数据
         rate_percent = None

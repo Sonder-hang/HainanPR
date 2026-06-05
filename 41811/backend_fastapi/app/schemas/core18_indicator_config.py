@@ -25,7 +25,6 @@ class IndicatorConfigData(BaseModel):
 
 class IndicatorConfigResponse(BaseModel):
     """指标分析台配置响应"""
-    indicator_key: str                       # cascader key，如 transferWithin48HoursRate
     indicator_id: int
     indicator_name: str
     template_type: Literal["STRUCTURE", "STRUCTURE-special", "RATE", "RATE-special", "COMPOSITE"]

@@ -36,7 +36,7 @@ OPENAI_TIMEOUT_SEC = 120.0
 OPENAI_HTTP_TRUST_ENV = False
 
 # —— SSH 隧道（自动建立，无需手动开终端） ——
-SSH_TUNNEL_ENABLED = False                 # 设为 False 则直连 MySQL，不走隧道
+SSH_TUNNEL_ENABLED = True                 # 设为 False 则直连 MySQL，不走隧道
 SSH_HOST = "172.20.137.65"               # 跳板机 / 服务器 IP
 SSH_PORT = 22133                         # SSH 端口
 SSH_USER = "ubuntu"                      # SSH 用户名
