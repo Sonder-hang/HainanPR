@@ -292,6 +292,7 @@ const props = defineProps({
   title: { type: String, default: '指标分析' },
   leftTitle: { type: String, default: '排行榜' },
   leftChartTitle: { type: String, default: '排行榜' },
+  leftChartLimit: { type: Number, default: 20 },
   leftChartTitle1: { type: String, default: '排行榜1' },
   leftChartTitle2: { type: String, default: '排行榜2' },
   leftChartColor: { type: String, default: '#2E57E5' },
@@ -330,6 +331,16 @@ const appliedHospital = ref('all')
 watch(() => props.initHospital, (val) => {
   if (val) appliedHospital.value = val
 }, { immediate: true })
+watch(
+  () => [props.indicator_key, props.initTimeMode, props.initTimeValue],
+  () => {
+    hasConsumedRouteTrendAnchor.value = false
+    if (props.initTimeMode === 'quarterly' || props.initTimeMode === 'monthly') {
+      timeComparisonType.value = props.initTimeMode
+    }
+  },
+  { immediate: true }
+)
 // appliedHospital 变化时重新拉取排行榜和趋势数据（不受子组件自身时间筛选影响）
 watch(appliedHospital, () => {
   fetchLeftData()
@@ -344,6 +355,7 @@ const leftDataType = ref('actual')
 const currentTotalCount = ref(0)
 const timeComparisonType = ref<'monthly' | 'quarterly'>('monthly')
 const timeComparisonDataType = ref('actual')
+const hasConsumedRouteTrendAnchor = ref(false)
 const hospitalComparisonType = ref<'monthly' | 'quarterly'>('quarterly')
 const selectedComparisonYear = ref(currentYear)
 const selectedComparisonQuarter = ref('1')
@@ -443,9 +455,22 @@ const buildLeftTimeValue = () => {
 }
 
 const buildTrendTimeValue = () => {
-  return timeComparisonType.value === 'monthly'
-    ? `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    : `${currentYear}-Q${Math.ceil((now.getMonth() + 1) / 3)}`
+  const shouldUseRouteAnchor = !hasConsumedRouteTrendAnchor.value
+    && !!props.initTimeMode
+    && !!props.initTimeValue
+    && props.initTimeMode === timeComparisonType.value
+
+  if (shouldUseRouteAnchor) {
+    hasConsumedRouteTrendAnchor.value = true
+    return props.initTimeValue
+  }
+
+  const currentDate = new Date()
+  const year = currentDate.getFullYear()
+  if (timeComparisonType.value === 'monthly') {
+    return `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+  }
+  return `${year}-Q${Math.ceil((currentDate.getMonth() + 1) / 3)}`
 }
 
 const buildHospitalTimeValue = () => {
@@ -502,18 +527,12 @@ const updateTimeComparisonChart = () => {
   if (!trendData) return
   // STRUCTURE 趋势格式: { years: [...], data: [...] }（STRUCTURE 用 count 而非 rate）
   // RATE 趋势格式: { years: [...], rates: [...] }（比值型用 rate_percent）
-  // 前端统一取 years 和 data 字段（data 中已含各年/各期聚合值）
   const xAxisData: string[] = trendData.years || []
   let seriesData: number[] = trendData.data || []
 
   // 若 data 为空或长度不匹配，用 rates 兜底（比值型指标）
   if (!seriesData.length && trendData.rates) {
     seriesData = trendData.rates
-  }
-
-  // 季度模式：从 data 数组中提取当年数据（跳过前2个历史年数据点）
-  if (timeComparisonType.value === 'quarterly' && seriesData.length >= 2) {
-    seriesData = seriesData.slice(2) // 保留当年 Q1-Q4
   }
 
   timeComparisonChart.setOption({

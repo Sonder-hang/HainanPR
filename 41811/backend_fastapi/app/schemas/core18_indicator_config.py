@@ -16,6 +16,7 @@ class IndicatorConfigData(BaseModel):
     leftData2: Optional[dict] = None        # STRUCTURE-special 第二组
     totalCount: Optional[int] = None
     totalCountLabel: Optional[str] = None
+    leftChartLimit: Optional[int] = None    # 排行榜展示上限（默认20），由 subitem_config.limit 决定
 
     # COMPOSITE 类型
     dataTypes: Optional[List[dict]] = None  # [{name, key}, ...]

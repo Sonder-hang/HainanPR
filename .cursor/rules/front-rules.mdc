@@ -7,6 +7,7 @@ alwaysApply: true
 alwaysApply: true
 ---
 项目后端使用的环境为conda的mark-fatsapi
+项目开发环境为windows11
 项目开发中**必须严格遵守**以下规范：
 
 使用 nvm 管理 Node.js 版本，指定 Node 版本为 22.21.1。

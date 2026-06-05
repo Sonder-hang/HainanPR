@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sql_func
 from typing import Optional
+from datetime import datetime
 
 from app.database import get_db
 from app.models.indicator import Indicator, IndicatorExecution
@@ -123,10 +124,12 @@ def _build_config(
     subitem_type = subitem_cfg.get("type") if subitem_cfg else None
     if template_type == "STRUCTURE":
         cfg.leftTitle = "排行榜"
-        cfg.leftChartTitle = f"{title} TOP10"
+        chart_limit = subitem_cfg.get("limit", 20) if subitem_cfg else 20
+        cfg.leftChartTitle = f"{title} TOP{chart_limit}"
         cfg.leftChartColor = "#E5455F" if is_death else "#2E57E5"
         cfg.totalCountLabel = f"{title}总量"
         cfg.rankingMode = "single"
+        cfg.data.leftChartLimit = chart_limit
     elif template_type == "STRUCTURE-special":
         cfg.leftTitle = f"{title}排行榜"
         cfg.leftChartTitle1 = "治疗性操作 TOP10"
@@ -203,27 +206,23 @@ def _query_trend_records(
     db: Session,
     indicator_id: int,
     time_mode: str,
-    years: list[int],
+    time_values: list[str],
     hospital_code: Optional[str] = None,
 ) -> list[IndicatorExecution]:
-    """查询近 N 年所有月度/季度执行记录（用于聚合年度趋势）。
+    """按指定时间点列表查询趋势记录。
 
     筛选规则：
     - 全省/无医院：取 group_by_hospital=False 的记录
     - 指定医院：取 group_by_hospital=True 且 hospital_codes 包含目标医院的记录
     """
-    patterns = []
-    for y in years:
-        if time_mode == "monthly":
-            patterns.extend([f"{y}-{str(m).zfill(2)}" for m in range(1, 13)])
-        else:
-            patterns.extend([f"{y}-Q{q}" for q in range(1, 5)])
+    if not time_values:
+        return []
 
     base_q = db.query(IndicatorExecution).filter(
         IndicatorExecution.indicator_id == indicator_id,
         IndicatorExecution.status == "success",
         IndicatorExecution.time_mode == time_mode,
-        IndicatorExecution.time_value.in_(patterns),
+        IndicatorExecution.time_value.in_(time_values),
     )
 
     all_recs = base_q.order_by(IndicatorExecution.execution_time.asc()).all()
@@ -239,6 +238,82 @@ def _query_trend_records(
         ]
     else:
         return [r for r in all_recs if not r.group_by_hospital]
+
+
+def _parse_month_anchor(time_value: Optional[str]) -> tuple[int, int]:
+    """解析月度锚点，格式 YYYY-MM。非法或空值时回退到当前月。"""
+    if time_value:
+        try:
+            year_str, month_str = time_value.split("-")
+            year = int(year_str)
+            month = int(month_str)
+            if 1 <= month <= 12:
+                return year, month
+        except (ValueError, AttributeError):
+            pass
+    now = datetime.now()
+    return now.year, now.month
+
+
+def _parse_quarter_anchor(time_value: Optional[str]) -> tuple[int, int]:
+    """解析季度锚点，格式 YYYY-QN。非法或空值时回退到当前季度。"""
+    if time_value:
+        try:
+            year_str, quarter_str = time_value.split("-Q")
+            year = int(year_str)
+            quarter = int(quarter_str)
+            if 1 <= quarter <= 4:
+                return year, quarter
+        except (ValueError, AttributeError):
+            pass
+    now = datetime.now()
+    return now.year, ((now.month - 1) // 3) + 1
+
+
+def _shift_month(year: int, month: int, offset: int) -> tuple[int, int]:
+    month_index = (year * 12 + (month - 1)) + offset
+    shifted_year = month_index // 12
+    shifted_month = month_index % 12 + 1
+    return shifted_year, shifted_month
+
+
+def _shift_quarter(year: int, quarter: int, offset: int) -> tuple[int, int]:
+    quarter_index = (year * 4 + (quarter - 1)) + offset
+    shifted_year = quarter_index // 4
+    shifted_quarter = quarter_index % 4 + 1
+    return shifted_year, shifted_quarter
+
+
+def _build_month_window(anchor: tuple[int, int], has_explicit_anchor: bool) -> list[tuple[str, str]]:
+    """构建月度趋势窗口。
+
+    - 有锚点：前6个月 + 当月 + 后5个月，共12个月
+    - 无锚点：以前11个月 + 当前月为结尾，共12个月
+    返回 [(query_label, display_label), ...]
+    """
+    year, month = anchor
+    offsets = list(range(-6, 6)) if has_explicit_anchor else list(range(-11, 1))
+    result = []
+    for offset in offsets:
+        y, m = _shift_month(year, month, offset)
+        result.append((f"{y}-{str(m).zfill(2)}", f"{y}-{m}"))
+    return result
+
+
+def _build_quarter_window(anchor: tuple[int, int], has_explicit_anchor: bool) -> list[tuple[str, str]]:
+    """构建季度趋势窗口。
+
+    - 有锚点：前2个季度 + 当季 + 后1个季度，共4个季度
+    - 无锚点：以前3个季度 + 当前季度为结尾，共4个季度
+    返回 [(query_label, display_label), ...]
+    """
+    year, quarter = anchor
+    offsets = [-2, -1, 0, 1] if has_explicit_anchor else [-3, -2, -1, 0]
+    result = []
+    for offset in offsets:
+        y, q = _shift_quarter(year, quarter, offset)
+        result.append((f"{y}-Q{q}", f"{y}-Q{q}"))
+    return result
 
 
 def _build_special_left_data(subitem) -> tuple:
@@ -380,7 +455,8 @@ def get_indicator_data(
         "RATE" if ind.calc_type == "ratio" else "STRUCTURE"
     )
 
-    current_year = 2026  # 可替换为 datetime.now().year
+    current_time = datetime.now()
+    current_year = current_time.year
 
     # ---- card data ----
     exec_record = _query_execution(db, ind.id, hospital_code, time_mode, time_value)
@@ -392,7 +468,21 @@ def get_indicator_data(
     # 趋势数据取数逻辑：
     # - RATE / RATE-special：取 rate_percent（比值型指标）
     # - STRUCTURE / STRUCTURE-special / COMPOSITE：取 count（总数/病例数），代表该时间段的疾病谱规模
-    records = _query_trend_records(db, ind.id, time_mode, [current_year - 2, current_year - 1, current_year], hospital_code)
+    has_explicit_trend_anchor = bool(time_value)
+    if time_mode == "monthly":
+        trend_window = _build_month_window(
+            _parse_month_anchor(time_value),
+            has_explicit_trend_anchor,
+        )
+    else:
+        trend_window = _build_quarter_window(
+            _parse_quarter_anchor(time_value),
+            has_explicit_trend_anchor,
+        )
+
+    trend_query_labels = [query_label for query_label, _ in trend_window]
+    trend_display_labels = [display_label for _, display_label in trend_window]
+    records = _query_trend_records(db, ind.id, time_mode, trend_query_labels, hospital_code)
     from collections import defaultdict
     period_values: dict = defaultdict(list)
 
@@ -400,13 +490,7 @@ def get_indicator_data(
     is_count_type_trend = template_type in ("STRUCTURE", "STRUCTURE-special", "COMPOSITE")
     for rec in records:
         if rec.time_value:
-            val = None
-            if is_count_type_trend:
-                # 计数型指标：取 numerator_count（排行榜总数量）
-                val = rec.numerator_count
-            else:
-                # 比值型指标：取 rate_percent
-                val = rec.rate_percent
+            val = rec.numerator_count if is_count_type_trend else rec.rate_percent
             if val is not None:
                 period_values[rec.time_value].append(float(val))
 
@@ -415,35 +499,8 @@ def get_indicator_data(
         valid = [v for v in lst if v is not None]
         return valid[-1] if valid else None
 
-    def yearly_sum(period_values: dict, year: int) -> Optional[float]:
-        """非当年年度聚合：各月取最近一次执行结果后求和，适用于计数型（保持整数）；比值型也用此方式保持语义一致"""
-        total = 0.0
-        has_any = False
-        for m in range(1, 13):
-            label = f"{year}-{str(m).zfill(2)}"
-            v = last(period_values.get(label, []))
-            if v is not None:
-                total += v
-                has_any = True
-        return round(total, 2) if has_any else None
-
-    x_labels: list = []
-    y_values: list = []
-    for y in [current_year - 2, current_year - 1, current_year]:
-        if y == current_year:
-            if time_mode == "monthly":
-                for m in range(1, 13):
-                    label = f"{y}-{str(m).zfill(2)}"
-                    x_labels.append(f"{m}月")
-                    y_values.append(last(period_values.get(label, [])))
-            else:
-                for q in range(1, 5):
-                    label = f"{y}-Q{q}"
-                    x_labels.append(f"Q{q}")
-                    y_values.append(last(period_values.get(label, [])))
-        else:
-            x_labels.append(str(y))
-            y_values.append(yearly_sum(period_values, y))
+    x_labels: list[str] = trend_display_labels
+    y_values: list[Optional[float]] = [last(period_values.get(label, [])) for label in trend_query_labels]
 
     # ---- hospital data ----
     # 解析前端传入的医院列表（逗号分隔，如 "all,h001,h002"）
