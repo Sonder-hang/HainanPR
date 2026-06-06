@@ -1,7 +1,18 @@
 <template>
   <div class="flex h-full min-h-0 flex-col bg-[#F4F6F8] p-5 font-sans">
     <header class="mb-5 flex flex-wrap items-center justify-between gap-4">
-      <h1 class="text-[24px] font-bold text-[#1F264D]">指标分析台</h1>
+      <div class="flex items-center gap-2">
+        <h1 class="text-[24px] font-bold text-[#1F264D]">指标分析台</h1>
+        <select
+          v-if="currentConfig?.sub_indicators?.length"
+          v-model="selectedSubIndicatorId"
+          class="h-8 min-w-[180px] rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+        >
+          <option v-for="sub in currentConfig.sub_indicators" :key="sub.indicator_id" :value="sub.indicator_id">
+            {{ sub.display_name }}
+          </option>
+        </select>
+      </div>
       <div class="flex flex-wrap items-center gap-2.5">
         <select
           v-model="draftIndicatorId"
@@ -35,9 +46,10 @@
 
     <div v-else-if="currentConfig" class="min-h-0 flex-1">
       <DeathPatientDefinitionTable
-        v-if="isSpecialDeathPatientIndicator"
-        :key="`death-table-${appliedIndicatorId}`"
+        v-if="currentConfig.template_type === 'TABLE'"
+        :key="`table-${appliedIndicatorId}`"
         :title="currentConfig.title"
+        :table-headers="currentConfig.table_headers || []"
       />
 
       <IndicatorAnalysis
@@ -111,8 +123,8 @@
 
       <IndicatorAnalysisCategory2
         v-else-if="currentConfig.template_type === 'RATE-special'"
-        :key="`rate-special-${appliedIndicatorId}`"
-        :indicator_id="appliedIndicatorId ?? undefined"
+        :key="`rate-special-${appliedIndicatorId}-${selectedSubIndicatorId}`"
+        :indicator_id="selectedSubIndicatorId ?? appliedIndicatorId ?? undefined"
         :init-time-mode="routeTimeMode ?? undefined"
         :init-time-value="routeTimeValue ?? undefined"
         :init-hospital="appliedHospital"
@@ -128,25 +140,6 @@
         :card-data="currentConfig.data.cardData || {}"
         :time-trend-data="currentConfig.data.timeTrendData || {}"
         :hospital-comparison-data="currentConfig.data.hospitalComparisonData || {}"
-      />
-
-      <IndicatorAnalysisCategory3
-        v-else-if="currentConfig.template_type === 'COMPOSITE'"
-        :key="`composite-${appliedIndicatorId}`"
-        :indicator_id="appliedIndicatorId ?? undefined"
-        :init-time-mode="routeTimeMode ?? undefined"
-        :init-time-value="routeTimeValue ?? undefined"
-        :init-hospital="appliedHospital"
-        :title="currentConfig.title"
-        :left-title="currentConfig.leftTitle || `${currentConfig.title}细分`"
-        :time-comparison-title="currentConfig.timeComparisonTitle || `${currentConfig.title}趋势分析`"
-        :hospital-comparison-title="currentConfig.hospitalComparisonTitle || `${currentConfig.title}医院对比`"
-        :show-death-toggle="currentConfig.showDeathToggle"
-        :data-types="currentConfig.data.dataTypes || []"
-        :left-data="currentConfig.data.leftData || {}"
-        :time-trend-data="currentConfig.data.timeTrendData || {}"
-        :hospital-comparison-data="currentConfig.data.hospitalComparisonData || {}"
-        :y-axis-unit="currentConfig.yAxisUnit || '%'"
       />
 
       <div v-else class="flex flex-1 items-center justify-center text-[#596080]">
@@ -165,11 +158,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import IndicatorAnalysis from '@/components/indicator/IndicatorAnalysis.vue'
 import IndicatorAnalysisCategory2 from '@/components/indicator/IndicatorAnalysisCategory2.vue'
-import IndicatorAnalysisCategory3 from '@/components/indicator/IndicatorAnalysisCategory3.vue'
 import DeathPatientDefinitionTable from '@/components/indicator/DeathPatientDefinitionTable.vue'
 import { core18Api, type IndicatorConfigItem } from '@/api/core18'
-
-const SPECIAL_DEATH_PATIENT_NAME = '死亡或出院预期转归不良患者'
 
 const route = useRoute()
 const router = useRouter()
@@ -191,6 +181,8 @@ const hospitalOptions = computed(() => [
 ])
 const draftHospital = ref('province')
 const appliedHospital = ref('province')
+
+const selectedSubIndicatorId = ref<number | null>(null)
 
 async function loadIndicatorConfigs(params?: { time_mode?: string; time_value?: string }) {
   isLoadingConfig.value = true
@@ -229,10 +221,6 @@ const currentConfig = computed(() =>
   indicatorConfigs.value.find(config => config.indicator_id === appliedIndicatorId.value) ?? null,
 )
 
-const isSpecialDeathPatientIndicator = computed(() =>
-  currentConfig.value?.indicator_name === SPECIAL_DEATH_PATIENT_NAME,
-)
-
 function getFirstIndicatorId(): number | null {
   return indicatorConfigs.value[0]?.indicator_id ?? null
 }
@@ -254,12 +242,23 @@ function applyIndicatorIdFromRouteQuery(indicatorId: unknown) {
   if (found !== null) {
     draftIndicatorId.value = found
     appliedIndicatorId.value = found
+    syncSubIndicator(found)
     return
   }
   const firstIndicatorId = getFirstIndicatorId()
   if (firstIndicatorId !== null) {
     draftIndicatorId.value = firstIndicatorId
     appliedIndicatorId.value = firstIndicatorId
+    syncSubIndicator(firstIndicatorId)
+  }
+}
+
+function syncSubIndicator(indicatorId: number) {
+  const config = indicatorConfigs.value.find(c => c.indicator_id === indicatorId)
+  if (config?.sub_indicators?.length) {
+    selectedSubIndicatorId.value = config.sub_indicators[0].indicator_id
+  } else {
+    selectedSubIndicatorId.value = null
   }
 }
 
@@ -267,6 +266,7 @@ function applySelection() {
   appliedIndicatorId.value = draftIndicatorId.value
   appliedHospital.value = draftHospital.value
   isSettingFromRoute.value = true
+  syncSubIndicator(draftIndicatorId.value ?? appliedIndicatorId.value ?? 0)
   router.replace({
     query: {
       ...route.query,
@@ -311,10 +311,16 @@ onMounted(async () => {
     if (firstIndicatorId !== null) {
       draftIndicatorId.value = firstIndicatorId
       appliedIndicatorId.value = firstIndicatorId
+      syncSubIndicator(firstIndicatorId)
     }
   }
 })
 
 watch(() => route.query.indicatorId, indicatorId => applyIndicatorIdFromRouteQuery(indicatorId))
 watch(() => route.query.hospital, hospital => applyHospitalFromRouteQuery(hospital))
+watch(appliedIndicatorId, (newId) => {
+  if (newId != null) {
+    syncSubIndicator(newId)
+  }
+})
 </script>

@@ -3,6 +3,15 @@
     <header class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-2">
         <h1 class="text-[24px] font-bold text-[#1F264D]">{{ title }}</h1>
+        <select
+          v-if="sub_indicators.length"
+          v-model="subIndicatorId"
+          class="h-8 min-w-[160px] rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+        >
+          <option v-for="sub in sub_indicators" :key="sub.indicator_id" :value="sub.indicator_id">
+            {{ sub.display_name }}
+          </option>
+        </select>
         <button
           @click="helpVisible = true"
           class="w-5 h-5 rounded-full bg-[#b8c9e8]/60 text-[#596080] text-[12px] font-medium flex items-center justify-center hover:bg-[#2E57E5] hover:text-white transition-colors cursor-pointer"
@@ -324,6 +333,7 @@ const props = defineProps({
   initTimeMode: { type: String, default: '' },
   initTimeValue: { type: String, default: '' },
   initHospital: { type: String, default: '' },
+  sub_indicators: { type: Array as () => Array<{ indicator_id: number; display_name: string; view_mode: string }>, default: () => [] },
 })
 
 const now = new Date()
@@ -373,6 +383,19 @@ const isFetchingTrend = ref(false)
 const isFetchingHospital = ref(false)
 
 const helpVisible = ref(false)
+const subIndicatorId = ref<number | null>(null)
+
+watch(() => props.indicator_id, (newId) => {
+  if (newId != null) {
+    subIndicatorId.value = newId
+  }
+}, { immediate: true })
+
+watch(subIndicatorId, () => {
+  fetchCardData()
+  fetchTrendData()
+  fetchHospitalData()
+})
 
 // ---- 筛选器选项 ----
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i)
@@ -409,11 +432,12 @@ const buildHospitalTimeValue = () => {
 
 // ---- 三个独立拉取函数 ----
 const fetchCardData = async () => {
-  if (!props.indicator_id) return
+  const targetId = subIndicatorId.value ?? props.indicator_id
+  if (!targetId) return
   isFetchingCard.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_id: props.indicator_id,
+      indicator_id: targetId,
       time_mode: cardQueryType.value,
       time_value: buildCardTimeValue(),
       data_type: 'card',
@@ -432,11 +456,12 @@ const fetchCardData = async () => {
 }
 
 const fetchTrendData = async () => {
-  if (!props.indicator_id) return
+  const targetId = subIndicatorId.value ?? props.indicator_id
+  if (!targetId) return
   isFetchingTrend.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_id: props.indicator_id,
+      indicator_id: targetId,
       time_mode: timeComparisonType.value,
       time_value: buildTrendTimeValue(),
       data_type: 'trend',
@@ -454,11 +479,12 @@ const fetchTrendData = async () => {
 }
 
 const fetchHospitalData = async () => {
-  if (!props.indicator_id) return
+  const targetId = subIndicatorId.value ?? props.indicator_id
+  if (!targetId) return
   isFetchingHospital.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_id: props.indicator_id,
+      indicator_id: targetId,
       time_mode: hospitalComparisonType.value,
       time_value: buildHospitalTimeValue(),
       data_type: 'hospital',

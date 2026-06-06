@@ -522,13 +522,34 @@ class Text2SQLService:
                 f"将在最外层注入过滤条件，这会导致谓词下推失效，严重影响查询性能！SQL前100: {replaced[:100]}"
             )
 
+            # 尝试推断主表的别名，用于医院过滤条件
+            main_alias = alias_for_ph1
+            if not main_alias:
+                # 从 SQL 首行 FROM 子句推断
+                alias_match = re.search(
+                    r"FROM\s+(?:[\w`]+\.?\w*\s+)?(?:AS\s+)?([\w`]+)(?:\s|,|$)",
+                    sql,
+                    re.IGNORECASE,
+                )
+                if alias_match:
+                    candidate = alias_match.group(1).strip("`")
+                    if candidate.upper() not in {
+                        "SELECT", "WHERE", "AND", "OR", "ON", "JOIN",
+                        "INNER", "LEFT", "RIGHT", "OUTER",
+                    }:
+                        main_alias = candidate
+
             parts_all: List[str] = []
             if time_cond_1:
                 parts_all.append(time_cond_1)
             if time_cond_2:
                 parts_all.append(time_cond_2)
-            if hosp_cond:
-                parts_all.append(hosp_cond)
+            if hospital_codes and len(hospital_codes) > 0:
+                codes_str = "','".join(str(c) for c in hospital_codes)
+                if main_alias:
+                    parts_all.append(f"{main_alias}.MDC_ORG_CD IN ('{codes_str}')")
+                else:
+                    parts_all.append(f"MDC_ORG_CD IN ('{codes_str}')")
             if not parts_all:
                 return replaced.rstrip().rstrip(";").strip()
 
@@ -1266,8 +1287,9 @@ class Text2SQLService:
                     "message": f"全省汇总：{total_num_overall}/{total_den_overall}={total_rate_overall}%",
                 }
             )
-            first_sub = hospital_results[0].get("preview_data", []) if hospital_results else []
-            first_cols = list(first_sub[0].keys()) if first_sub else []
+            first_preview_data = hospital_results[0].get("preview_data") if hospital_results else None
+            first_rows = first_preview_data.get("rows", []) if first_preview_data else []
+            first_cols = first_preview_data.get("columns", []) if first_preview_data else []
 
             result = {
                 "ok": all_ok,
@@ -1283,8 +1305,8 @@ class Text2SQLService:
                 ),
                 "error": None if all_ok else "部分医院执行失败",
                 "preview_columns": first_cols,
-                "preview_rows": first_sub,
-                "preview_data": {"columns": first_cols, "rows": first_sub},
+                "preview_rows": first_rows,
+                "preview_data": {"columns": first_cols, "rows": first_rows},
                 "request_id": "",
                 "conversation_id": "",
                 "cache_hit": False,
@@ -1535,8 +1557,9 @@ class Text2SQLService:
                     "message": f"全省汇总：总数量={int(total_count_overall)}，全局TOP{ranking_limit}排行已生成。",
                 }
             )
-            first_preview = hospital_results[0].get("preview_data", []) if hospital_results else []
-            first_cols = hospital_results[0].get("preview_columns", []) if hospital_results else []
+            first_preview_data = hospital_results[0].get("preview_data") if hospital_results else None
+            first_rows = first_preview_data.get("rows", []) if first_preview_data else []
+            first_cols = first_preview_data.get("columns", []) if first_preview_data else []
 
             result = {
                 "ok": all_ok,
@@ -1546,8 +1569,8 @@ class Text2SQLService:
                 "numerator_count": int(total_count_overall),
                 "error": None if all_ok else "部分医院执行失败",
                 "preview_columns": first_cols,
-                "preview_rows": first_preview,
-                "preview_data": {"columns": first_cols, "rows": first_preview},
+                "preview_rows": first_rows,
+                "preview_data": {"columns": first_cols, "rows": first_rows},
                 "request_id": "",
                 "conversation_id": "",
                 "cache_hit": False,

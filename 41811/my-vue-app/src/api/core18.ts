@@ -6,7 +6,7 @@ import { API_ENDPOINTS } from '@/config/api'
 
 // ======================== 类型定义 ========================
 
-export type TemplateType = 'STRUCTURE' | 'STRUCTURE-special' | 'RATE' | 'RATE-special' | 'COMPOSITE'
+export type TemplateType = 'STRUCTURE' | 'STRUCTURE-special' | 'RATE' | 'RATE-special' | 'TABLE'
 
 export interface Core18Overview {
   total_indicators: number
@@ -83,6 +83,12 @@ export interface DeathPatientResponse {
 
 // ======================== 指标分析台类型 ========================
 
+export interface SubIndicatorItem {
+  indicator_id: number
+  display_name: string
+  view_mode: 'rate' | 'structure' | 'ratio'
+}
+
 export interface IndicatorConfigData {
   cardData?: Record<string, any>
   timeTrendData?: Record<string, any>
@@ -92,8 +98,7 @@ export interface IndicatorConfigData {
   leftData2?: Record<string, any>
   totalCount?: number
   totalCountLabel?: string
-  dataTypes?: Array<{ name: string; key: string }>
-  yAxisUnit?: string
+  leftChartLimit?: number
 }
 
 export interface IndicatorConfigItem {
@@ -117,6 +122,10 @@ export interface IndicatorConfigItem {
   hospitalComparisonTitle: string
   totalCountLabel?: string
   rankingMode?: 'single' | 'double' | 'multi'
+  is_parent_indicator: boolean
+  parent_name?: string
+  sub_indicators?: SubIndicatorItem[]
+  table_headers?: string[]
   data: IndicatorConfigData
 }
 
@@ -223,6 +232,7 @@ export const core18Api = {
     data_type?: 'card' | 'trend' | 'hospital' | 'left' | 'all'
     selected_hospitals?: string
     death_type_filter?: 'actual' | 'estimated'
+    sub_indicator?: number
   }) =>
     httpClient.get<IndicatorDataResponse>(API_ENDPOINTS.core18IndicatorData, { params }),
 }

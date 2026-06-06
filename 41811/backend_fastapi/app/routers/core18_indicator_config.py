@@ -1,8 +1,8 @@
 """十八项核心制度 - 指标分析台数据路由
 
 分析台各子组件根据自身时间筛选条件独立请求数据。
-- /indicator-config/   : 获取指标元数据（含 template_type 等，用于切换模板）
-- /indicator-data/      : 获取单个指标的图表数据（各组件按自身时间筛选调用）
+- /indicator-config/   : 获取指标元数据（含 sub_indicators 等，用于切换模板和子指标）
+- /indicator-data/     : 获取单个指标的图表数据（各组件按自身时间筛选调用）
 """
 from datetime import datetime
 from typing import Optional
@@ -15,11 +15,14 @@ from app.database import get_db
 from app.models.indicator import Indicator, IndicatorExecution
 from app.schemas.core18_indicator_config import (
     IndicatorConfigResponse,
+    IndicatorConfigData,
+    SubIndicatorItem,
 )
 from app.services.core18_execution_selector import (
     get_latest_execution_for_scope,
     get_latest_grouped_execution,
     get_latest_trend_executions_by_time_value,
+    is_province_scope,
 )
 
 router = APIRouter(tags=["十八项核心制度-指标分析台"])
@@ -36,31 +39,133 @@ DEATH_TOGGLE_INDICATOR_NAMES = {
 }
 
 
+# ============================================================
+# 子指标识别辅助函数
+# ============================================================
+
+def _is_composite_parent_indicator(db: Session, name: str) -> bool:
+    """判断是否为复合指标父级：名称含'-' 且数据库中存在以此为前缀的子指标"""
+    if "-" not in name:
+        return False
+    prefix = name + "-"
+    exists = db.query(Indicator.id).filter(
+        Indicator.name.startswith(prefix),
+        Indicator.name != name,
+        Indicator.indicator_type == "core18",
+    ).first()
+    return bool(exists)
+
+
+def _get_parent_indicator_name(name: str) -> Optional[str]:
+    """获取子指标的父级名称：名称含'-' 且数据库中存在以此为前缀的父级"""
+    if "-" not in name:
+        return None
+    return name
+
+
+def _is_rate_special_indicator(name: str) -> bool:
+    """判断是否为率比型：指标名含'死亡率比'或'发生率比'"""
+    return "死亡率比" in name or "发生率比" in name
+
+
 def _resolve_template_type(ind: Indicator) -> str:
     if ind.template_type:
+        if ind.template_type == "COMPOSITE":
+            return "RATE"
         return ind.template_type
     return "RATE" if ind.calc_type == "ratio" else "STRUCTURE"
 
 
-def _is_special_death_patient_indicator(ind: Indicator) -> bool:
-    return ind.name == SPECIAL_DEATH_PATIENT_NAME
+def _build_sub_indicators_for_composite(
+    db: Session, parent_name: str
+) -> list[SubIndicatorItem]:
+    """查询某父级下所有子指标，构建子指标下拉选项"""
+    prefix = parent_name + "-"
+    subs = db.query(Indicator).filter(
+        Indicator.name.startswith(prefix),
+        Indicator.name != parent_name,
+        Indicator.indicator_type == "core18",
+    ).order_by(Indicator.id).all()
+
+    items = []
+    for sub in subs:
+        sub_name_part = sub.name[len(prefix):]
+        template = _resolve_template_type(sub)
+        if template == "STRUCTURE" or template == "STRUCTURE-special":
+            view_mode = "structure"
+        else:
+            view_mode = "rate"
+        items.append(SubIndicatorItem(
+            indicator_id=sub.id,
+            display_name=sub_name_part,
+            view_mode=view_mode,
+        ))
+    return items
+
+
+def _build_sub_indicators_for_rate_special(
+    db: Session, parent_name: str, parent_id: int
+) -> list[SubIndicatorItem]:
+    """为率比型指标构建子指标下拉选项（含率比本身和子指标）"""
+    prefix = parent_name + "-"
+    subs = db.query(Indicator).filter(
+        Indicator.name.startswith(prefix),
+        Indicator.name != parent_name,
+        Indicator.indicator_type == "core18",
+    ).order_by(Indicator.id).all()
+
+    items = []
+    items.append(SubIndicatorItem(
+        indicator_id=parent_id,
+        display_name="率比",
+        view_mode="ratio",
+    ))
+    for sub in subs:
+        sub_name_part = sub.name[len(prefix):]
+        items.append(SubIndicatorItem(
+            indicator_id=sub.id,
+            display_name=sub_name_part,
+            view_mode="rate",
+        ))
+    return items
+
+
+def _get_table_headers(ind: Indicator) -> Optional[list[str]]:
+    """获取 TABLE 类型指标的表头配置"""
+    if ind.name == SPECIAL_DEATH_PATIENT_NAME:
+        return ["患者ID", "患者姓名", "科室名称", "医院名称", "操作"]
+    return None
 
 
 def _build_config(
     ind: Indicator,
-) -> IndicatorConfigResponse:
+    db: Session,
+) -> Optional[IndicatorConfigResponse]:
     """构建单个指标的配置响应（不含子组件图表数据）"""
+    name = ind.name
     template_type = _resolve_template_type(ind)
-    is_death = ind.name in DEATH_TOGGLE_INDICATOR_NAMES
-    title = ind.name
+
+    is_parent = _is_composite_parent_indicator(db, name)
+    is_rate_special = _is_rate_special_indicator(name)
+
+    if is_parent:
+        return None
+
+    is_death = name in DEATH_TOGGLE_INDICATOR_NAMES
+    title = name
 
     cfg = IndicatorConfigResponse(
         indicator_id=ind.id,
-        indicator_name=ind.name,
-        template_type=template_type,  # type: ignore[arg-type]
+        indicator_name=name,
+        template_type=template_type,
         title=title,
         showDeathToggle=is_death,
+        is_parent_indicator=False,
     )
+
+    if template_type == "TABLE":
+        cfg.table_headers = _get_table_headers(ind)
+        return cfg
 
     subitem_cfg = ind.subitem_config if isinstance(ind.subitem_config, dict) else None
     subitem_type = subitem_cfg.get("type") if subitem_cfg else None
@@ -95,11 +200,8 @@ def _build_config(
             cfg.rateUnit = ""
             cfg.maxRate = 10
             cfg.yAxisUnit = ""
-    elif template_type == "COMPOSITE":
-        cfg.leftTitle = f"{title}细分"
-        cfg.timeComparisonTitle = f"{title}趋势分析"
-        cfg.hospitalComparisonTitle = f"{title}医院对比"
-
+        if is_rate_special:
+            cfg.sub_indicators = _build_sub_indicators_for_rate_special(db, name, ind.id)
     return cfg
 
 
@@ -133,7 +235,11 @@ def _query_trend_records(
         time_values=time_values,
         hospital_code=hospital_code,
     )
-    return [latest_by_time_value[time_value] for time_value in time_values if time_value in latest_by_time_value]
+    return [
+        latest_by_time_value[time_value]
+        for time_value in time_values
+        if time_value in latest_by_time_value
+    ]
 
 
 def _parse_month_anchor(time_value: Optional[str]) -> tuple[int, int]:
@@ -161,7 +267,7 @@ def _parse_quarter_anchor(time_value: Optional[str]) -> tuple[int, int]:
         except (ValueError, AttributeError):
             pass
     now = datetime.now()
-    return now.year, ((now.month - 1) // 3) + 1
+    return now.year, (now.month - 1) // 3 + 1
 
 
 def _shift_month(year: int, month: int, offset: int) -> tuple[int, int]:
@@ -239,18 +345,23 @@ def _extract_execution_values(exec_record: Optional[IndicatorExecution]):
     )
 
 
+def _get_hospital_result(
+    grouped_execution: Optional[IndicatorExecution],
+    hospital_code: Optional[str],
+) -> Optional[dict]:
+    """从分组执行记录的 hospital_results 中找到对应医院的数据"""
+    if not grouped_execution or not grouped_execution.hospital_results:
+        return None
+    if not isinstance(grouped_execution.hospital_results, list):
+        return None
+    for result in grouped_execution.hospital_results:
+        if isinstance(result, dict) and result.get("hospital_code") == hospital_code:
+            return result
+    return None
+
+
 def _get_primary_value(exec_record: IndicatorExecution, template_type: str) -> Optional[float]:
     if template_type in ("STRUCTURE", "STRUCTURE-special"):
-        for value in (exec_record.count, exec_record.numerator_count):
-            if value is not None:
-                return float(value)
-        return None
-
-    if template_type == "COMPOSITE":
-        subitem_cfg = exec_record.indicator.subitem_config if exec_record.indicator else None
-        subitem_type = subitem_cfg.get("type") if isinstance(subitem_cfg, dict) else None
-        if subitem_type == "COMPOSITE_RATE":
-            return float(exec_record.rate_percent) if exec_record.rate_percent is not None else None
         for value in (exec_record.count, exec_record.numerator_count):
             if value is not None:
                 return float(value)
@@ -268,9 +379,15 @@ def get_indicator_configs(
 ):
     indicators = db.query(Indicator).filter(
         Indicator.indicator_type == "core18"
-    ).order_by(Indicator.seq).all()
+    ).order_by(Indicator.seq, Indicator.id).all()
 
-    return [_build_config(ind) for ind in indicators]
+    configs = []
+    for ind in indicators:
+        cfg = _build_config(ind, db)
+        if cfg is not None:
+            configs.append(cfg)
+
+    return configs
 
 
 @router.get("/indicator-data/")
@@ -279,9 +396,9 @@ def get_indicator_data(
     hospital_code: Optional[str] = Query(None, description="医院编码"),
     time_mode: str = Query("monthly", description="时间模式: monthly | quarterly"),
     time_value: Optional[str] = Query(None, description="时间值: 2026-05 | 2026-Q1"),
-    data_type: Optional[str] = Query(None, description="数据类型: card | trend | hospital | left | all（默认all）"),
-    selected_hospitals: Optional[str] = Query(None, description="医院编码列表，逗号分隔，用于hospital类型精确过滤"),
-    death_type_filter: Optional[str] = Query(None, description="死亡类型筛选: actual=离院方式死亡, estimated=转归死亡（仅死亡相关指标支持）"),
+    data_type: Optional[str] = Query(None, description="数据类型: card | trend | hospital | left | all"),
+    selected_hospitals: Optional[str] = Query(None, description="医院编码列表，逗号分隔"),
+    death_type_filter: Optional[str] = Query(None, description="死亡类型筛选: actual=离院方式死亡, estimated=转归死亡"),
     db: Session = Depends(get_db),
 ):
     ind = db.query(Indicator).filter(
@@ -291,22 +408,74 @@ def get_indicator_data(
     if not ind:
         return {"error": f"未找到指标: {indicator_id}"}
 
+    name = ind.name
     template_type = _resolve_template_type(ind)
     current_year = datetime.now().year
+    is_province = is_province_scope(hospital_code)
 
+    # ── 分组执行记录（始终查询，用于 hospital_results 和趋势）──────────────
+    grouped_execution = get_latest_grouped_execution(
+        db=db,
+        indicator_id=ind.id,
+        time_mode=time_mode,
+        time_value=time_value,
+    )
+
+    # ── 全省 vs 具体医院的数据来源选择 ────────────────────────────────
+    # 全省：从 exec_record 直接取（group_by_hospital=False 或兜底）
+    # 具体医院：从 hospital_results 中取对应字典
     exec_record = _query_execution(db, ind.id, hospital_code, time_mode, time_value)
-    rate_percent, numerator_count, denominator_count, has_data = _extract_execution_values(exec_record)
+    hosp_result = _get_hospital_result(grouped_execution, hospital_code)
 
-    has_explicit_trend_anchor = bool(time_value)
-    trend_window = _build_month_window(_parse_month_anchor(time_value), has_explicit_trend_anchor) if time_mode == "monthly" else _build_quarter_window(_parse_quarter_anchor(time_value), has_explicit_trend_anchor)
+    # 比值/计数值的来源
+    if is_province:
+        rate_percent, numerator_count, denominator_count, has_data = _extract_execution_values(exec_record)
+    else:
+        # 具体医院：必须从 hospital_results 取
+        if hosp_result and isinstance(hosp_result, dict):
+            has_data = hosp_result.get("status") == "success"
+            if template_type in ("STRUCTURE", "STRUCTURE-special"):
+                numerator_count = hosp_result.get("numerator_count")
+                denominator_count = hosp_result.get("denominator_count")
+                count_from_result = hosp_result.get("count")
+                if count_from_result is not None:
+                    rate_percent = float(count_from_result)
+                elif numerator_count is not None:
+                    rate_percent = float(numerator_count)
+                else:
+                    rate_percent = None
+            else:
+                numerator_count = hosp_result.get("numerator_count")
+                denominator_count = hosp_result.get("denominator_count")
+                rate_percent = hosp_result.get("ratio_percent")
+                if rate_percent is not None:
+                    rate_percent = float(rate_percent)
+        else:
+            numerator_count, denominator_count, rate_percent, has_data = None, None, None, False
+
+    # ── 趋势数据（全省从 exec_record 取，具体医院从 hospital_results 取）──
+    trend_window = _build_month_window(_parse_month_anchor(time_value), bool(time_value)) if time_mode == "monthly" else _build_quarter_window(_parse_quarter_anchor(time_value), bool(time_value))
     trend_query_labels = [query_label for query_label, _ in trend_window]
     trend_display_labels = [display_label for _, display_label in trend_window]
-    records = _query_trend_records(db, ind.id, time_mode, trend_query_labels, hospital_code)
 
     trend_value_map: dict[str, Optional[float]] = {}
-    for record in records:
-        if record.time_value:
-            trend_value_map[record.time_value] = _get_primary_value(record, template_type)
+
+    if is_province:
+        records = _query_trend_records(db, ind.id, time_mode, trend_query_labels, hospital_code)
+        for record in records:
+            if record.time_value:
+                trend_value_map[record.time_value] = _get_primary_value(record, template_type)
+    else:
+        # 具体医院趋势：从各时间段的 grouped_execution 中取 hospital_results
+        for time_val in trend_query_labels:
+            time_exec = get_latest_grouped_execution(db, ind.id, time_mode, time_val)
+            time_hosp_result = _get_hospital_result(time_exec, hospital_code)
+            if time_hosp_result and isinstance(time_hosp_result, dict):
+                if template_type in ("STRUCTURE", "STRUCTURE-special"):
+                    v = time_hosp_result.get("count") or time_hosp_result.get("numerator_count")
+                else:
+                    v = time_hosp_result.get("ratio_percent")
+                trend_value_map[time_val] = float(v) if v is not None else None
 
     x_labels = trend_display_labels
     y_values = [trend_value_map.get(label) for label in trend_query_labels]
@@ -326,12 +495,7 @@ def get_indicator_data(
         year_key = time_value.split("-")[0] if time_value else str(current_year)
         hospital_comparison_actual["all"] = {"2024": None, "2025": None, "2026": None, year_key: all_value}
 
-    grouped_execution = get_latest_grouped_execution(
-        db=db,
-        indicator_id=ind.id,
-        time_mode=time_mode,
-        time_value=time_value,
-    )
+    # grouped_execution 已在上面定义，直接复用
     if grouped_execution and isinstance(grouped_execution.hospital_results, list):
         for result in grouped_execution.hospital_results:
             if not isinstance(result, dict):
@@ -349,18 +513,13 @@ def get_indicator_data(
                     hospital_value = result.get("count")
                     if hospital_value is None:
                         hospital_value = result.get("numerator_count")
-                elif template_type == "COMPOSITE" and isinstance(ind.subitem_config, dict) and ind.subitem_config.get("type") == "COMPOSITE_RATE":
-                    hospital_value = result.get("ratio_percent")
-                elif template_type == "COMPOSITE":
-                    hospital_value = result.get("count")
-                    if hospital_value is None:
-                        hospital_value = result.get("numerator_count")
                 else:
                     hospital_value = result.get("ratio_percent")
                 hospital_comparison_actual[hospital_code_value][year_key] = hospital_value
 
     base = {
         "indicator_id": ind.id,
+        "indicator_name": name,
         "template_type": template_type,
         "has_data": has_data,
         "time_mode": time_mode,
@@ -398,31 +557,31 @@ def get_indicator_data(
             },
         }
 
-    def _build_ranking_left_data(exec_rec, indicator_name: str, death_filter: Optional[str]):
-        subitem = exec_rec.subitem_data if exec_rec else None
+    def _build_ranking_left_data(subitem_data, indicator_name: str, death_filter: Optional[str]):
+        subitem = subitem_data
         if subitem and isinstance(subitem, list):
             chart_data = []
             for item in subitem:
                 if isinstance(item, dict):
-                    name = str(item.get("ranking_key") or item.get("ranking_name") or "")
+                    name_str = str(item.get("ranking_key") or item.get("ranking_name") or "")
                     value = float(item.get("ranking_value") or 0)
                     if indicator_name == "住院患者死亡疾病谱" and death_filter:
                         item_death_type = item.get("death_type") or ""
                         expected_type = "离院方式死亡" if death_filter == "actual" else "转归死亡"
                         if item_death_type != expected_type:
                             continue
-                    chart_data.append({"name": name, "value": value})
+                    chart_data.append({"name": name_str, "value": value})
             chart_data.sort(key=lambda item: item["value"], reverse=True)
             return {"actual": chart_data, "estimated": []}
         return {"actual": [], "estimated": []}
 
-    def _build_multi_ranking_left_data(exec_rec, subitem_config: dict):
-        subitem = exec_rec.subitem_data if exec_rec else []
+    def _build_multi_ranking_left_data(subitem_data, subitem_config: dict):
+        subitem = subitem_data if subitem_data is not None else []
         rankings_cfg = subitem_config.get("rankings", [])
         result = {}
-        for cfg in rankings_cfg:
-            prefix = cfg.get("key_prefix", "")
-            ranking_id = cfg.get("id", "")
+        for cfg_item in rankings_cfg:
+            prefix = cfg_item.get("key_prefix", "")
+            ranking_id = cfg_item.get("id", "")
             items = []
             for item in subitem:
                 if isinstance(item, dict):
@@ -435,64 +594,50 @@ def get_indicator_data(
                         "value": float(item.get("ranking_value") or 0),
                     })
             items.sort(key=lambda item: item["value"], reverse=True)
-            result[ranking_id] = {"actual": items[:cfg.get("limit", 20)], "estimated": []}
+            result[ranking_id] = {"actual": items[:cfg_item.get("limit", 20)], "estimated": []}
         return result
 
-    def _build_composite_left_data(exec_rec, time_val):
-        subitem = exec_rec.subitem_data if exec_rec else None
-        if subitem and isinstance(subitem, list) and len(subitem) > 0:
-            first = subitem[0]
-            if "key" in first:
-                data_types = [
-                    {"key": str(item.get("key", "")), "name": str(item.get("name", ""))}
-                    for item in subitem if isinstance(item, dict)
-                ]
-                left_data = {
-                    "actual": {
-                        time_val: {str(item.get("key", "")): float(item.get("rate") or 0) for item in subitem if isinstance(item, dict)}
-                    },
-                    "estimated": {},
-                }
-                return data_types, left_data
-            return None, _build_ranking_left_data(exec_rec, ind.name, death_type_filter)
-        return [], {"actual": {time_val: {}}, "estimated": {}}
-
     if data_type == "left":
+        # STRUCTURE/STRUCTURE-special 的排行榜数据来自 hospital_results 的 subitem_data
+        left_subitem_data = None
+        left_total = 0
+        if is_province:
+            if exec_record and exec_record.subitem_data:
+                left_subitem_data = exec_record.subitem_data
+            left_total = exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0)
+        else:
+            if hosp_result and isinstance(hosp_result, dict):
+                left_subitem_data = hosp_result.get("subitem_data")
+                left_total = hosp_result.get("count") or hosp_result.get("numerator_count") or 0
+            else:
+                left_subitem_data = None
+                left_total = 0
+
         if template_type == "STRUCTURE-special":
             subitem_cfg = ind.subitem_config if isinstance(ind.subitem_config, dict) else None
             if subitem_cfg and subitem_cfg.get("type") == "COMPOSITE_MULTI_RANKING":
-                multi_data = _build_multi_ranking_left_data(exec_record, subitem_cfg)
+                multi_data = _build_multi_ranking_left_data(left_subitem_data, subitem_cfg)
                 return {
                     **base,
-                    "totalCount": exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0),
+                    "totalCount": left_total,
                     "multiRankingData": multi_data,
                     "leftData": {},
                     "leftData1": {},
                     "leftData2": {},
                 }
-            subitem = exec_record.subitem_data if exec_record else None
-            left1, left2 = _build_special_left_data(subitem)
-            total = exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0)
+            left1, left2 = _build_special_left_data(left_subitem_data)
             return {
                 **base,
-                "totalCount": total,
+                "totalCount": left_total,
                 "leftData": left1,
                 "leftData1": left1,
                 "leftData2": left2,
             }
         if template_type == "STRUCTURE":
-            total = exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0)
             return {
                 **base,
-                "totalCount": total,
-                "leftData": _build_ranking_left_data(exec_record, ind.name, death_type_filter),
-            }
-        if template_type == "COMPOSITE":
-            data_types, left_data = _build_composite_left_data(exec_record, time_value or str(current_year))
-            return {
-                **base,
-                "leftData": left_data,
-                "dataTypes": data_types,
+                "totalCount": left_total,
+                "leftData": _build_ranking_left_data(left_subitem_data, ind.name, death_type_filter),
             }
         return {
             **base,
@@ -521,12 +666,14 @@ def get_indicator_data(
                 "estimated": {},
             },
         }
+    # data_type == "all" 的 STRUCTURE/STRUCTURE-special 回退分支（同 left 数据源）
+    # left_subitem_data / left_total 已在上面设置好，直接复用
     if template_type == "STRUCTURE":
         return {
             **base,
             "numerator_count": numerator_count,
-            "totalCount": exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0),
-            "leftData": _build_ranking_left_data(exec_record, ind.name, death_type_filter),
+            "totalCount": left_total,
+            "leftData": _build_ranking_left_data(left_subitem_data, ind.name, death_type_filter),
             "timeTrendData": {
                 "actual": {"years": x_labels, "data": y_values},
                 "estimated": {"years": x_labels, "data": []},
@@ -539,11 +686,11 @@ def get_indicator_data(
     if template_type == "STRUCTURE-special":
         subitem_cfg = ind.subitem_config if isinstance(ind.subitem_config, dict) else None
         if subitem_cfg and subitem_cfg.get("type") == "COMPOSITE_MULTI_RANKING":
-            multi_data = _build_multi_ranking_left_data(exec_record, subitem_cfg)
+            multi_data = _build_multi_ranking_left_data(left_subitem_data, subitem_cfg)
             return {
                 **base,
                 "numerator_count": numerator_count,
-                "totalCount": exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0),
+                "totalCount": left_total,
                 "multiRankingData": multi_data,
                 "leftData": {},
                 "leftData1": {},
@@ -557,37 +704,17 @@ def get_indicator_data(
                     "estimated": {},
                 },
             }
-        subitem = exec_record.subitem_data if exec_record else None
-        left1, left2 = _build_special_left_data(subitem)
-        total = exec_record.count if exec_record and exec_record.count is not None else (numerator_count or 0)
+        left1, left2 = _build_special_left_data(left_subitem_data)
         return {
             **base,
             "numerator_count": numerator_count,
-            "totalCount": total,
+            "totalCount": left_total,
             "leftData": left1,
             "leftData1": left1,
             "leftData2": left2,
             "timeTrendData": {
                 "actual": {"years": x_labels, "data": y_values},
                 "estimated": {"years": x_labels, "data": []},
-            },
-            "hospitalComparisonData": {
-                "actual": hospital_comparison_actual,
-                "estimated": {},
-            },
-        }
-    if template_type == "COMPOSITE":
-        data_types, left_data = _build_composite_left_data(exec_record, time_value or str(current_year))
-        trend_key = "rates" if isinstance(ind.subitem_config, dict) and ind.subitem_config.get("type") == "COMPOSITE_RATE" else "data"
-        return {
-            **base,
-            "rate_percent": rate_percent,
-            "numerator_count": numerator_count,
-            "dataTypes": data_types,
-            "leftData": left_data,
-            "timeTrendData": {
-                "actual": {"years": x_labels, trend_key: y_values},
-                "estimated": {"years": x_labels, trend_key: []},
             },
             "hospitalComparisonData": {
                 "actual": hospital_comparison_actual,
