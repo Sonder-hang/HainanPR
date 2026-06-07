@@ -133,7 +133,12 @@ def _calculate_rate_ratio(
     time_mode: str,
     time_value: Optional[str],
 ) -> Optional[float]:
-    """对子指标的最新执行记录即时计算率比: max(rate) / min(rate)"""
+    """对子指标的最新执行记录即时计算率比: max(rate) / min(rate)
+
+    - 过滤 None 和 0 的率（避免数据缺失或除零）
+    - 至少需要 2 个有效率才计算率比
+    - 结果四舍五入保留 4 位小数
+    """
     rates = []
     is_province = is_province_scope(hospital_code)
     for sub in subs:
@@ -145,7 +150,7 @@ def _calculate_rate_ratio(
                 time_value=time_value,
                 hospital_code=hospital_code,
             )
-            if exec_rec and exec_rec.rate_percent is not None:
+            if exec_rec and exec_rec.rate_percent not in (None, 0):
                 rates.append(float(exec_rec.rate_percent))
         else:
             grouped = get_latest_grouped_execution(
@@ -155,10 +160,10 @@ def _calculate_rate_ratio(
             hosp_result = _get_hospital_result(grouped, hospital_code)
             if hosp_result and isinstance(hosp_result, dict):
                 rp = hosp_result.get("ratio_percent")
-                if rp is not None:
+                if rp not in (None, 0):
                     rates.append(float(rp))
     if len(rates) >= 2:
-        return max(rates) / min(rates)
+        return round(max(rates) / min(rates), 4)
     return None
 
 
@@ -934,7 +939,7 @@ def _get_rate_ratio_data(
                     time_mode=time_mode, time_value=time_val,
                     hospital_code=hospital_code,
                 )
-                if exec_rec and exec_rec.rate_percent is not None:
+                if exec_rec and exec_rec.rate_percent not in (None, 0):
                     sub_rates.append(float(exec_rec.rate_percent))
             else:
                 sub_grouped = get_latest_grouped_execution(
@@ -944,10 +949,10 @@ def _get_rate_ratio_data(
                 sub_hosp_result = _get_hospital_result(sub_grouped, hospital_code)
                 if sub_hosp_result and isinstance(sub_hosp_result, dict):
                     rp = sub_hosp_result.get("ratio_percent")
-                    if rp is not None:
+                    if rp not in (None, 0):
                         sub_rates.append(float(rp))
         if len(sub_rates) >= 2:
-            trend_ratios.append(max(sub_rates) / min(sub_rates))
+            trend_ratios.append(round(max(sub_rates) / min(sub_rates), 4))
         else:
             trend_ratios.append(None)
 
@@ -998,12 +1003,12 @@ def _get_rate_ratio_data(
                     for sub_res in sub_grouped.hospital_results:
                         if isinstance(sub_res, dict) and sub_res.get("hospital_code") == hosp_code:
                             rp = sub_res.get("ratio_percent")
-                            if rp is not None:
+                            if rp not in (None, 0):
                                 sub_rates_hosp.append(float(rp))
                             break
             hosp_ratio = None
             if len(sub_rates_hosp) >= 2:
-                hosp_ratio = max(sub_rates_hosp) / min(sub_rates_hosp)
+                hosp_ratio = round(max(sub_rates_hosp) / min(sub_rates_hosp), 4)
             if hosp_code not in hospital_comparison_actual:
                 hospital_comparison_actual[hosp_code] = {"2024": None, "2025": None, "2026": None}
             hospital_comparison_actual[hosp_code][year_key] = hosp_ratio

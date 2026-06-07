@@ -158,7 +158,12 @@ def _calculate_rate_ratio(
     time_mode: str,
     time_value: Optional[str],
 ) -> Optional[float]:
-    """对子指标的最新执行记录即时计算率比: max(rate) / min(rate)"""
+    """对子指标的最新执行记录即时计算率比: max(rate) / min(rate)
+
+    - 过滤 None 和 0 的率（避免数据缺失或除零）
+    - 至少需要 2 个有效率才计算率比
+    - 结果四舍五入保留 4 位小数
+    """
     rates = []
     is_province = is_province_scope(hospital_code)
 
@@ -171,7 +176,7 @@ def _calculate_rate_ratio(
                 time_value=time_value,
                 hospital_code=hospital_code,
             )
-            if exec_rec and exec_rec.rate_percent is not None:
+            if exec_rec and exec_rec.rate_percent not in (None, 0):
                 rates.append(float(exec_rec.rate_percent))
         else:
             grouped = get_latest_grouped_execution(
@@ -181,10 +186,10 @@ def _calculate_rate_ratio(
             hosp_result = _get_hospital_result(grouped, hospital_code)
             if hosp_result and isinstance(hosp_result, dict):
                 rp = hosp_result.get("ratio_percent")
-                if rp is not None:
+                if rp not in (None, 0):
                     rates.append(float(rp))
     if len(rates) >= 2:
-        return max(rates) / min(rates)
+        return round(max(rates) / min(rates), 4)
     return None
 
 
@@ -238,10 +243,11 @@ def _build_virtual_parent_card(
     if is_province:
         if exec_rec:
             if template_type in ("STRUCTURE", "STRUCTURE-special"):
-                # STRUCTURE 类型：优先取 count，回退 numerator_count，都没有则无数据
                 count_value = exec_rec.count
                 numerator_count = exec_rec.numerator_count
                 has_data = (count_value is not None) or (numerator_count is not None)
+            elif is_rate_ratio:
+                has_data = rate_ratio is not None
             else:
                 has_data = True
                 rate_percent = float(exec_rec.rate_percent) if exec_rec.rate_percent is not None else None
@@ -258,6 +264,8 @@ def _build_virtual_parent_card(
                 count_value = hosp_result.get("count")
                 numerator_count_hosp = hosp_result.get("numerator_count")
                 has_data = (count_value is not None) or (numerator_count_hosp is not None)
+            elif is_rate_ratio:
+                has_data = rate_ratio is not None
             else:
                 has_data = hosp_result.get("status") == "success"
                 numerator_count = hosp_result.get("numerator_count")

@@ -4,6 +4,22 @@
     <header class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <h1 class="text-[24px] font-bold text-[#1F264D]">十八项核心制度总览</h1>
       <div class="flex flex-wrap items-center gap-2.5">
+        <div class="flex items-center gap-1">
+          <span class="text-[14px] text-[#596080]">显示无数据指标</span>
+          <label class="relative inline-flex h-6 w-11 cursor-pointer items-center">
+            <input
+              v-model="hideNoData"
+              type="checkbox"
+              class="peer sr-only"
+            />
+            <span
+              class="mx-1 h-4 w-11 rounded-full bg-[#D1D5DB] transition-colors peer-checked:bg-[#2E57E5]"
+            ></span>
+            <span
+              class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"
+            ></span>
+          </label>
+        </div>
         <CheckboxGroup
           v-model="draftSelectedIndicators"
           :options="indicatorOptions"
@@ -267,6 +283,9 @@ const draftHospital = ref('province')
 const draftSearchKeyword = ref('')
 const draftSelectedIndicators = ref<number[]>([])
 
+// 是否显示无数据指标（直接响应式，无需点击查询）
+const hideNoData = ref(false)
+
 const appliedHospital = ref('province')
 const appliedSearchKeyword = ref('')
 const appliedSelectedIndicators = ref<number[]>([])
@@ -308,6 +327,11 @@ const filteredIndicators = computed(() => {
   // 按选中指标过滤
   if (selected.length > 0) {
     filtered = filtered.filter(ind => selected.includes(ind.id))
+  }
+
+  // 隐藏无数据指标：hideNoData=false（默认）时，仅显示有数据的指标
+  if (!hideNoData.value) {
+    filtered = filtered.filter(ind => ind.has_data)
   }
 
   return filtered
