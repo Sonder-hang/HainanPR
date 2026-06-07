@@ -322,6 +322,8 @@ const fetchHospitals = async () => {
 const props = defineProps({
   indicator_id: { type: Number, default: null },
   virtual_parent_id: { type: Number, default: null },
+  /** 是否为虚拟父指标（RATE-special 率比型 / RATE 复合率型），影响 buildApiParams 的路由逻辑 */
+  is_virtual_parent: { type: Boolean, default: false },
   title: { type: String, default: '指标分析' },
   leftTitle: { type: String, default: '百分率直观展示' },
   timeComparisonTitle: { type: String, default: '趋势分析' },
@@ -386,12 +388,17 @@ const isFetchingHospital = ref(false)
 const helpVisible = ref(false)
 const subIndicatorId = ref<number | null>(null)
 
+// props.indicator_id 仅在以下情况有值：普通 RATE（非虚拟父）
+// 复合率型（RATE，虚拟父）：indicator_id = undefined，靠 subIndicatorId 驱动 fetch
+// 率比型（RATE-special）：indicator_id = undefined，靠 subIndicatorId 驱动 fetch
+// 避免组件挂载时 props.indicator_id=undefined 覆盖掉初始正确的 subIndicatorId
 watch(() => props.indicator_id, (newId) => {
   if (newId != null) {
     subIndicatorId.value = newId
   }
 }, { immediate: true })
 
+// subIndicatorId 变化时刷新所有图表数据
 watch(subIndicatorId, () => {
   fetchCardData()
   fetchTrendData()
@@ -400,24 +407,25 @@ watch(subIndicatorId, () => {
 
 /**
  * 构建 API 请求参数：
- * - virtual_parent_id 非 null（RATE-special 率比型虚拟父）：
- *   - indicator_id = virtual_parent_id（负数，后端识别为率比型虚拟父）
+ * - is_virtual_parent = true（虚拟父指标，RATE-special 率比型 / RATE 复合率型）：
+ *   - indicator_id = virtual_parent_id（负数，后端识别为虚拟父）
  *   - sub_indicator:
  *       - 无（或等于 virtual_parent_id）→ 用户选"率比"，不传 sub_indicator，后端计算率比
  *       - 正数 → 用户选子指标，传子指标ID，后端返回子指标数据
- * - 其他场景（普通 RATE、虚拟父 RATE/STRUCTURE、普通子指标）：
- *   - indicator_id = props.indicator_id（已是子指标 ID）
+ * - is_virtual_parent = false（普通 RATE 指标 / 普通子指标）：
+ *   - indicator_id = props.indicator_id（已是子指标 ID，正数）
  */
 function buildApiParams(extra: Record<string, unknown> = {}): Record<string, unknown> {
   const base: Record<string, unknown> = { ...extra }
-  if (props.virtual_parent_id != null) {
-    // RATE-special：indicator_id 固定为虚拟父（负数）
+  if (props.is_virtual_parent) {
+    // 虚拟父指标（RATE-special 率比型 / RATE 复合率型）
     base.indicator_id = props.virtual_parent_id
     // sub_indicator 仅在用户选择了具体子指标（正数）时才传递
     if (subIndicatorId.value != null && subIndicatorId.value !== props.virtual_parent_id) {
       base.sub_indicator = subIndicatorId.value
     }
   } else {
+    // 普通 RATE 指标：直接用子指标的 indicator_id
     base.indicator_id = props.indicator_id
   }
   return base

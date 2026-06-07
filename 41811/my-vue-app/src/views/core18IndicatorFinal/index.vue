@@ -3,16 +3,6 @@
     <header class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-2">
         <h1 class="text-[24px] font-bold text-[#1F264D]">指标分析台</h1>
-        <!-- 子指标下拉框：始终位于指标名右侧（h1标题右侧） -->
-        <select
-          v-if="currentConfig?.sub_indicators?.length"
-          v-model="selectedSubIndicatorId"
-          class="h-8 min-w-[200px] rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
-        >
-          <option v-for="sub in currentConfig.sub_indicators" :key="sub.indicator_id" :value="sub.indicator_id">
-            {{ sub.display_name }}
-          </option>
-        </select>
       </div>
       <div class="flex flex-wrap items-center gap-2.5">
         <select
@@ -110,9 +100,9 @@
       <IndicatorAnalysisCategory2
         v-else-if="currentConfig.template_type === 'RATE'"
         :key="`rate-${appliedIndicatorId}-${selectedSubIndicatorId}`"
-        :indicator_id="currentConfig.is_virtual_parent
-          ? (selectedSubIndicatorId ?? currentConfig.sub_indicators?.[0]?.indicator_id ?? undefined)
-          : (appliedIndicatorId ?? undefined)"
+        :is_virtual_parent="currentConfig.is_virtual_parent ?? false"
+        :virtual_parent_id="currentConfig.is_virtual_parent ? (appliedIndicatorId ?? undefined) : undefined"
+        :indicator_id="currentConfig.is_virtual_parent ? (selectedSubIndicatorId ?? undefined) : (appliedIndicatorId ?? undefined)"
         :init-time-mode="routeTimeMode ?? undefined"
         :init-time-value="routeTimeValue ?? undefined"
         :init-hospital="appliedHospital"
@@ -125,6 +115,7 @@
         :rate-unit="currentConfig.rateUnit || '%'"
         :max-rate="currentConfig.maxRate || 100"
         :y-axis-unit="currentConfig.yAxisUnit || '%'"
+        :sub_indicators="currentConfig.sub_indicators || []"
         :card-data="currentConfig.data.cardData || {}"
         :time-trend-data="currentConfig.data.timeTrendData || {}"
         :hospital-comparison-data="currentConfig.data.hospitalComparisonData || {}"
@@ -133,6 +124,7 @@
       <IndicatorAnalysisCategory2
         v-else-if="currentConfig.template_type === 'RATE-special'"
         :key="`rate-special-${appliedIndicatorId}-${selectedSubIndicatorId}`"
+        :is_virtual_parent="currentConfig.is_virtual_parent ?? false"
         :virtual_parent_id="currentConfig.is_virtual_parent ? (appliedIndicatorId ?? undefined) : undefined"
         :indicator_id="selectedSubIndicatorId ?? undefined"
         :init-time-mode="routeTimeMode ?? undefined"
@@ -147,6 +139,7 @@
         :rate-unit="currentConfig.rateUnit || ''"
         :max-rate="currentConfig.maxRate || 10"
         :y-axis-unit="currentConfig.yAxisUnit || ''"
+        :sub_indicators="currentConfig.sub_indicators || []"
         :card-data="currentConfig.data.cardData || {}"
         :time-trend-data="currentConfig.data.timeTrendData || {}"
         :hospital-comparison-data="currentConfig.data.hospitalComparisonData || {}"
@@ -288,7 +281,7 @@ function syncSubIndicator(indicatorId: number) {
     return
   }
   // 率比型：默认选中"率比"选项（第一个选项，indicator_id 等于虚拟父指标ID）
-  // 复合率型/计数型：默认选中第一个子指标
+  // 复合率型/计数型：默认选中第一个子指标（通过 virtual_parent_id 路由）
   selectedSubIndicatorId.value = config.sub_indicators[0].indicator_id
 }
 

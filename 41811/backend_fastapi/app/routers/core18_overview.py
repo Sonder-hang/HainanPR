@@ -108,23 +108,38 @@ def _get_sub_card_data(
     time_value: Optional[str],
 ) -> SubIndicatorCardItem:
     """获取单个子指标的执行数据（用于总览卡片内嵌展示）"""
-    exec_rec = get_latest_execution_for_scope(
-        db=db,
-        indicator_id=sub.id,
-        time_mode=time_mode,
-        time_value=time_value,
-        hospital_code=hospital_code,
-    )
     template_type = _resolve_template_type(sub)
     rate_percent = None
     count_val = None
+    is_province = is_province_scope(hospital_code)
 
-    if exec_rec:
-        if template_type in ("STRUCTURE", "STRUCTURE-special"):
-            rate_percent = None
-            count_val = exec_rec.count
-        else:
-            rate_percent = float(exec_rec.rate_percent) if exec_rec.rate_percent is not None else None
+    if is_province:
+        exec_rec = get_latest_execution_for_scope(
+            db=db,
+            indicator_id=sub.id,
+            time_mode=time_mode,
+            time_value=time_value,
+            hospital_code=hospital_code,
+        )
+        if exec_rec:
+            if template_type in ("STRUCTURE", "STRUCTURE-special"):
+                count_val = exec_rec.count if exec_rec.count is not None else exec_rec.numerator_count
+            else:
+                rate_percent = float(exec_rec.rate_percent) if exec_rec.rate_percent is not None else None
+    else:
+        grouped = get_latest_grouped_execution(
+            db=db, indicator_id=sub.id,
+            time_mode=time_mode, time_value=time_value,
+        )
+        hosp_result = _get_hospital_result(grouped, hospital_code)
+        if hosp_result and isinstance(hosp_result, dict):
+            if template_type in ("STRUCTURE", "STRUCTURE-special"):
+                count_val = hosp_result.get("count")
+                if count_val is None:
+                    count_val = hosp_result.get("numerator_count")
+            else:
+                rp = hosp_result.get("ratio_percent")
+                rate_percent = float(rp) if rp is not None else None
 
     sub_name_part = sub.name.split("--", 1)[1] if "--" in sub.name else sub.name
     return SubIndicatorCardItem(
@@ -145,16 +160,29 @@ def _calculate_rate_ratio(
 ) -> Optional[float]:
     """对子指标的最新执行记录即时计算率比: max(rate) / min(rate)"""
     rates = []
+    is_province = is_province_scope(hospital_code)
+
     for sub in subs:
-        exec_rec = get_latest_execution_for_scope(
-            db=db,
-            indicator_id=sub.id,
-            time_mode=time_mode,
-            time_value=time_value,
-            hospital_code=hospital_code,
-        )
-        if exec_rec and exec_rec.rate_percent is not None:
-            rates.append(float(exec_rec.rate_percent))
+        if is_province:
+            exec_rec = get_latest_execution_for_scope(
+                db=db,
+                indicator_id=sub.id,
+                time_mode=time_mode,
+                time_value=time_value,
+                hospital_code=hospital_code,
+            )
+            if exec_rec and exec_rec.rate_percent is not None:
+                rates.append(float(exec_rec.rate_percent))
+        else:
+            grouped = get_latest_grouped_execution(
+                db=db, indicator_id=sub.id,
+                time_mode=time_mode, time_value=time_value,
+            )
+            hosp_result = _get_hospital_result(grouped, hospital_code)
+            if hosp_result and isinstance(hosp_result, dict):
+                rp = hosp_result.get("ratio_percent")
+                if rp is not None:
+                    rates.append(float(rp))
     if len(rates) >= 2:
         return max(rates) / min(rates)
     return None
@@ -209,10 +237,13 @@ def _build_virtual_parent_card(
 
     if is_province:
         if exec_rec:
-            has_data = True
             if template_type in ("STRUCTURE", "STRUCTURE-special"):
+                # STRUCTURE 类型：优先取 count，回退 numerator_count，都没有则无数据
                 count_value = exec_rec.count
+                numerator_count = exec_rec.numerator_count
+                has_data = (count_value is not None) or (numerator_count is not None)
             else:
+                has_data = True
                 rate_percent = float(exec_rec.rate_percent) if exec_rec.rate_percent is not None else None
                 numerator_count = exec_rec.numerator_count
                 denominator_count = exec_rec.denominator_count
@@ -223,10 +254,12 @@ def _build_virtual_parent_card(
         )
         hosp_result = _get_hospital_result(grouped, hospital_code)
         if hosp_result and isinstance(hosp_result, dict):
-            has_data = hosp_result.get("status") == "success"
             if template_type in ("STRUCTURE", "STRUCTURE-special"):
                 count_value = hosp_result.get("count")
+                numerator_count_hosp = hosp_result.get("numerator_count")
+                has_data = (count_value is not None) or (numerator_count_hosp is not None)
             else:
+                has_data = hosp_result.get("status") == "success"
                 numerator_count = hosp_result.get("numerator_count")
                 denominator_count = hosp_result.get("denominator_count")
                 rp = hosp_result.get("ratio_percent")
@@ -281,10 +314,13 @@ def _build_regular_card(
 
     if is_province:
         if exec_rec:
-            has_data = True
             if template_type in ("STRUCTURE", "STRUCTURE-special"):
+                # STRUCTURE 类型：优先取 count，回退 numerator_count，都没有则无数据
                 count_value = exec_rec.count
+                numerator_count = exec_rec.numerator_count
+                has_data = (count_value is not None) or (numerator_count is not None)
             else:
+                has_data = True
                 rate_percent = float(exec_rec.rate_percent) if exec_rec.rate_percent is not None else None
                 numerator_count = exec_rec.numerator_count
                 denominator_count = exec_rec.denominator_count
@@ -295,10 +331,12 @@ def _build_regular_card(
         )
         hosp_result = _get_hospital_result(grouped, hospital_code)
         if hosp_result and isinstance(hosp_result, dict):
-            has_data = hosp_result.get("status") == "success"
             if template_type in ("STRUCTURE", "STRUCTURE-special"):
                 count_value = hosp_result.get("count")
+                numerator_count_hosp = hosp_result.get("numerator_count")
+                has_data = (count_value is not None) or (numerator_count_hosp is not None)
             else:
+                has_data = hosp_result.get("status") == "success"
                 numerator_count = hosp_result.get("numerator_count")
                 denominator_count = hosp_result.get("denominator_count")
                 rp = hosp_result.get("ratio_percent")
@@ -429,12 +467,14 @@ def get_execution_data(
 
         if is_province_scope(hospital_code):
             if exec_record:
-                has_data = True
                 if template_type in ("STRUCTURE", "STRUCTURE-special"):
+                    # STRUCTURE 类型：优先取 count，回退 numerator_count，都没有则无数据
                     numerator_count = exec_record.numerator_count
-                    denominator_count = exec_record.denominator_count
-                    rate_percent = float(exec_record.count) if exec_record.count is not None else None
+                    count_from_record = exec_record.count
+                    rate_percent = float(count_from_record) if count_from_record is not None else None
+                    has_data = (count_from_record is not None) or (numerator_count is not None)
                 else:
+                    has_data = True
                     rate_percent = float(exec_record.rate_percent) if exec_record and exec_record.rate_percent is not None else None
                     numerator_count = exec_record.numerator_count if exec_record else None
                     denominator_count = exec_record.denominator_count if exec_record else None
@@ -444,12 +484,13 @@ def get_execution_data(
             )
             hosp_result = _get_hospital_result(grouped, hospital_code)
             if hosp_result and isinstance(hosp_result, dict):
-                has_data = hosp_result.get("status") == "success"
                 if template_type in ("STRUCTURE", "STRUCTURE-special"):
                     numerator_count = hosp_result.get("numerator_count")
-                    denominator_count = hosp_result.get("denominator_count")
-                    rate_percent = float(hosp_result.get("count")) if hosp_result.get("count") is not None else None
+                    count_from_hosp = hosp_result.get("count")
+                    rate_percent = float(count_from_hosp) if count_from_hosp is not None else None
+                    has_data = (count_from_hosp is not None) or (numerator_count is not None)
                 else:
+                    has_data = hosp_result.get("status") == "success"
                     numerator_count = hosp_result.get("numerator_count")
                     denominator_count = hosp_result.get("denominator_count")
                     rp = hosp_result.get("ratio_percent")

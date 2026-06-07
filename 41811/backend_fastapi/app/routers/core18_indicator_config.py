@@ -135,16 +135,28 @@ def _calculate_rate_ratio(
 ) -> Optional[float]:
     """对子指标的最新执行记录即时计算率比: max(rate) / min(rate)"""
     rates = []
+    is_province = is_province_scope(hospital_code)
     for sub in subs:
-        exec_rec = get_latest_execution_for_scope(
-            db=db,
-            indicator_id=sub.id,
-            time_mode=time_mode,
-            time_value=time_value,
-            hospital_code=hospital_code,
-        )
-        if exec_rec and exec_rec.rate_percent is not None:
-            rates.append(float(exec_rec.rate_percent))
+        if is_province:
+            exec_rec = get_latest_execution_for_scope(
+                db=db,
+                indicator_id=sub.id,
+                time_mode=time_mode,
+                time_value=time_value,
+                hospital_code=hospital_code,
+            )
+            if exec_rec and exec_rec.rate_percent is not None:
+                rates.append(float(exec_rec.rate_percent))
+        else:
+            grouped = get_latest_grouped_execution(
+                db=db, indicator_id=sub.id,
+                time_mode=time_mode, time_value=time_value,
+            )
+            hosp_result = _get_hospital_result(grouped, hospital_code)
+            if hosp_result and isinstance(hosp_result, dict):
+                rp = hosp_result.get("ratio_percent")
+                if rp is not None:
+                    rates.append(float(rp))
     if len(rates) >= 2:
         return max(rates) / min(rates)
     return None
@@ -916,13 +928,24 @@ def _get_rate_ratio_data(
     for time_val in trend_query_labels:
         sub_rates = []
         for sub in children:
-            exec_rec = get_latest_execution_for_scope(
-                db=db, indicator_id=sub.id,
-                time_mode=time_mode, time_value=time_val,
-                hospital_code=hospital_code,
-            )
-            if exec_rec and exec_rec.rate_percent is not None:
-                sub_rates.append(float(exec_rec.rate_percent))
+            if is_province:
+                exec_rec = get_latest_execution_for_scope(
+                    db=db, indicator_id=sub.id,
+                    time_mode=time_mode, time_value=time_val,
+                    hospital_code=hospital_code,
+                )
+                if exec_rec and exec_rec.rate_percent is not None:
+                    sub_rates.append(float(exec_rec.rate_percent))
+            else:
+                sub_grouped = get_latest_grouped_execution(
+                    db=db, indicator_id=sub.id,
+                    time_mode=time_mode, time_value=time_val,
+                )
+                sub_hosp_result = _get_hospital_result(sub_grouped, hospital_code)
+                if sub_hosp_result and isinstance(sub_hosp_result, dict):
+                    rp = sub_hosp_result.get("ratio_percent")
+                    if rp is not None:
+                        sub_rates.append(float(rp))
         if len(sub_rates) >= 2:
             trend_ratios.append(max(sub_rates) / min(sub_rates))
         else:
