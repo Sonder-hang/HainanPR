@@ -73,30 +73,64 @@
 
     <!-- 指标卡片区域 -->
     <div v-else class="flex-1 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-6 min-h-0 grid-auto-rows-[140px] items-start grid-rows-none overflow-y-auto content-start">
-      <!-- 动态渲染指标卡片 -->
-      <div
-        v-for="indicator in filteredIndicators"
-        :key="indicator.id"
-        class="relative cursor-pointer rounded-lg bg-white p-5 shadow-sm transition-transform hover:-translate-y-1 min-h-[140px] self-start"
-        @click="goToIndicatorFinal(indicator)"
-      >
-        <!-- 指标解释按钮 -->
-        <button
-          type="button"
-          class="absolute right-2 top-2 z-10 h-6 w-6 rounded-full text-[#596080] transition-colors hover:bg-[#F2F5FA] hover:text-[#0A6EFD]"
-          @click.stop="openIndicatorDetail(indicator)"
-          title="查看指标详情"
+        <!-- 动态渲染指标卡片 -->
+        <div
+          v-for="indicator in filteredIndicators"
+          :key="indicator.id"
+          class="relative cursor-pointer rounded-lg bg-white p-5 shadow-sm transition-transform hover:-translate-y-1 min-h-[140px] self-start"
+          @click="goToIndicatorFinal(indicator)"
         >
-          <svg class="mx-auto h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
+          <!-- 指标解释按钮 -->
+          <button
+            type="button"
+            class="absolute right-2 top-2 z-10 h-6 w-6 rounded-full text-[#596080] transition-colors hover:bg-[#F2F5FA] hover:text-[#0A6EFD]"
+            @click.stop="openIndicatorDetail(indicator)"
+            title="查看指标详情"
+          >
+            <svg class="mx-auto h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
 
-        <div class="mb-2 text-[14px] text-[#596080]">{{ indicator.name }}</div>
-        <div class="mb-1 text-[28px] font-bold" :class="indicator.has_data ? 'text-[#2E57E5]' : 'text-[#B8BCCC]'">
-          {{ getIndicatorValue(indicator) }}
+          <!-- 指标名称：虚拟父指标显示父指标名，普通指标显示原名 -->
+          <div class="mb-2 text-[14px] text-[#596080]">{{ indicator.is_virtual_parent && indicator.parent_name ? indicator.parent_name : indicator.name }}</div>
+
+          <!-- 率比型虚拟父指标：直接显示率比 -->
+          <template v-if="indicator.is_virtual_parent && indicator.rate_ratio != null">
+            <div class="mb-1 text-[28px] font-bold text-[#2E57E5]">{{ indicator.rate_ratio.toFixed(2) }}</div>
+            <div class="text-[12px] text-[#B8BCCC]">率比</div>
+          </template>
+
+          <!-- 复合率型/计数型虚拟父指标：可折叠展示子指标列表 -->
+          <template v-else-if="indicator.is_virtual_parent && indicator.sub_indicators && indicator.sub_indicators.length > 0">
+            <div class="mb-1 text-[28px] font-bold" :class="indicator.has_data ? 'text-[#2E57E5]' : 'text-[#B8BCCC]'">
+              {{ getIndicatorValue(indicator) }}
+            </div>
+            <!-- 子指标折叠列表 -->
+            <div class="mt-2 space-y-1">
+              <div
+                v-for="sub in indicator.sub_indicators.slice(0, 3)"
+                :key="sub.indicator_id"
+                class="flex items-center justify-between text-[12px]"
+              >
+                <span class="text-[#596080]">{{ sub.display_name }}</span>
+                <span class="font-medium" :class="sub.rate_percent != null ? 'text-[#1F264D]' : 'text-[#B8BCCC]'">
+                  {{ sub.rate_percent != null ? `${sub.rate_percent.toFixed(1)}%` : (sub.count != null ? sub.count : '-') }}
+                </span>
+              </div>
+              <div v-if="indicator.sub_indicators.length > 3" class="text-[12px] text-[#B8BCCC]">
+                +{{ indicator.sub_indicators.length - 3 }} 项子指标
+              </div>
+            </div>
+          </template>
+
+          <!-- 普通指标 -->
+          <template v-else>
+            <div class="mb-1 text-[28px] font-bold" :class="indicator.has_data ? 'text-[#2E57E5]' : 'text-[#B8BCCC]'">
+              {{ getIndicatorValue(indicator) }}
+            </div>
+          </template>
         </div>
-      </div>
     </div>
 
     <!-- 空状态 -->
@@ -282,11 +316,18 @@ const filteredIndicators = computed(() => {
 // 获取指标值
 const getIndicatorValue = (indicator: IndicatorCardItem) => {
   if (!indicator.has_data) return '暂无数据'
+  if (indicator.is_virtual_parent && indicator.rate_ratio != null) {
+    return indicator.rate_ratio.toFixed(2)
+  }
+  if (indicator.is_virtual_parent && indicator.sub_indicators && indicator.sub_indicators.length > 0) {
+    const firstSub = indicator.sub_indicators[0]
+    if (firstSub.rate_percent != null) return `${firstSub.rate_percent.toFixed(1)}%`
+    if (firstSub.count != null) return firstSub.count.toLocaleString()
+    return '暂无数据'
+  }
   if (indicator.calc_type === 'ratio') {
-    // 比值型指标：显示百分比
     return indicator.rate_percent != null ? `${indicator.rate_percent.toFixed(1)}%` : '暂无数据'
   } else {
-    // 计数型指标：显示 count 字段
     return indicator.count?.toLocaleString() ?? '暂无数据'
   }
 }
@@ -374,14 +415,21 @@ const goToIndicatorFinal = (indicator: IndicatorCardItem) => {
     closeDrawer()
   }
 
+  const query: Record<string, string> = {
+    indicatorId: String(indicator.id),
+    timeMode: appliedTimeMode.value,
+    timeValue: getAppliedTimeValue(),
+    hospital: appliedHospital.value,
+  }
+
+  // 虚拟父指标：传递 parent_name 用于定位虚拟父指标
+  if (indicator.is_virtual_parent && indicator.parent_name) {
+    query.parentName = indicator.parent_name
+  }
+
   router.push({
     path: '/indicator-final',
-    query: {
-      indicatorId: String(indicator.id),
-      timeMode: appliedTimeMode.value,
-      timeValue: getAppliedTimeValue(),
-      hospital: appliedHospital.value,
-    },
+    query,
   })
 }
 

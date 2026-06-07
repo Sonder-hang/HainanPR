@@ -3,10 +3,11 @@
     <header class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-2">
         <h1 class="text-[24px] font-bold text-[#1F264D]">指标分析台</h1>
+        <!-- 子指标下拉框：始终位于指标名右侧（h1标题右侧） -->
         <select
           v-if="currentConfig?.sub_indicators?.length"
           v-model="selectedSubIndicatorId"
-          class="h-8 min-w-[180px] rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+          class="h-8 min-w-[200px] rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
         >
           <option v-for="sub in currentConfig.sub_indicators" :key="sub.indicator_id" :value="sub.indicator_id">
             {{ sub.display_name }}
@@ -54,8 +55,10 @@
 
       <IndicatorAnalysis
         v-else-if="currentConfig.template_type === 'STRUCTURE'"
-        :key="`structure-${appliedIndicatorId}`"
-        :indicator_id="appliedIndicatorId ?? undefined"
+        :key="`structure-${appliedIndicatorId}-${selectedSubIndicatorId}`"
+        :indicator_id="currentConfig.is_virtual_parent
+          ? (selectedSubIndicatorId ?? currentConfig.sub_indicators?.[0]?.indicator_id ?? undefined)
+          : (appliedIndicatorId ?? undefined)"
         :init-time-mode="routeTimeMode ?? undefined"
         :init-time-value="routeTimeValue ?? undefined"
         :init-hospital="appliedHospital"
@@ -66,7 +69,8 @@
         :time-comparison-title="currentConfig.timeComparisonTitle || `${currentConfig.title}趋势分析`"
         :hospital-comparison-title="currentConfig.hospitalComparisonTitle || `${currentConfig.title}医院对比`"
         :ranking-mode="currentConfig.rankingMode || 'single'"
-        :show-death-toggle="currentConfig.showDeathToggle"
+        :show-death-toggle="false"
+        :sub_indicators="currentConfig.sub_indicators || []"
         :left-data="currentConfig.data.leftData || {}"
         :time-trend-data="currentConfig.data.timeTrendData || {}"
         :hospital-comparison-data="currentConfig.data.hospitalComparisonData || {}"
@@ -76,8 +80,10 @@
 
       <IndicatorAnalysis
         v-else-if="currentConfig.template_type === 'STRUCTURE-special'"
-        :key="`structure-special-${appliedIndicatorId}`"
-        :indicator_id="appliedIndicatorId ?? undefined"
+        :key="`structure-special-${appliedIndicatorId}-${selectedSubIndicatorId}`"
+        :indicator_id="currentConfig.is_virtual_parent
+          ? (selectedSubIndicatorId ?? currentConfig.sub_indicators?.[0]?.indicator_id ?? undefined)
+          : (appliedIndicatorId ?? undefined)"
         :init-time-mode="routeTimeMode ?? undefined"
         :init-time-value="routeTimeValue ?? undefined"
         :init-hospital="appliedHospital"
@@ -90,7 +96,8 @@
         :time-comparison-title="currentConfig.timeComparisonTitle || `${currentConfig.title}趋势分析`"
         :hospital-comparison-title="currentConfig.hospitalComparisonTitle || `${currentConfig.title}医院对比`"
         :ranking-mode="currentConfig.rankingMode || 'double'"
-        :show-death-toggle="currentConfig.showDeathToggle"
+        :show-death-toggle="false"
+        :sub_indicators="currentConfig.sub_indicators || []"
         :left-data="(currentConfig.rankingMode === 'double' || !currentConfig.rankingMode) ? (currentConfig.data.leftData1 || {}) : {}"
         :left-data1="currentConfig.data.leftData1 || {}"
         :left-data2="currentConfig.data.leftData2 || {}"
@@ -102,8 +109,10 @@
 
       <IndicatorAnalysisCategory2
         v-else-if="currentConfig.template_type === 'RATE'"
-        :key="`rate-${appliedIndicatorId}`"
-        :indicator_id="appliedIndicatorId ?? undefined"
+        :key="`rate-${appliedIndicatorId}-${selectedSubIndicatorId}`"
+        :indicator_id="currentConfig.is_virtual_parent
+          ? (selectedSubIndicatorId ?? currentConfig.sub_indicators?.[0]?.indicator_id ?? undefined)
+          : (appliedIndicatorId ?? undefined)"
         :init-time-mode="routeTimeMode ?? undefined"
         :init-time-value="routeTimeValue ?? undefined"
         :init-hospital="appliedHospital"
@@ -124,7 +133,8 @@
       <IndicatorAnalysisCategory2
         v-else-if="currentConfig.template_type === 'RATE-special'"
         :key="`rate-special-${appliedIndicatorId}-${selectedSubIndicatorId}`"
-        :indicator_id="selectedSubIndicatorId ?? appliedIndicatorId ?? undefined"
+        :virtual_parent_id="currentConfig.is_virtual_parent ? (appliedIndicatorId ?? undefined) : undefined"
+        :indicator_id="selectedSubIndicatorId ?? undefined"
         :init-time-mode="routeTimeMode ?? undefined"
         :init-time-value="routeTimeValue ?? undefined"
         :init-hospital="appliedHospital"
@@ -230,7 +240,25 @@ function findIndicatorId(id: number): number | null {
   return found ? found.indicator_id : null
 }
 
-function applyIndicatorIdFromRouteQuery(indicatorId: unknown) {
+function findIndicatorIdByParentName(parentName: string): number | null {
+  const found = indicatorConfigs.value.find(
+    config => config.is_virtual_parent && config.parent_name === parentName,
+  )
+  return found ? found.indicator_id : null
+}
+
+function applyIndicatorIdFromRouteQuery(indicatorId: unknown, parentName?: string) {
+  // 如果有 parentName，优先通过父指标名查找
+  if (parentName && typeof parentName === 'string') {
+    const found = findIndicatorIdByParentName(parentName)
+    if (found !== null) {
+      draftIndicatorId.value = found
+      appliedIndicatorId.value = found
+      syncSubIndicator(found)
+      return
+    }
+  }
+
   if (typeof indicatorId !== 'string') {
     return
   }
@@ -255,11 +283,13 @@ function applyIndicatorIdFromRouteQuery(indicatorId: unknown) {
 
 function syncSubIndicator(indicatorId: number) {
   const config = indicatorConfigs.value.find(c => c.indicator_id === indicatorId)
-  if (config?.sub_indicators?.length) {
-    selectedSubIndicatorId.value = config.sub_indicators[0].indicator_id
-  } else {
+  if (!config?.sub_indicators?.length) {
     selectedSubIndicatorId.value = null
+    return
   }
+  // 率比型：默认选中"率比"选项（第一个选项，indicator_id 等于虚拟父指标ID）
+  // 复合率型/计数型：默认选中第一个子指标
+  selectedSubIndicatorId.value = config.sub_indicators[0].indicator_id
 }
 
 function applySelection() {
@@ -303,7 +333,7 @@ onMounted(async () => {
   })
   await loadHospitals()
 
-  applyIndicatorIdFromRouteQuery(route.query.indicatorId)
+  applyIndicatorIdFromRouteQuery(route.query.indicatorId, route.query.parentName as string | undefined)
   applyHospitalFromRouteQuery(route.query.hospital)
 
   if (!appliedIndicatorId.value) {
@@ -316,7 +346,7 @@ onMounted(async () => {
   }
 })
 
-watch(() => route.query.indicatorId, indicatorId => applyIndicatorIdFromRouteQuery(indicatorId))
+watch(() => route.query.indicatorId, (indicatorId) => applyIndicatorIdFromRouteQuery(indicatorId, route.query.parentName as string | undefined))
 watch(() => route.query.hospital, hospital => applyHospitalFromRouteQuery(hospital))
 watch(appliedIndicatorId, (newId) => {
   if (newId != null) {

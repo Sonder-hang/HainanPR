@@ -45,10 +45,11 @@ class IndicatorConfigResponse(BaseModel):
     hospitalComparisonTitle: str = "医院对比"
     totalCountLabel: Optional[str] = None
     rankingMode: Optional[Literal["single", "double", "multi"]] = None
-    is_parent_indicator: bool = False
+    is_virtual_parent: bool = False
     parent_name: Optional[str] = None
     sub_indicators: Optional[List[SubIndicatorItem]] = None
     table_headers: Optional[List[str]] = None
+    rate_ratio_value: Optional[float] = None
     data: IndicatorConfigData = IndicatorConfigData()
 
     class Config:

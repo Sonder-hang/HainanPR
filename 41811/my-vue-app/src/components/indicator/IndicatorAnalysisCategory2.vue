@@ -321,6 +321,7 @@ const fetchHospitals = async () => {
 
 const props = defineProps({
   indicator_id: { type: Number, default: null },
+  virtual_parent_id: { type: Number, default: null },
   title: { type: String, default: '指标分析' },
   leftTitle: { type: String, default: '百分率直观展示' },
   timeComparisonTitle: { type: String, default: '趋势分析' },
@@ -397,6 +398,31 @@ watch(subIndicatorId, () => {
   fetchHospitalData()
 })
 
+/**
+ * 构建 API 请求参数：
+ * - virtual_parent_id 非 null（RATE-special 率比型虚拟父）：
+ *   - indicator_id = virtual_parent_id（负数，后端识别为率比型虚拟父）
+ *   - sub_indicator:
+ *       - 无（或等于 virtual_parent_id）→ 用户选"率比"，不传 sub_indicator，后端计算率比
+ *       - 正数 → 用户选子指标，传子指标ID，后端返回子指标数据
+ * - 其他场景（普通 RATE、虚拟父 RATE/STRUCTURE、普通子指标）：
+ *   - indicator_id = props.indicator_id（已是子指标 ID）
+ */
+function buildApiParams(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const base: Record<string, unknown> = { ...extra }
+  if (props.virtual_parent_id != null) {
+    // RATE-special：indicator_id 固定为虚拟父（负数）
+    base.indicator_id = props.virtual_parent_id
+    // sub_indicator 仅在用户选择了具体子指标（正数）时才传递
+    if (subIndicatorId.value != null && subIndicatorId.value !== props.virtual_parent_id) {
+      base.sub_indicator = subIndicatorId.value
+    }
+  } else {
+    base.indicator_id = props.indicator_id
+  }
+  return base
+}
+
 // ---- 筛选器选项 ----
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i)
 const quarterYearOptions = Array.from({ length: 7 }, (_, i) => currentYear - 3 + i)
@@ -432,21 +458,26 @@ const buildHospitalTimeValue = () => {
 
 // ---- 三个独立拉取函数 ----
 const fetchCardData = async () => {
-  const targetId = subIndicatorId.value ?? props.indicator_id
-  if (!targetId) return
+  const params = buildApiParams({
+    time_mode: cardQueryType.value,
+    time_value: buildCardTimeValue(),
+    data_type: 'card',
+    hospital_code: appliedHospital.value === 'all' ? undefined : appliedHospital.value,
+  })
+  if (!params.indicator_id) return
   isFetchingCard.value = true
   try {
-    const res = await core18Api.getIndicatorData({
-      indicator_id: targetId,
-      time_mode: cardQueryType.value,
-      time_value: buildCardTimeValue(),
-      data_type: 'card',
-      hospital_code: appliedHospital.value === 'all' ? undefined : appliedHospital.value,
-    }) as any
+    const res = await core18Api.getIndicatorData(params as any) as any
     if (res) {
-      localCardData.value = res.cardData || {}
-      const dataSource = localCardData.value[cardDataType.value] || {}
-      currentRate.value = dataSource[buildCardTimeValue()] ?? dataSource[cardSelectedYearForMonth.value] ?? 0
+      // 率比场景：API 返回 rate_ratio_value
+      if (props.virtual_parent_id != null && res.rate_ratio_value != null) {
+        currentRate.value = res.rate_ratio_value
+        localCardData.value = {}
+      } else {
+        localCardData.value = res.cardData || {}
+        const dataSource = localCardData.value[cardDataType.value] || {}
+        currentRate.value = dataSource[buildCardTimeValue()] ?? dataSource[cardSelectedYearForMonth.value] ?? 0
+      }
     }
   } catch (e) {
     console.error('获取卡片数据失败:', e)
@@ -456,17 +487,16 @@ const fetchCardData = async () => {
 }
 
 const fetchTrendData = async () => {
-  const targetId = subIndicatorId.value ?? props.indicator_id
-  if (!targetId) return
+  const params = buildApiParams({
+    time_mode: timeComparisonType.value,
+    time_value: buildTrendTimeValue(),
+    data_type: 'trend',
+    hospital_code: appliedHospital.value === 'all' ? undefined : appliedHospital.value,
+  })
+  if (!params.indicator_id) return
   isFetchingTrend.value = true
   try {
-    const res = await core18Api.getIndicatorData({
-      indicator_id: targetId,
-      time_mode: timeComparisonType.value,
-      time_value: buildTrendTimeValue(),
-      data_type: 'trend',
-      hospital_code: appliedHospital.value === 'all' ? undefined : appliedHospital.value,
-    }) as any
+    const res = await core18Api.getIndicatorData(params as any) as any
     if (res) {
       localTimeTrendData.value = res.timeTrendData || {}
       updateTimeComparisonChart()
@@ -479,17 +509,16 @@ const fetchTrendData = async () => {
 }
 
 const fetchHospitalData = async () => {
-  const targetId = subIndicatorId.value ?? props.indicator_id
-  if (!targetId) return
+  const params = buildApiParams({
+    time_mode: hospitalComparisonType.value,
+    time_value: buildHospitalTimeValue(),
+    data_type: 'hospital',
+    selected_hospitals: selectedHospitals.value.join(','),
+  })
+  if (!params.indicator_id) return
   isFetchingHospital.value = true
   try {
-    const res = await core18Api.getIndicatorData({
-      indicator_id: targetId,
-      time_mode: hospitalComparisonType.value,
-      time_value: buildHospitalTimeValue(),
-      data_type: 'hospital',
-      selected_hospitals: selectedHospitals.value.join(','),
-    }) as any
+    const res = await core18Api.getIndicatorData(params as any) as any
     if (res) {
       localHospitalComparisonData.value = res.hospitalComparisonData || {}
       updateHospitalComparisonChart()

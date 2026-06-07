@@ -40,6 +40,16 @@ export interface IndicatorExecutionData {
   denominator_count: number | null
 }
 
+// ======================== 总览卡片子指标类型 ========================
+
+export interface SubIndicatorCardItem {
+  indicator_id: number
+  display_name: string
+  rate_percent: number | null
+  count: number | null
+  calc_type: 'ratio' | 'count'
+}
+
 export interface IndicatorCardItem {
   id: number
   name: string
@@ -55,6 +65,11 @@ export interface IndicatorCardItem {
   denominator_count: number | null
   // 计数型指标字段
   count: number | null
+  // 虚拟父指标相关字段
+  is_virtual_parent: boolean
+  parent_name?: string
+  sub_indicators?: SubIndicatorCardItem[]
+  rate_ratio?: number | null
 }
 
 export interface OverviewDataResponse {
@@ -122,16 +137,19 @@ export interface IndicatorConfigItem {
   hospitalComparisonTitle: string
   totalCountLabel?: string
   rankingMode?: 'single' | 'double' | 'multi'
-  is_parent_indicator: boolean
+  // 虚拟父指标相关字段
+  is_virtual_parent: boolean
   parent_name?: string
   sub_indicators?: SubIndicatorItem[]
   table_headers?: string[]
+  rate_ratio_value?: number | null
   data: IndicatorConfigData
 }
 
 export interface IndicatorDataResponse {
   indicator_id: number
-  template_type: TemplateType
+  indicator_name?: string
+  template_type?: TemplateType
   has_data: boolean
   rate_percent?: number | null
   numerator_count?: number | null
@@ -145,6 +163,12 @@ export interface IndicatorDataResponse {
   leftData2?: Record<string, any>
   multiRankingData?: Record<string, any>
   dataTypes?: Array<{ name: string; key: string }>
+  // 虚拟父指标相关字段
+  is_virtual_parent?: boolean
+  parent_name?: string
+  rate_ratio_value?: number | null
+  time_mode?: string
+  time_value?: string
 }
 
 // ======================== API 服务 ========================

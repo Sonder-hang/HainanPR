@@ -421,7 +421,6 @@ const updateMultiCharts = () => {
   for (const [rankingId, chart] of Object.entries(multiCharts.value)) {
     if (!chart) continue
     const data = multiRankingData.value[rankingId]?.actual || []
-    if (!data.length) continue
     const sortedData = [...data].sort((a, b) => a.value - b.value)
     chart.setOption(makeBarOption(sortedData, getMultiRankingColor(rankingId)), true)
   }
@@ -515,7 +514,10 @@ const makeBarOption = (data: { name: string; value: number }[], color: string) =
 const updateSingleChart = () => {
   if (!singleChart) return
   const actualData = localLeftData.value?.actual
-  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) return
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) {
+    singleChart.setOption(makeBarOption([], props.leftChartColor), true)
+    return
+  }
   const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   singleChart.setOption(makeBarOption(sortedData, props.leftChartColor), true)
@@ -524,7 +526,10 @@ const updateSingleChart = () => {
 const updateLeftChart1 = () => {
   if (!leftChart1) return
   const actualData = localLeftData1.value?.actual
-  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) return
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) {
+    leftChart1.setOption(makeBarOption([], props.leftChartColor1), true)
+    return
+  }
   const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   leftChart1.setOption(makeBarOption(sortedData, props.leftChartColor1), true)
@@ -533,7 +538,10 @@ const updateLeftChart1 = () => {
 const updateLeftChart2 = () => {
   if (!leftChart2) return
   const actualData = localLeftData2.value?.actual
-  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) return
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) {
+    leftChart2.setOption(makeBarOption([], props.leftChartColor2), true)
+    return
+  }
   const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   leftChart2.setOption(makeBarOption(sortedData, props.leftChartColor2), true)
@@ -548,14 +556,11 @@ const updateLeftChart = () => {
 const updateTimeComparisonChart = () => {
   if (!timeComparisonChart) return
   const trendData = localTimeTrendData.value[timeComparisonDataType.value]
-  if (!trendData) return
-  // STRUCTURE 趋势格式: { years: [...], data: [...] }（STRUCTURE 用 count 而非 rate）
-  // RATE 趋势格式: { years: [...], rates: [...] }（比值型用 rate_percent）
-  const xAxisData: string[] = trendData.years || []
-  let seriesData: number[] = trendData.data || []
+  const xAxisData: string[] = trendData?.years || []
+  let seriesData: number[] = trendData?.data || []
 
   // 若 data 为空或长度不匹配，用 rates 兜底（比值型指标）
-  if (!seriesData.length && trendData.rates) {
+  if (!seriesData.length && trendData?.rates) {
     seriesData = trendData.rates
   }
 
@@ -586,8 +591,7 @@ const updateTimeComparisonChart = () => {
 
 const updateHospitalComparisonChart = () => {
   if (!hospitalComparisonChart) return
-  const hospitalDataMap = localHospitalComparisonData.value[hospitalComparisonDataType.value]
-  if (!hospitalDataMap) return
+  const hospitalDataMap = localHospitalComparisonData.value[hospitalComparisonDataType.value] || {}
   const yearKey = hospitalComparisonType.value === 'monthly'
     ? String(selectedComparisonYearForMonth.value)
     : selectedComparisonYear.value
