@@ -94,10 +94,7 @@
         <table class="w-full text-left border-collapse">
           <thead class="bg-[#e8eef9] sticky top-0 z-10">
             <tr>
-              <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">患者ID</th>
-              <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">患者姓名</th>
-              <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">科室名称</th>
-              <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">医院名称</th>
+              <th v-for="header in displayHeaders" :key="header" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ header }}</th>
               <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide text-right">操作</th>
             </tr>
           </thead>
@@ -198,6 +195,7 @@ import { core18Api, type DeathPatient } from '@/api/core18'
 const props = defineProps({
   title: { type: String, default: '死亡或出院预期转归不良患者' },
   hospitalCode: { type: String, default: '' },
+  tableHeaders: { type: Array as () => string[], default: () => [] },
 })
 
 // 时间筛选选项
@@ -232,6 +230,9 @@ const pageSize = ref(20)
 const modalVisible = ref(false)
 const helpVisible = ref(false)
 const currentPatient = ref<DeathPatient | null>(null)
+
+const DEFAULT_HEADERS = ['患者ID', '患者姓名', '科室名称', '医院名称']
+const displayHeaders = computed(() => props.tableHeaders.length ? props.tableHeaders : DEFAULT_HEADERS)
 
 // 后端数据
 const patientsData = ref<DeathPatient[]>([])

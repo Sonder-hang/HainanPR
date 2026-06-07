@@ -12,6 +12,15 @@ class Core18OverviewResponse(BaseModel):
     failed_indicators: int = 0
 
 
+class SubIndicatorCardItem(BaseModel):
+    """子指标卡片数据（虚拟父指标内嵌展示用）"""
+    indicator_id: int
+    display_name: str
+    rate_percent: Optional[float] = None
+    count: Optional[int] = None
+    calc_type: str = "ratio"
+
+
 class IndicatorCardItem(BaseModel):
     """指标卡片数据 - 包含指标信息和执行数据"""
     id: int
@@ -30,6 +39,11 @@ class IndicatorCardItem(BaseModel):
     denominator_count: Optional[int] = None
     # 计数型指标字段
     count: Optional[int] = None
+    # 虚拟父指标相关字段
+    is_virtual_parent: bool = False  # 是否虚拟父指标卡片
+    parent_name: Optional[str] = None  # 虚拟父指标名
+    sub_indicators: Optional[List[SubIndicatorCardItem]] = None  # 子指标列表（虚拟父指标时填充）
+    rate_ratio: Optional[float] = None  # 率比值（率比型虚拟父指标时填充）
 
     class Config:
         from_attributes = True

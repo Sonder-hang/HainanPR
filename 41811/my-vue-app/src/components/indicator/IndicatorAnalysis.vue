@@ -3,6 +3,15 @@
     <header class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-2">
         <h1 class="text-[24px] font-bold text-[#1F264D]">{{ title }}</h1>
+        <select
+          v-if="sub_indicators.length"
+          v-model="subIndicatorId"
+          class="h-8 min-w-[160px] rounded border border-[#D1D5DB] bg-white px-3 text-[14px] text-[#374151] outline-none focus:border-[#2E57E5] focus:ring-1 focus:ring-[#2E57E5]"
+        >
+          <option v-for="sub in sub_indicators" :key="sub.indicator_id" :value="sub.indicator_id">
+            {{ sub.display_name }}
+          </option>
+        </select>
         <button
           @click="helpVisible = true"
           class="w-5 h-5 rounded-full bg-[#b8c9e8]/60 text-[#596080] text-[12px] font-medium flex items-center justify-center hover:bg-[#2E57E5] hover:text-white transition-colors cursor-pointer"
@@ -98,6 +107,14 @@
               <div>
                 <h3 class="mb-2 text-[14px] font-semibold" :style="{ color: leftChartColor2 }">{{ leftChartTitle2 }}</h3>
                 <div ref="leftChartRef2" style="height: 450px;"></div>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="rankingMode === 'multi'">
+            <div class="grid grid-cols-2 gap-3">
+              <div v-for="(_, rankingId) in multiRankingData" :key="rankingId">
+                <h3 class="mb-2 text-[14px] font-semibold" :style="{ color: getMultiRankingColor(rankingId) }">{{ getMultiRankingTitle(rankingId) }}</h3>
+                <div :ref="el => registerMultiChartRef(el as HTMLElement | null, rankingId)" style="height: 450px;"></div>
               </div>
             </div>
           </template>
@@ -280,10 +297,11 @@ import { core18Api } from '@/api/core18'
 defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
-  indicator_key: { type: String, default: '' },
+  indicator_id: { type: Number, default: null },
   title: { type: String, default: '指标分析' },
   leftTitle: { type: String, default: '排行榜' },
   leftChartTitle: { type: String, default: '排行榜' },
+  leftChartLimit: { type: Number, default: 20 },
   leftChartTitle1: { type: String, default: '排行榜1' },
   leftChartTitle2: { type: String, default: '排行榜2' },
   leftChartColor: { type: String, default: '#2E57E5' },
@@ -297,6 +315,7 @@ const props = defineProps({
   initTimeMode: { type: String, default: '' },
   initTimeValue: { type: String, default: '' },
   initHospital: { type: String, default: '' },
+  sub_indicators: { type: Array as () => Array<{ indicator_id: number; display_name: string; view_mode: string }>, default: () => [] },
 })
 
 const now = new Date()
@@ -319,14 +338,6 @@ const fetchHospitals = async () => {
 const selectedHospitals = ref<string[]>(['all'])
 // 当前生效的医院范围（由 initHospital 初始化，受顶部筛选器控制）
 const appliedHospital = ref('all')
-watch(() => props.initHospital, (val) => {
-  if (val) appliedHospital.value = val
-}, { immediate: true })
-// appliedHospital 变化时重新拉取排行榜和趋势数据（不受子组件自身时间筛选影响）
-watch(appliedHospital, () => {
-  fetchLeftData()
-  fetchTrendData()
-})
 const leftQueryType = ref<'monthly' | 'quarterly'>('monthly')
 const leftSelectedYearForMonth = ref(currentYear)
 const leftSelectedMonth = ref(1)
@@ -336,6 +347,7 @@ const leftDataType = ref('actual')
 const currentTotalCount = ref(0)
 const timeComparisonType = ref<'monthly' | 'quarterly'>('monthly')
 const timeComparisonDataType = ref('actual')
+const hasConsumedRouteTrendAnchor = ref(false)
 const hospitalComparisonType = ref<'monthly' | 'quarterly'>('quarterly')
 const selectedComparisonYear = ref(currentYear)
 const selectedComparisonQuarter = ref('1')
@@ -343,17 +355,81 @@ const selectedComparisonYearForMonth = ref(currentYear)
 const selectedComparisonMonth = ref(1)
 const hospitalComparisonDataType = ref('actual')
 
+watch(() => props.initHospital, (val) => {
+  if (val) appliedHospital.value = val
+}, { immediate: true })
+watch(
+  () => [props.indicator_id, props.initTimeMode, props.initTimeValue],
+  () => {
+    hasConsumedRouteTrendAnchor.value = false
+    if (props.initTimeMode === 'quarterly' || props.initTimeMode === 'monthly') {
+      timeComparisonType.value = props.initTimeMode
+    }
+  },
+  { immediate: true }
+)
+// appliedHospital 变化时重新拉取排行榜和趋势数据（不受子组件自身时间筛选影响）
+watch(appliedHospital, () => {
+  fetchLeftData()
+  fetchTrendData()
+})
+
 const singleChartRef = ref<HTMLElement | null>(null)
 const leftChartRef1 = ref<HTMLElement | null>(null)
 const leftChartRef2 = ref<HTMLElement | null>(null)
 const timeComparisonChartRef = ref<HTMLElement | null>(null)
 const hospitalComparisonChartRef = ref<HTMLElement | null>(null)
 const helpVisible = ref(false)
+const subIndicatorId = ref<number | null>(null)
+
+watch(() => props.indicator_id, (newId) => {
+  if (newId != null) {
+    subIndicatorId.value = newId
+  }
+}, { immediate: true })
+
+watch(subIndicatorId, () => {
+  fetchLeftData()
+  fetchTrendData()
+  fetchHospitalData()
+})
 let singleChart: echarts.ECharts | null = null
 let leftChart1: echarts.ECharts | null = null
 let leftChart2: echarts.ECharts | null = null
 let timeComparisonChart: echarts.ECharts | null = null
 let hospitalComparisonChart: echarts.ECharts | null = null
+
+// Multi-ranking mode state (COMPOSITE_MULTI_RANKING)
+const multiRankingData = ref<Record<string, any>>({})
+const multiChartRefs = ref<Record<string, HTMLElement | null>>({})
+const multiCharts = ref<Record<string, echarts.ECharts | null>>({})
+const multiRankingConfig = ref<Array<{ id: string; name: string; color: string }>>([])
+
+const getMultiRankingColor = (rankingId: string) => {
+  return multiRankingConfig.value.find(r => r.id === rankingId)?.color || '#2E57E5'
+}
+const getMultiRankingTitle = (rankingId: string) => {
+  return multiRankingConfig.value.find(r => r.id === rankingId)?.name || rankingId
+}
+const registerMultiChartRef = (el: HTMLElement | null, rankingId: string) => {
+  multiChartRefs.value[rankingId] = el
+  if (el && !multiCharts.value[rankingId]) {
+    multiCharts.value[rankingId] = echarts.init(el)
+  }
+}
+const updateMultiCharts = () => {
+  for (const [rankingId, chart] of Object.entries(multiCharts.value)) {
+    if (!chart) continue
+    const data = multiRankingData.value[rankingId]?.actual || []
+    const sortedData = [...data].sort((a, b) => a.value - b.value)
+    chart.setOption(makeBarOption(sortedData, getMultiRankingColor(rankingId)), true)
+  }
+}
+const resizeMultiCharts = () => {
+  for (const chart of Object.values(multiCharts.value)) {
+    chart?.resize()
+  }
+}
 
 const getDynamicYAxisMax = (data: number[]) => {
   const max = Math.max(...data.filter(v => typeof v === 'number' && !isNaN(v)))
@@ -402,9 +478,22 @@ const buildLeftTimeValue = () => {
 }
 
 const buildTrendTimeValue = () => {
-  return timeComparisonType.value === 'monthly'
-    ? `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    : `${currentYear}-Q${Math.ceil((now.getMonth() + 1) / 3)}`
+  const shouldUseRouteAnchor = !hasConsumedRouteTrendAnchor.value
+    && !!props.initTimeMode
+    && !!props.initTimeValue
+    && props.initTimeMode === timeComparisonType.value
+
+  if (shouldUseRouteAnchor) {
+    hasConsumedRouteTrendAnchor.value = true
+    return props.initTimeValue
+  }
+
+  const currentDate = new Date()
+  const year = currentDate.getFullYear()
+  if (timeComparisonType.value === 'monthly') {
+    return `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+  }
+  return `${year}-Q${Math.ceil((currentDate.getMonth() + 1) / 3)}`
 }
 
 const buildHospitalTimeValue = () => {
@@ -424,13 +513,12 @@ const makeBarOption = (data: { name: string; value: number }[], color: string) =
 
 const updateSingleChart = () => {
   if (!singleChart) return
-  // leftData 格式：{ actual: [{name, value}, ...], estimated: [] }
-  // 直接取 actual 作为图表数据源（无需 time_val 嵌套）
   const actualData = localLeftData.value?.actual
-  if (!actualData) return
-  const data: { name: string; value: number }[] = Array.isArray(actualData)
-    ? actualData
-    : []
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) {
+    singleChart.setOption(makeBarOption([], props.leftChartColor), true)
+    return
+  }
+  const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   singleChart.setOption(makeBarOption(sortedData, props.leftChartColor), true)
 }
@@ -438,8 +526,11 @@ const updateSingleChart = () => {
 const updateLeftChart1 = () => {
   if (!leftChart1) return
   const actualData = localLeftData1.value?.actual
-  if (!actualData) return
-  const data: { name: string; value: number }[] = Array.isArray(actualData) ? actualData : []
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) {
+    leftChart1.setOption(makeBarOption([], props.leftChartColor1), true)
+    return
+  }
+  const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   leftChart1.setOption(makeBarOption(sortedData, props.leftChartColor1), true)
 }
@@ -447,8 +538,11 @@ const updateLeftChart1 = () => {
 const updateLeftChart2 = () => {
   if (!leftChart2) return
   const actualData = localLeftData2.value?.actual
-  if (!actualData) return
-  const data: { name: string; value: number }[] = Array.isArray(actualData) ? actualData : []
+  if (!actualData || !Array.isArray(actualData) || actualData.length === 0) {
+    leftChart2.setOption(makeBarOption([], props.leftChartColor2), true)
+    return
+  }
+  const data: { name: string; value: number }[] = actualData
   const sortedData = [...data].sort((a, b) => a.value - b.value)
   leftChart2.setOption(makeBarOption(sortedData, props.leftChartColor2), true)
 }
@@ -456,26 +550,18 @@ const updateLeftChart2 = () => {
 const updateLeftChart = () => {
   if (props.rankingMode === 'single') updateSingleChart()
   else if (props.rankingMode === 'double') { updateLeftChart1(); updateLeftChart2() }
+  else if (props.rankingMode === 'multi') updateMultiCharts()
 }
 
 const updateTimeComparisonChart = () => {
   if (!timeComparisonChart) return
   const trendData = localTimeTrendData.value[timeComparisonDataType.value]
-  if (!trendData) return
-  // STRUCTURE 趋势格式: { years: [...], data: [...] }（STRUCTURE 用 count 而非 rate）
-  // RATE 趋势格式: { years: [...], rates: [...] }（比值型用 rate_percent）
-  // 前端统一取 years 和 data 字段（data 中已含各年/各期聚合值）
-  const xAxisData: string[] = trendData.years || []
-  let seriesData: number[] = trendData.data || []
+  const xAxisData: string[] = trendData?.years || []
+  let seriesData: number[] = trendData?.data || []
 
   // 若 data 为空或长度不匹配，用 rates 兜底（比值型指标）
-  if (!seriesData.length && trendData.rates) {
+  if (!seriesData.length && trendData?.rates) {
     seriesData = trendData.rates
-  }
-
-  // 季度模式：从 data 数组中提取当年数据（跳过前2个历史年数据点）
-  if (timeComparisonType.value === 'quarterly' && seriesData.length >= 2) {
-    seriesData = seriesData.slice(2) // 保留当年 Q1-Q4
   }
 
   timeComparisonChart.setOption({
@@ -505,8 +591,7 @@ const updateTimeComparisonChart = () => {
 
 const updateHospitalComparisonChart = () => {
   if (!hospitalComparisonChart) return
-  const hospitalDataMap = localHospitalComparisonData.value[hospitalComparisonDataType.value]
-  if (!hospitalDataMap) return
+  const hospitalDataMap = localHospitalComparisonData.value[hospitalComparisonDataType.value] || {}
   const yearKey = hospitalComparisonType.value === 'monthly'
     ? String(selectedComparisonYearForMonth.value)
     : selectedComparisonYear.value
@@ -548,18 +633,21 @@ const handleResize = () => {
   leftChart2?.resize()
   timeComparisonChart?.resize()
   hospitalComparisonChart?.resize()
+  resizeMultiCharts()
 }
 
 const fetchLeftData = async () => {
-  if (!props.indicator_key) return
+  const targetId = subIndicatorId.value ?? props.indicator_id
+  if (!targetId) return
   isFetchingLeft.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: targetId,
       time_mode: leftQueryType.value,
       time_value: buildLeftTimeValue(),
       data_type: 'left',
       hospital_code: appliedHospital.value === 'all' ? undefined : appliedHospital.value,
+      death_type_filter: props.showDeathToggle ? leftDataType.value as 'actual' | 'estimated' : undefined,
     }) as any
     if (res) {
       // leftData 格式（backend 已规范化为）：
@@ -575,8 +663,26 @@ const fetchLeftData = async () => {
         localLeftData1.value = {}
         localLeftData2.value = {}
       } else if (props.rankingMode === 'double') {
-        localLeftData1.value = res.leftData1 || { actual: [], estimated: [] }
-        localLeftData2.value = res.leftData2 || { actual: [], estimated: [] }
+        // 优先使用 leftData1/leftData2；若均为空，降级使用 leftData（单一排行场景）
+        const raw1 = res.leftData1 || {}
+        const raw2 = res.leftData2 || {}
+        const hasData1 = !!(raw1.actual && (raw1.actual.length > 0 || Object.keys(raw1.actual).length > 0))
+        const hasData2 = !!(raw2.actual && (raw2.actual.length > 0 || Object.keys(raw2.actual).length > 0))
+
+        if (hasData1) {
+          localLeftData1.value = raw1
+        } else if (res.leftData && res.leftData.actual) {
+          // 降级：使用 leftData 作为 leftData1（单一排行场景，如ICD-9-CM-3四位码种类数）
+          localLeftData1.value = res.leftData
+        } else {
+          localLeftData1.value = { actual: [], estimated: [] }
+        }
+        localLeftData2.value = hasData2 ? raw2 : { actual: [], estimated: [] }
+      } else if (props.rankingMode === 'multi') {
+        // COMPOSITE_MULTI_RANKING: 从 multiRankingData 获取多排行榜数据
+        multiRankingData.value = res.multiRankingData || {}
+        // 同步更新各子图表
+        updateMultiCharts()
       } else {
         localLeftData.value = res.leftData || {}
         localLeftData1.value = res.leftData1 || {}
@@ -596,11 +702,12 @@ const fetchLeftData = async () => {
 }
 
 const fetchTrendData = async () => {
-  if (!props.indicator_key) return
+  const targetId = subIndicatorId.value ?? props.indicator_id
+  if (!targetId) return
   isFetchingTrend.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: targetId,
       time_mode: timeComparisonType.value,
       time_value: buildTrendTimeValue(),
       data_type: 'trend',
@@ -618,11 +725,12 @@ const fetchTrendData = async () => {
 }
 
 const fetchHospitalData = async () => {
-  if (!props.indicator_key) return
+  const targetId = subIndicatorId.value ?? props.indicator_id
+  if (!targetId) return
   isFetchingHospital.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: targetId,
       time_mode: hospitalComparisonType.value,
       time_value: buildHospitalTimeValue(),
       data_type: 'hospital',

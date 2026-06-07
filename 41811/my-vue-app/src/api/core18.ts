@@ -6,7 +6,7 @@ import { API_ENDPOINTS } from '@/config/api'
 
 // ======================== 类型定义 ========================
 
-export type TemplateType = 'STRUCTURE' | 'STRUCTURE-special' | 'RATE' | 'RATE-special' | 'COMPOSITE'
+export type TemplateType = 'STRUCTURE' | 'STRUCTURE-special' | 'RATE' | 'RATE-special' | 'TABLE'
 
 export interface Core18Overview {
   total_indicators: number
@@ -40,6 +40,16 @@ export interface IndicatorExecutionData {
   denominator_count: number | null
 }
 
+// ======================== 总览卡片子指标类型 ========================
+
+export interface SubIndicatorCardItem {
+  indicator_id: number
+  display_name: string
+  rate_percent: number | null
+  count: number | null
+  calc_type: 'ratio' | 'count'
+}
+
 export interface IndicatorCardItem {
   id: number
   name: string
@@ -49,10 +59,17 @@ export interface IndicatorCardItem {
   denominator_desc: string
   description: string
   has_data: boolean
+  // 比值型指标字段
   rate_percent: number | null
   numerator_count: number | null
   denominator_count: number | null
+  // 计数型指标字段
   count: number | null
+  // 虚拟父指标相关字段
+  is_virtual_parent: boolean
+  parent_name?: string
+  sub_indicators?: SubIndicatorCardItem[]
+  rate_ratio?: number | null
 }
 
 export interface OverviewDataResponse {
@@ -81,6 +98,12 @@ export interface DeathPatientResponse {
 
 // ======================== 指标分析台类型 ========================
 
+export interface SubIndicatorItem {
+  indicator_id: number
+  display_name: string
+  view_mode: 'rate' | 'structure' | 'ratio'
+}
+
 export interface IndicatorConfigData {
   cardData?: Record<string, any>
   timeTrendData?: Record<string, any>
@@ -90,12 +113,10 @@ export interface IndicatorConfigData {
   leftData2?: Record<string, any>
   totalCount?: number
   totalCountLabel?: string
-  dataTypes?: Array<{ name: string; key: string }>
-  yAxisUnit?: string
+  leftChartLimit?: number
 }
 
 export interface IndicatorConfigItem {
-  indicator_key: string
   indicator_id: number
   indicator_name: string
   template_type: TemplateType
@@ -115,13 +136,20 @@ export interface IndicatorConfigItem {
   timeComparisonTitle: string
   hospitalComparisonTitle: string
   totalCountLabel?: string
+  rankingMode?: 'single' | 'double' | 'multi'
+  // 虚拟父指标相关字段
+  is_virtual_parent: boolean
+  parent_name?: string
+  sub_indicators?: SubIndicatorItem[]
+  table_headers?: string[]
+  rate_ratio_value?: number | null
   data: IndicatorConfigData
 }
 
 export interface IndicatorDataResponse {
-  indicator_key: string
   indicator_id: number
-  template_type: TemplateType
+  indicator_name?: string
+  template_type?: TemplateType
   has_data: boolean
   rate_percent?: number | null
   numerator_count?: number | null
@@ -133,18 +161,36 @@ export interface IndicatorDataResponse {
   leftData?: Record<string, any>
   leftData1?: Record<string, any>
   leftData2?: Record<string, any>
+  multiRankingData?: Record<string, any>
   dataTypes?: Array<{ name: string; key: string }>
+  // 虚拟父指标相关字段
+  is_virtual_parent?: boolean
+  parent_name?: string
+  rate_ratio_value?: number | null
+  time_mode?: string
+  time_value?: string
 }
 
 // ======================== API 服务 ========================
 
 export const core18Api = {
+  /**
+   * 获取总览统计数据
+   */
   getOverview: () =>
     httpClient.get<Core18Overview>(API_ENDPOINTS.core18Overview),
 
+  /**
+   * 获取十八项核心制度指标列表
+   * @param params 可选参数: keyword, category
+   */
   getIndicatorList: (params?: { keyword?: string; category?: string }) =>
     httpClient.get<Core18Indicator[]>(API_ENDPOINTS.core18Indicators, { params }),
 
+  /**
+   * 获取指标执行数据
+   * @param params hospital_code, time_mode, time_value
+   */
   getExecutionData: (params: {
     hospital_code?: string
     time_mode: 'monthly' | 'quarterly'
@@ -152,6 +198,10 @@ export const core18Api = {
   }) =>
     httpClient.get<IndicatorExecutionData[]>(API_ENDPOINTS.core18ExecutionData, { params }),
 
+  /**
+   * 总览页面统一接口 - 获取指标卡片数据和分类列表
+   * @param params hospital_code, time_mode, time_value, keyword, category
+   */
   getOverviewData: (params: {
     hospital_code?: string
     time_mode: 'monthly' | 'quarterly'
@@ -161,11 +211,18 @@ export const core18Api = {
   }) =>
     httpClient.get<OverviewDataResponse>(API_ENDPOINTS.core18OverviewData, { params }),
 
+  /**
+   * 获取医院列表
+   */
   getHospitals: () =>
     httpClient.get<Array<{ value: string; label: string }>>(
       API_ENDPOINTS.hospitals
     ),
 
+  /**
+   * 获取死亡患者列表
+   * @param params hospital_code, time_mode, time_value, page, page_size, keyword
+   */
   getDeathPatients: (params: {
     hospital_code?: string
     time_mode?: string
@@ -176,6 +233,10 @@ export const core18Api = {
   }) =>
     httpClient.get<DeathPatientResponse>(API_ENDPOINTS.core18DeathPatients, { params }),
 
+  /**
+   * 获取所有指标的分析台配置（元数据，含 template_type）
+   * @param params hospital_code, time_mode, time_value
+   */
   getIndicatorConfigs: (params?: {
     hospital_code?: string
     time_mode?: string
@@ -183,13 +244,19 @@ export const core18Api = {
   }) =>
     httpClient.get<IndicatorConfigItem[]>(API_ENDPOINTS.core18IndicatorConfig, { params }),
 
+  /**
+   * 获取单个指标的图表数据（各子组件按自身时间筛选调用）
+   * @param params indicator_id, hospital_code, time_mode, time_value, data_type, selected_hospitals, death_type_filter
+   */
   getIndicatorData: (params: {
-    indicator_key: string
+    indicator_id: number
     hospital_code?: string
     time_mode?: string
     time_value?: string
     data_type?: 'card' | 'trend' | 'hospital' | 'left' | 'all'
     selected_hospitals?: string
+    death_type_filter?: 'actual' | 'estimated'
+    sub_indicator?: number
   }) =>
     httpClient.get<IndicatorDataResponse>(API_ENDPOINTS.core18IndicatorData, { params }),
 }

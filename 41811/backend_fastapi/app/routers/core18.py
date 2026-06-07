@@ -128,6 +128,7 @@ def core18_execute(indicator_id: int, db: Session = Depends(get_db)):
     db.add(log)
 
     # 同时写入 IndicatorExecution 表，使分析台页面可读取
+    # 先尝试通过 ID 匹配，再通过名称匹配
     ind_obj = db.query(Indicator).filter(
         Indicator.id == indicator.id,
         Indicator.indicator_type == "core18"
@@ -137,6 +138,7 @@ def core18_execute(indicator_id: int, db: Session = Depends(get_db)):
             Indicator.indicator_type == "core18",
             Indicator.name == indicator.name,
         ).first()
+    # 只有在找到对应 Indicator 记录时才写入
     if ind_obj is not None:
         exec_record = IndicatorExecution(
             indicator_id=ind_obj.id,

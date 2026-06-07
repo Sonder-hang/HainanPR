@@ -69,6 +69,8 @@ class IndicatorUpdate(BaseModel):
     date_field: Optional[str] = None  # discharge=出院时间, admission=入院时间, visit=就诊时间
     template_type: Optional[str] = None  # STRUCTURE | STRUCTURE-special | RATE | RATE-special | COMPOSITE
     subitem_config: Optional[dict] = None  # 复合指标子项配置
+    numerator_date_field: Optional[str] = "discharge"  # 分子时间过滤字段
+    denominator_date_field: Optional[str] = "discharge"  # 分母时间过滤字段
 
 
 class IndicatorResponse(IndicatorBase):

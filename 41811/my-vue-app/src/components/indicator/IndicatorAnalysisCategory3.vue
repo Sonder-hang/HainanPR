@@ -273,7 +273,7 @@ import { core18Api } from '@/api/core18'
 defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
-  indicator_key: { type: String, default: '' },
+  indicator_id: { type: Number, default: null },
   title: { type: String, default: '指标分析' },
   leftTitle: { type: String, default: '结构化数据率' },
   timeComparisonTitle: { type: String, default: '趋势分析' },
@@ -392,11 +392,11 @@ const buildHospitalTimeValue = () => {
 
 // ---- 三个独立拉取函数 ----
 const fetchLeftData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingLeft.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: leftQueryType.value,
       time_value: buildLeftTimeValue(),
       data_type: 'left',
@@ -406,7 +406,6 @@ const fetchLeftData = async () => {
       // 规范化 leftData 结构
       // COMPOSITE_RATE 格式: {actual: {time: {key: rate}}, estimated: {}}
       // 转为 {actual: {year: {key: rate}}, estimated: {year: {}}} 供季度/月度查询使用
-      const timeVal = buildLeftTimeValue()
       const norm = (raw: unknown): Record<string, any> => {
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
           const obj = raw as Record<string, unknown>
@@ -430,11 +429,11 @@ const fetchLeftData = async () => {
 }
 
 const fetchTrendData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingTrend.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: timeComparisonType.value,
       time_value: buildTrendTimeValue(),
       data_type: 'trend',
@@ -452,11 +451,11 @@ const fetchTrendData = async () => {
 }
 
 const fetchHospitalData = async () => {
-  if (!props.indicator_key) return
+  if (!props.indicator_id) return
   isFetchingHospital.value = true
   try {
     const res = await core18Api.getIndicatorData({
-      indicator_key: props.indicator_key,
+      indicator_id: props.indicator_id,
       time_mode: hospitalComparisonType.value,
       time_value: buildHospitalTimeValue(),
       data_type: 'hospital',
