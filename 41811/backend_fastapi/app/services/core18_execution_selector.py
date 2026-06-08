@@ -95,12 +95,17 @@ def get_latest_trend_executions_by_time_value(
     return latest_by_time_value
 
 
-def get_latest_grouped_execution(
+def get_all_grouped_executions(
     db: Session,
     indicator_id: int,
     time_mode: str,
     time_value: Optional[str],
-) -> Optional[IndicatorExecution]:
+) -> list[IndicatorExecution]:
+    """
+    返回所有满足条件的分组执行记录（group_by_hospital=True）。
+    不同医院的分组数据可能分散在多条执行记录中（如每次只跑部分医院），
+    因此需要返回所有记录，由调用方合并 hospital_results。
+    """
     query = db.query(IndicatorExecution).filter(
         IndicatorExecution.indicator_id == indicator_id,
         IndicatorExecution.status == "success",
@@ -112,6 +117,19 @@ def get_latest_grouped_execution(
 
     executions = query.all()
     if not executions:
-        return None
+        return []
 
-    return max(executions, key=lambda execution: execution.execution_time or datetime.min)
+    return sorted(executions, key=lambda e: e.execution_time or datetime.min, reverse=True)
+
+
+def get_latest_grouped_execution(
+    db: Session,
+    indicator_id: int,
+    time_mode: str,
+    time_value: Optional[str],
+) -> Optional[IndicatorExecution]:
+    """
+    兼容旧接口：返回所有匹配记录中最新的那条（单个医院/单次查询场景仍可用）。
+    """
+    executions = get_all_grouped_executions(db, indicator_id, time_mode, time_value)
+    return executions[0] if executions else None

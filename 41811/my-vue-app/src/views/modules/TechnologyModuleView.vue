@@ -152,40 +152,40 @@
             </div>
           </div>
 
-          <div v-if="currentRule?.mode === 'alert'" class="flex-1 overflow-auto" ref="tableScrollEl" @scroll="handleTableScroll">
+          <div v-if="currentRule?.mode === 'alert'" class="flex-1 overflow-auto">
             <table v-if="alertTableData.length > 0" class="w-full text-left border-collapse">
               <thead class="bg-[#e8eef9] sticky top-0 z-10">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="col" class="px-3 py-2 text-[10px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3 py-2 text-[10px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <tr v-for="row in alertTableData" :key="row.id" class="hover:bg-[#e8eef9]/40 transition-colors">
-                  <td v-for="col in realTableColumns" :key="col" class="px-3 py-2 text-[11px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
+                  <td v-for="col in realTableColumns" :key="String(col)" class="px-3 py-2 text-[11px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
-            <div v-else-if="!isLoadingMore" class="flex flex-col items-center justify-center py-16 text-[#9CA3AF]">
+            <div v-else-if="isLoadingMore && currentHospitalId === 'all' && paginatedRows.length === 0" class="flex flex-col items-center justify-center py-16 text-[#9CA3AF]">
+              <Activity class="w-12 h-12 mb-3 opacity-50 animate-pulse" />
+              <p class="text-[13px]">加载中...</p>
+            </div>
+            <div v-else class="flex flex-col items-center justify-center py-16 text-[#9CA3AF]">            
               <Activity class="w-12 h-12 mb-3 opacity-30" />
               <p class="text-[13px]">暂无预警数据</p>
               <p class="text-[11px] mt-1">请在「指标执行」页面执行相应指标</p>
             </div>
-            <div v-if="isLoadingMore" class="flex items-center justify-center py-3 text-[11px] text-[#9CA3AF]">
-              <span class="animate-spin inline-block w-3 h-3 border border-[#9CA3AF] border-t-transparent rounded-full mr-2"></span>
-              加载中...
-            </div>
           </div>
 
           <div v-else class="flex-1 overflow-auto">
-            <table v-if="realTableData.length > 0" class="w-full text-left border-collapse">
+            <table v-if="tableData.length > 0" class="w-full text-left border-collapse">
               <thead class="bg-emerald-50/60 sticky top-0 z-10 border-b border-emerald-100">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="col" class="px-3 py-2 text-[10px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3 py-2 text-[10px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <tr v-for="row in tableData" :key="row.id" class="hover:bg-emerald-50/40 transition-colors">
-                  <td v-for="col in realTableColumns" :key="col" class="px-3 py-2.5 text-[11px] text-[#596080]">{{ row[col] ?? '-' }}</td>
+                  <td v-for="col in realTableColumns" :key="String(col)" class="px-3 py-2.5 text-[11px] text-[#596080]">{{ row[col] ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -193,6 +193,25 @@
               <Activity class="w-12 h-12 mb-3 opacity-30" />
               <p class="text-[13px]">暂无监测数据</p>
               <p class="text-[11px] mt-1">请在「指标执行」页面执行相应指标</p>
+            </div>
+          </div>
+
+          <div v-if="currentRule && (currentRule.mode === 'alert' ? alertTableData.length > 0 || getDetailTotalCount() > 0 : tableData.length > 0 || getDetailTotalCount() > 0)" class="px-3 py-2 border-t border-[#b8c9e8]/40 bg-[#f8faff] flex items-center justify-between shrink-0">
+            <div class="text-[12px] text-[#596080]">第 {{ detailCurrentPage }} 页，共 {{ detailTotalPages }} 页</div>
+            <div class="flex items-center gap-1">
+              <button @click="prevDetailPage" :disabled="detailCurrentPage === 1" class="p-1.5 text-[#596080] hover:text-[#0A6EFD] disabled:text-[#B8BCCC] disabled:cursor-not-allowed">
+                <ChevronLeft class="w-3.5 h-3.5" />
+              </button>
+              <button
+                v-for="page in detailVisiblePages"
+                :key="page"
+                @click="goToDetailPage(page)"
+                class="w-7 h-7 text-[12px] rounded-[2px] transition-colors"
+                :class="page === detailCurrentPage ? 'bg-[#0A6EFD] text-white' : 'text-[#596080] hover:bg-[#e8eef9]'"
+              >{{ page }}</button>
+              <button @click="nextDetailPage" :disabled="detailCurrentPage === detailTotalPages" class="p-1.5 text-[#596080] hover:text-[#0A6EFD] disabled:text-[#B8BCCC] disabled:cursor-not-allowed">
+                <ChevronRight class="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>
@@ -249,10 +268,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Activity, Calendar, ChevronDown, Clock, Download, Eye, Info, MapPin, Monitor, Search, ShieldAlert, X } from 'lucide-vue-next'
+import { Activity, Calendar, ChevronDown, ChevronLeft, ChevronRight, Clock, Download, Eye, Info, MapPin, Monitor, Search, ShieldAlert, X } from 'lucide-vue-next'
 import { exportToExcel } from '../../utils/exportExcel'
 import { API_ENDPOINTS } from '../../config/api'
 import { useFourFactorExecutions, TIME_MODE_OPTIONS, MONTH_OPTIONS, QUARTER_OPTIONS } from '../../composables/useFourFactorExecutions'
+import { useDetailPagination } from '../../composables/useDetailPagination'
 import type { TimeMode } from '../../composables/useFourFactorExecutions'
 
 export interface Hospital {
@@ -263,11 +283,13 @@ export interface Hospital {
 
 const route = useRoute()
 const router = useRouter()
-const { fetchExecutions, fetchHospitals, hospitalList, getPreviewDataByHospital, getDenominatorPreviewDataByHospital, getCountByHospital, getDenominatorCountByHospital, formatCountInMetric, executionRecords } = useFourFactorExecutions()
+const { fetchExecutions, fetchHospitals, hospitalList, getPreviewDataByHospital, getDenominatorPreviewDataByHospital, getCountByHospital, getDenominatorCountByHospital, formatCountInMetric, executionRecords, ensureTrueCounts, getTrueCountSync } = useFourFactorExecutions()
 
 const showHospitalFilter = ref(false)
 const currentHospitalId = ref('all')
 const hospitalVersion = ref(0)
+
+const DETAIL_PAGE_SIZE = 10
 
 // 分页滚动加载状态
 const PAGE_SIZE = 200
@@ -278,7 +300,6 @@ const totalCount = ref(0)
 const isLoadingMore = ref(false)
 const hasReachedMax = ref(false)
 const isPageMounted = ref(false)
-const tableScrollEl = ref<HTMLElement | null>(null)
 
 // 时间筛选状态
 const timeMode = ref<TimeMode>('immediate')
@@ -360,8 +381,14 @@ async function loadHospitalData() {
   }
 }
 
+async function loadOverviewCounts() {
+  if (!isPageMounted.value || currentHospitalId.value !== 'all') return
+  await ensureTrueCounts(rules.map(rule => rule.indicator_id), timeMode.value, currentTimeValue.value)
+}
+
 async function loadMoreRows() {
   if (!isPageMounted.value || isLoadingMore.value || hasReachedMax.value) return
+  if (currentHospitalId.value !== 'all') return
   const indId = currentIndicatorId.value
   if (!indId) return
 
@@ -371,21 +398,56 @@ async function loadMoreRows() {
     if (!rec) { hasReachedMax.value = true; return }
     const execId = rec.id
 
+    // 调试：打印 fetchExecutions 返回的 preview_data 完整内容
+    console.log('[loadMoreRows] preview_data from executions store', {
+      execId,
+      preview_data: rec.preview_data,
+      'preview_data.rows': JSON.stringify(rec.preview_data?.rows).slice(0, 300),
+      'preview_data.rows[0]': rec.preview_data?.rows?.[0],
+      'preview_data.rows[1]': rec.preview_data?.rows?.[1],
+      'preview_data.rows[5]': rec.preview_data?.rows?.[5],
+      'preview_data.rows[9]': rec.preview_data?.rows?.[9],
+      'preview_data.rows[10]': rec.preview_data?.rows?.[10],
+      'preview_data.rows[11]': rec.preview_data?.rows?.[11],
+      preview_data_rows_len: Array.isArray(rec.preview_data?.rows) ? rec.preview_data.rows.length : 'NOT_ARRAY',
+      numerator_count: rec.numerator_count,
+    })
+
+    console.log('[loadMoreRows] requesting preview-page', {
+      execution_id: execId,
+      indicator_id: indId,
+      hospital_code: currentHospitalId.value !== 'all' ? currentHospitalId.value : undefined,
+      preview_data_rows: rec.preview_data?.rows?.length,
+      preview_data_cols: rec.preview_data?.columns,
+      numerator_count: rec.numerator_count,
+    })
+
+    const body: Record<string, unknown> = {
+      execution_id: execId,
+      target: 'numerator',
+      page: currentPage.value,
+      page_size: PAGE_SIZE,
+    }
+    if (currentHospitalId.value !== 'all') {
+      body.hospital_code = currentHospitalId.value
+    }
+
     const resp = await fetch(API_ENDPOINTS.previewPage, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        execution_id: execId,
-        target: 'numerator',
-        page: currentPage.value + 1,
-        page_size: PAGE_SIZE,
-      }),
+      body: JSON.stringify(body),
     })
     const json = await resp.json()
-    if (!json.ok || !json.rows?.length) {
-      hasReachedMax.value = true
-      return
-    }
+    console.log('[loadMoreRows] response', {
+      ok: json.ok,
+      columns: json.columns,
+      rows_count: json.rows?.length,
+      total_count: json.total_count,
+      error: json.error,
+      rows0: json.rows?.[0],
+      rows1: json.rows?.[1],
+      rows5: json.rows?.[5],
+    })
     currentPage.value++
     const cols = json.columns || []
     const newRows = json.rows.map((row: any, idx: number) => {
@@ -432,6 +494,7 @@ function resetPagination() {
   totalCount.value = 0
   isLoadingMore.value = false
   hasReachedMax.value = false
+  detailCurrentPage.value = 1
 }
 
 const hospitalOptions = computed<Hospital[]>(() => [
@@ -447,7 +510,12 @@ function selectHospital(h: Hospital) {
   currentHospitalId.value = h.id
   hospitalVersion.value++
   showHospitalFilter.value = false
-  loadHospitalData()
+  resetPagination()
+  if (currentHospitalId.value === 'all') {
+    void loadMoreRows()
+  } else {
+    void loadHospitalData()
+  }
 }
 
 function handleClickOutside(e: MouseEvent) {
@@ -459,7 +527,9 @@ function handleClickOutside(e: MouseEvent) {
 onMounted(() => {
   isPageMounted.value = true
   document.addEventListener('click', handleClickOutside)
-  fetchExecutions()
+  fetchExecutions().then(() => {
+    void loadOverviewCounts()
+  })
   fetchHospitals()
 })
 onBeforeUnmount(() => { isPageMounted.value = false })
@@ -484,7 +554,9 @@ const currentRule = computed(() => rules.find(r => r.id === activeTab.value))
 
 watch(activeTab, (val) => {
   router.replace({ query: val === 'overview' ? {} : { tab: val } })
+  resetDetailPage()
 })
+
 
 const MOCK_DATA: Record<string, any[]> = {
   r7: [
@@ -570,8 +642,8 @@ const currentIndicatorId = computed(() => {
 })
 
 // 指标/医院/时间筛选变化时重新加载分页数据
-watch(currentIndicatorId, () => {
-  if (!isPageMounted.value) return
+watch(currentIndicatorId, (val) => {
+  if (!isPageMounted.value || !val) return
   resetPagination()
   loadMoreRows()
 }, { immediate: false })
@@ -579,12 +651,18 @@ watch(currentIndicatorId, () => {
 watch(currentHospitalId, () => {
   if (!isPageMounted.value) return
   resetPagination()
+  if (currentHospitalId.value === 'all') {
+    void loadOverviewCounts()
+  }
   if (currentIndicatorId.value) loadMoreRows()
 })
 
 watch([timeMode, currentTimeValue], () => {
   if (!isPageMounted.value) return
   resetPagination()
+  if (currentHospitalId.value === 'all') {
+    void loadOverviewCounts()
+  }
   if (currentIndicatorId.value) loadMoreRows()
 })
 
@@ -633,8 +711,17 @@ const realTableData = computed(() => {
   // 全省模式：使用全局执行记录的数据
   if (currentHospitalId.value === 'all') {
     const rec = findExecutionByTime(indId)
+    console.log('[realTableData] all mode, rec?.preview_data', {
+      rec_null: rec === null,
+      preview_data_rows_len: Array.isArray(rec?.preview_data?.rows) ? rec.preview_data.rows.length : 'NOT_ARRAY/NULL',
+      preview_data_rows_0: rec?.preview_data?.rows?.[0],
+      preview_data_rows_1: rec?.preview_data?.rows?.[1],
+      preview_data_rows_5: rec?.preview_data?.rows?.[5],
+    })
     if (!rec?.preview_data?.rows?.length) return []
-    return rec.preview_data.rows.map((row: any, idx: number) => {
+    const rawRows = Array.isArray(rec.preview_data.rows) ? rec.preview_data.rows : []
+    console.log('[realTableData] returning', rawRows.length, 'rows')
+    return rawRows.map((row: any, idx: number) => {
       const item: any = { id: String(idx + 1), _raw: row }
       for (const col of cols) {
         item[col] = row[col]
@@ -658,10 +745,41 @@ const realTableData = computed(() => {
 })
 
 const filteredData = computed(() => realTableData.value)
-const tableData = computed(() => filteredData.value)
+const detailSourceRows = computed<any[]>(() => {
+  if (currentRule.value?.mode === 'alert') {
+    return currentHospitalId.value === 'all' ? paginatedRows.value : realTableData.value
+  }
+  return filteredData.value
+})
 
-// 违规预警列表使用分页滚动数据
-const alertTableData = computed(() => paginatedRows.value)
+const {
+  currentPage: detailCurrentPage,
+  totalCount: detailTotalCount,
+  totalPages: detailTotalPages,
+  visiblePages: detailVisiblePages,
+  pagedRows: detailPagedRows,
+  prevPage: prevDetailPage,
+  nextPage: nextDetailPage,
+  goToPage: goToDetailPage,
+  resetPage: resetDetailPage,
+} = useDetailPagination({
+  rows: detailSourceRows,
+  pageSize: DETAIL_PAGE_SIZE,
+  resetDeps: [currentRule],
+})
+
+const tableData = computed(() => {
+  if (currentRule.value?.mode === 'alert') {
+    const start = (detailCurrentPage.value - 1) * DETAIL_PAGE_SIZE
+    return filteredData.value.slice(start, start + DETAIL_PAGE_SIZE)
+  }
+  return detailPagedRows.value
+})
+const alertTableData = computed(() => detailPagedRows.value)
+
+function getDetailTotalCount(): number {
+  return detailTotalCount.value
+}
 
 /**
  * 注释：以下函数已废弃，请使用 getRuleCount 替代
@@ -677,34 +795,68 @@ const alertTableData = computed(() => paginatedRows.value)
 function findExecutionByTime(indicatorId: number): any | null {
   const tm = timeMode.value
   const tv = currentTimeValue.value
-  return executionRecords.value
+  const isImmediateMatch = (record: any) => {
+    const timeRange = record.time_range ?? '全量'
+    const runMode = record.run_mode ?? record.time_mode
+    return timeRange === '全量' || (!record.time_range && runMode === 'immediate')
+  }
+
+  const results = executionRecords.value
     .filter(r => r.indicator_id === indicatorId && r.status === 'success')
     .filter(r => {
-      if (tm === 'immediate') return true
+      if (!tm || tm === 'immediate') {
+        return isImmediateMatch(r)
+      }
       if (r.run_mode !== tm) return false
       if (tv && r.time_value !== tv) return false
       return true
     })
-    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())[0] || null
+    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())
+
+  console.log('[findExecutionByTime]', {
+    indicatorId,
+    timeMode: tm,
+    timeValue: tv,
+    matchedCount: results.length,
+    records: results.map(r => ({
+      id: r.id,
+      execution_time: r.execution_time,
+      run_mode: r.run_mode,
+      time_range: r.time_range,
+      time_value: r.time_value,
+      status: r.status,
+      numerator_count: r.numerator_count,
+      preview_data_rows: r.preview_data?.rows?.length,
+      preview_data_cols: r.preview_data?.columns,
+    })),
+  })
+
+  return results[0] || null
+}
+
+function getOverviewCountValue(rule: any): number | null {
+  if (!rule) return null
+  const tm = timeMode.value
+  const tv = currentTimeValue.value
+
+  if (currentHospitalId.value === 'all') {
+    return getTrueCountSync(rule.indicator_id, tm, tv)
+  }
+
+  const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
+  const cnt = ruleCountCache.value[key]
+  if (cnt === undefined || cnt === -1) return null
+  return cnt
 }
 
 function getRuleCount(rule: any): string {
   if (!rule) return '-'
   void hospitalVersion.value
-  if (currentHospitalId.value === 'all') {
-    void countLoading.value
-    void ruleCountCache.value
-    const rec = findExecutionByTime(rule.indicator_id)
-    if (!rec) return '-'
-    const cnt = rec.numerator_count ?? 0
-    if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
-    return formatCountInMetric(rule.metric, cnt)
-  }
-  const tm = timeMode.value
-  const tv = currentTimeValue.value
-  const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
-  const cnt = ruleCountCache.value[key]
-  if (cnt === undefined || cnt === -1) return '-'
+  void countLoading.value
+  void ruleCountCache.value
+
+  const cnt = getOverviewCountValue(rule)
+  if (cnt == null) return '-'
   if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
   return formatCountInMetric(rule.metric, cnt)
 }

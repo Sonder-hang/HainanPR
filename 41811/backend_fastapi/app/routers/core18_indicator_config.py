@@ -21,6 +21,7 @@ from app.schemas.core18_indicator_config import (
 from app.services.core18_execution_selector import (
     get_latest_execution_for_scope,
     get_latest_grouped_execution,
+    get_all_grouped_executions,
     get_latest_trend_executions_by_time_value,
     is_province_scope,
 )
@@ -656,23 +657,34 @@ def _get_indicator_data_for_sub(
         if specific_hospitals:
             filter_hospitals = specific_hospitals
 
+    # 获取所有分组执行记录，合并所有医院的数据（以最新 execution_time 为准）
+    all_grouped_executions = get_all_grouped_executions(
+        db=db,
+        indicator_id=ind.id,
+        time_mode=time_mode,
+        time_value=time_value,
+    )
+    # hospital_comparison_actual[hosp_code] = {"2024": ..., "2025": ..., "2026": ...}
     hospital_comparison_actual: dict = {}
-    all_value = _get_primary_value(exec_record, template_type) if exec_record else None
-    if include_all and all_value is not None:
-        year_key = time_value.split("-")[0] if time_value else str(current_year)
-        hospital_comparison_actual["all"] = {"2024": None, "2025": None, "2026": None, year_key: all_value}
 
-    if grouped_execution and isinstance(grouped_execution.hospital_results, list):
+    # 收集所有医院代码（用于后续排序）
+    all_hospitals: set = set()
+
+    for grouped_execution in all_grouped_executions:
+        if not isinstance(grouped_execution.hospital_results, list):
+            continue
         for result in grouped_execution.hospital_results:
             if not isinstance(result, dict):
                 continue
             hosp_code_val = str(result.get("hospital_code", ""))
-            if filter_hospitals and hosp_code_val not in filter_hospitals:
-                continue
             if not hosp_code_val:
                 continue
-            if hosp_code_val not in hospital_comparison_actual:
-                hospital_comparison_actual[hosp_code_val] = {"2024": None, "2025": None, "2026": None}
+            # 已在结果中且当前执行记录比已存的旧则跳过（保留最新的）
+            if hosp_code_val in hospital_comparison_actual:
+                continue
+            if filter_hospitals and hosp_code_val not in filter_hospitals:
+                continue
+            all_hospitals.add(hosp_code_val)
             if time_value:
                 year_key = time_value.split("-")[0]
                 if template_type in ("STRUCTURE", "STRUCTURE-special"):
@@ -681,7 +693,20 @@ def _get_indicator_data_for_sub(
                         hosp_val = result.get("numerator_count")
                 else:
                     hosp_val = result.get("ratio_percent")
+                hospital_comparison_actual[hosp_code_val] = {"2024": None, "2025": None, "2026": None}
                 hospital_comparison_actual[hosp_code_val][year_key] = hosp_val
+
+    # 补充过滤后仍在 all_hospitals 但未出现在最新记录中的医院（保留空数据）
+    if filter_hospitals:
+        for hosp_code in filter_hospitals:
+            if hosp_code not in hospital_comparison_actual:
+                hospital_comparison_actual[hosp_code] = {"2024": None, "2025": None, "2026": None}
+
+    # 全省数据
+    all_value = _get_primary_value(exec_record, template_type) if exec_record else None
+    if include_all and all_value is not None:
+        year_key = time_value.split("-")[0] if time_value else str(current_year)
+        hospital_comparison_actual["all"] = {"2024": None, "2025": None, "2026": None, year_key: all_value}
 
     base = {
         "indicator_id": ind.id,

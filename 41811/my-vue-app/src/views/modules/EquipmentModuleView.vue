@@ -143,27 +143,6 @@
               <span v-if="currentRule?.mode === 'alert'" class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[11px] font-bold">{{ tableData.length }}</span>
             </h3>
             <div class="flex items-center gap-2">
-              <div class="flex items-center gap-1.5 border border-[#b8c9e8]/60 rounded-[2px] px-2.5 py-1.5 bg-white">
-                <Calendar class="w-3.5 h-3.5 text-[#596080] shrink-0" />
-                <input
-                  type="date"
-                  v-model="startDate"
-                  class="text-[12px] text-[#1F264D] focus:outline-none bg-transparent w-[130px]"
-                />
-                <span class="text-[11px] text-[#B8BCCC]">至</span>
-                <input
-                  type="date"
-                  v-model="endDate"
-                  class="text-[12px] text-[#1F264D] focus:outline-none bg-transparent w-[130px]"
-                />
-                <button
-                  v-if="startDate || endDate"
-                  @click="startDate = ''; endDate = ''"
-                  class="ml-0.5 text-[#B8BCCC] hover:text-[#596080] transition-colors"
-                >
-                  <X class="w-3 h-3" />
-                </button>
-              </div>
               <div class="relative">
                 <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 transform -translate-y-1/2 text-[#B8BCCC]" />
                 <input type="text" placeholder="搜索..." class="pl-8 pr-3 py-1.5 text-[12px] border border-[#b8c9e8]/60 rounded-[2px] focus:outline-none focus:border-[#0A6EFD] w-52 bg-white" />
@@ -178,12 +157,12 @@
             <table v-if="realTableData.length > 0" class="w-full text-left border-collapse">
               <thead class="bg-[#e8eef9] sticky top-0 z-10">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <tr v-for="row in tableData" :key="row.id" class="hover:bg-[#e8eef9]/40 transition-colors">
-                  <td v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[12px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
+                  <td v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[12px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -198,12 +177,12 @@
             <table v-if="realTableData.length > 0" class="w-full text-left border-collapse">
               <thead class="bg-emerald-50/60 sticky top-0 z-10 border-b border-emerald-100">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <tr v-for="row in tableData" :key="row.id" class="hover:bg-emerald-50/40 transition-colors">
-                  <td v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[12px] text-[#596080]">{{ row[col] ?? '-' }}</td>
+                  <td v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[12px] text-[#596080]">{{ row[col] ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -211,6 +190,25 @@
               <Activity class="w-12 h-12 mb-3 opacity-30" />
               <p class="text-[13px]">暂无监测数据</p>
               <p class="text-[11px] mt-1">请在「指标执行」页面执行相应指标</p>
+            </div>
+          </div>
+
+          <div v-if="getDetailTotalCount() > 0" class="px-3 py-2 border-t border-[#b8c9e8]/40 bg-[#f8faff] flex items-center justify-between shrink-0">
+            <div class="text-[12px] text-[#596080]">第 {{ detailCurrentPage }} 页，共 {{ detailTotalPages }} 页</div>
+            <div class="flex items-center gap-1">
+              <button @click="prevDetailPage" :disabled="detailCurrentPage === 1" class="p-1.5 text-[#596080] hover:text-[#0A6EFD] disabled:text-[#B8BCCC] disabled:cursor-not-allowed">
+                <ChevronLeft class="w-3.5 h-3.5" />
+              </button>
+              <button
+                v-for="page in detailVisiblePages"
+                :key="page"
+                @click="goToDetailPage(page)"
+                class="w-7 h-7 text-[12px] rounded-[2px] transition-colors"
+                :class="page === detailCurrentPage ? 'bg-[#0A6EFD] text-white' : 'text-[#596080] hover:bg-[#e8eef9]'"
+              >{{ page }}</button>
+              <button @click="nextDetailPage" :disabled="detailCurrentPage === detailTotalPages" class="p-1.5 text-[#596080] hover:text-[#0A6EFD] disabled:text-[#B8BCCC] disabled:cursor-not-allowed">
+                <ChevronRight class="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>
@@ -265,10 +263,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Activity, Calendar, ChevronDown, Clock, Download, Eye, Info, MapPin, Monitor, Search, ShieldAlert, X } from 'lucide-vue-next'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { Activity, ChevronDown, ChevronLeft, ChevronRight, Clock, Download, Eye, Info, MapPin, Monitor, Search, ShieldAlert, X } from 'lucide-vue-next'
 import { exportToExcel } from '../../utils/exportExcel'
 import { useFourFactorExecutions, TIME_MODE_OPTIONS, MONTH_OPTIONS, QUARTER_OPTIONS } from '../../composables/useFourFactorExecutions'
+import { useDetailPagination } from '../../composables/useDetailPagination'
 import type { TimeMode } from '../../composables/useFourFactorExecutions'
 
 export interface Hospital {
@@ -278,8 +277,7 @@ export interface Hospital {
 }
 
 const showHospitalFilter = ref(false)
-const startDate = ref('')
-const endDate = ref('')
+const DETAIL_PAGE_SIZE = 10
 const { fetchExecutions, fetchHospitals, hospitalList, getPreviewDataByHospital, getDenominatorPreviewDataByHospital, getCountByHospital, getDenominatorCountByHospital, formatCountInMetric, executionRecords } = useFourFactorExecutions()
 
 const currentHospitalId = ref('all')
@@ -378,8 +376,22 @@ function selectHospital(h: Hospital) {
   currentHospitalId.value = h.id
   hospitalVersion.value++
   showHospitalFilter.value = false
-  loadHospitalData()
+  void loadHospitalData()
 }
+
+watch(currentHospitalId, () => {
+  hospitalVersion.value++
+  if (currentHospitalId.value !== 'all') {
+    void loadHospitalData()
+  }
+})
+
+watch([timeMode, currentTimeValue], () => {
+  hospitalVersion.value++
+  if (currentHospitalId.value !== 'all') {
+    void loadHospitalData()
+  }
+})
 
 function handleClickOutside(e: MouseEvent) {
   if (!(e.target as HTMLElement).closest('.hospital-filter')) {
@@ -465,6 +477,7 @@ const MOCK_DATA: Record<string, any[]> = {
 const isAll = computed(() => currentHospitalId.value === 'all')
 
 function matchHospital(item: any, hName: string): boolean {
+  if (item.org === '全省平均') return false
   return item.org === hName || item.org.includes(hName)
 }
 
@@ -544,7 +557,26 @@ const realTableData = computed(() => {
 })
 
 const filteredData = computed(() => realTableData.value)
-const tableData = computed(() => filteredData.value)
+
+const {
+  currentPage: detailCurrentPage,
+  totalCount: detailTotalCount,
+  totalPages: detailTotalPages,
+  visiblePages: detailVisiblePages,
+  pagedRows: tableData,
+  prevPage: prevDetailPage,
+  nextPage: nextDetailPage,
+  goToPage: goToDetailPage,
+  resetPage: resetDetailPage,
+} = useDetailPagination({
+  rows: filteredData,
+  pageSize: DETAIL_PAGE_SIZE,
+  resetDeps: [currentRule],
+})
+
+function getDetailTotalCount(): number {
+  return detailTotalCount.value
+}
 
 /**
  * 注释：以下函数已废弃，请使用 getRuleCount 替代
@@ -560,7 +592,7 @@ const tableData = computed(() => filteredData.value)
 function findExecutionByTime(indicatorId: number): any | null {
   const tm = timeMode.value
   const tv = currentTimeValue.value
-  return executionRecords.value
+  const results = executionRecords.value
     .filter(r => r.indicator_id === indicatorId && r.status === 'success')
     .filter(r => {
       if (tm === 'immediate') return true
@@ -568,7 +600,26 @@ function findExecutionByTime(indicatorId: number): any | null {
       if (tv && r.time_value !== tv) return false
       return true
     })
-    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())[0] || null
+    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())
+
+  console.log('[findExecutionByTime]', {
+    indicatorId,
+    timeMode: tm,
+    timeValue: tv,
+    matchedCount: results.length,
+    records: results.map(r => ({
+      id: r.id,
+      execution_time: r.execution_time,
+      run_mode: r.run_mode,
+      time_value: r.time_value,
+      status: r.status,
+      numerator_count: r.numerator_count,
+      preview_data_rows: r.preview_data?.rows?.length,
+      preview_data_cols: r.preview_data?.columns,
+    })),
+  })
+
+  return results[0] || null
 }
 
 function getRuleCount(rule: any): string {

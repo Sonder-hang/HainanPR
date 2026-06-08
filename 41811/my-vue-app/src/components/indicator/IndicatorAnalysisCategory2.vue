@@ -366,6 +366,18 @@ const cardDataType = ref('actual')
 // 趋势图
 const timeComparisonType = ref<'monthly' | 'quarterly'>('monthly')
 const timeComparisonDataType = ref('actual')
+// 一次性锚定：从总览页跳转时，趋势图首次请求使用路由传入的时间值
+const hasConsumedRouteTrendAnchor = ref(false)
+watch(
+  () => [props.indicator_id, props.initTimeMode, props.initTimeValue],
+  () => {
+    hasConsumedRouteTrendAnchor.value = false
+    if (props.initTimeMode === 'quarterly' || props.initTimeMode === 'monthly') {
+      timeComparisonType.value = props.initTimeMode
+    }
+  },
+  { immediate: true }
+)
 
 // 医院对比
 const hospitalComparisonType = ref<'monthly' | 'quarterly'>('monthly')
@@ -400,6 +412,7 @@ watch(() => props.indicator_id, (newId) => {
 
 // subIndicatorId 变化时刷新所有图表数据
 watch(subIndicatorId, () => {
+  hasConsumedRouteTrendAnchor.value = false
   fetchCardData()
   fetchTrendData()
   fetchHospitalData()
@@ -452,6 +465,14 @@ const buildCardTimeValue = () => {
 }
 
 const buildTrendTimeValue = () => {
+  const shouldUseRouteAnchor = !hasConsumedRouteTrendAnchor.value
+    && !!props.initTimeMode && !!props.initTimeValue
+    && props.initTimeMode === timeComparisonType.value
+
+  if (shouldUseRouteAnchor) {
+    hasConsumedRouteTrendAnchor.value = true
+    return props.initTimeValue
+  }
   return timeComparisonType.value === 'monthly'
     ? `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`
     : `${currentYear}-Q${Math.ceil((now.getMonth() + 1) / 3)}`

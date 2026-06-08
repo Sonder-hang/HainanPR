@@ -140,30 +140,9 @@
           <div class="p-3.5 border-b border-[#b8c9e8]/40 flex justify-between items-center shrink-0">
             <h3 class="font-semibold text-[#1F264D] flex items-center text-[13px]">
               违规预警数据列表
-              <span class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[11px] font-bold">{{ tableData.length }}</span>
+              <span class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[11px] font-bold">{{ detailTotalCount }}</span>
             </h3>
             <div class="flex items-center gap-2">
-              <div class="flex items-center gap-1.5 border border-[#b8c9e8]/60 rounded-[2px] px-2.5 py-1.5 bg-white">
-                <Calendar class="w-3.5 h-3.5 text-[#596080] shrink-0" />
-                <input
-                  type="date"
-                  v-model="startDate"
-                  class="text-[12px] text-[#1F264D] focus:outline-none bg-transparent w-[130px]"
-                />
-                <span class="text-[11px] text-[#B8BCCC]">至</span>
-                <input
-                  type="date"
-                  v-model="endDate"
-                  class="text-[12px] text-[#1F264D] focus:outline-none bg-transparent w-[130px]"
-                />
-                <button
-                  v-if="startDate || endDate"
-                  @click="startDate = ''; endDate = ''"
-                  class="ml-0.5 text-[#B8BCCC] hover:text-[#596080] transition-colors"
-                >
-                  <X class="w-3 h-3" />
-                </button>
-              </div>
               <div class="relative">
                 <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 transform -translate-y-1/2 text-[#B8BCCC]" />
                 <input type="text" placeholder="搜索..." class="pl-8 pr-3 py-1.5 text-[12px] border border-[#b8c9e8]/60 rounded-[2px] focus:outline-none focus:border-[#0A6EFD] w-52 bg-white" />
@@ -178,13 +157,13 @@
             <table v-if="tableData.length > 0" class="w-full text-left border-collapse">
               <thead class="bg-[#e8eef9] sticky top-0 z-10">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
                   <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide text-right">操作</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <tr v-for="(row, idx) in tableData" :key="row.id || idx" class="hover:bg-[#e8eef9]/40 transition-colors group">
-                  <td v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[12px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
+                  <td v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[12px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
                   <td class="px-3.5 py-2.5 text-[12px] text-right">
                     <button @click="openDrawer(row)" class="text-[#0A6EFD] hover:text-[#1F264D] font-medium flex items-center justify-end w-full text-[11px]">
                       <Eye class="w-3 h-3 mr-1" /> 查看详情
@@ -197,6 +176,25 @@
               <Activity class="w-12 h-12 mb-3 opacity-30" />
               <p class="text-[13px]">暂无预警数据</p>
               <p class="text-[11px] mt-1">请在「指标执行」页面执行相应指标</p>
+            </div>
+          </div>
+
+          <div v-if="getDetailTotalCount() > 0" class="px-3 py-2 border-t border-[#b8c9e8]/40 bg-[#f8faff] flex items-center justify-between shrink-0">
+            <div class="text-[12px] text-[#596080]">第 {{ detailCurrentPage }} 页，共 {{ detailTotalPages }} 页</div>
+            <div class="flex items-center gap-1">
+              <button @click="prevDetailPage" :disabled="detailCurrentPage === 1" class="p-1.5 text-[#596080] hover:text-[#0A6EFD] disabled:text-[#B8BCCC] disabled:cursor-not-allowed">
+                <ChevronLeft class="w-3.5 h-3.5" />
+              </button>
+              <button
+                v-for="page in detailVisiblePages"
+                :key="page"
+                @click="goToDetailPage(page)"
+                class="w-7 h-7 text-[12px] rounded-[2px] transition-colors"
+                :class="page === detailCurrentPage ? 'bg-[#0A6EFD] text-white' : 'text-[#596080] hover:bg-[#e8eef9]'"
+              >{{ page }}</button>
+              <button @click="nextDetailPage" :disabled="detailCurrentPage === detailTotalPages" class="p-1.5 text-[#596080] hover:text-[#0A6EFD] disabled:text-[#B8BCCC] disabled:cursor-not-allowed">
+                <ChevronRight class="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>
@@ -261,8 +259,9 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Activity,
-  Calendar,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Eye,
   Info,
@@ -273,6 +272,7 @@ import {
 } from 'lucide-vue-next'
 import { exportToExcel } from '../../utils/exportExcel'
 import { useFourFactorExecutions, TIME_MODE_OPTIONS, MONTH_OPTIONS, QUARTER_OPTIONS } from '../../composables/useFourFactorExecutions'
+import { useDetailPagination } from '../../composables/useDetailPagination'
 import type { TimeMode } from '../../composables/useFourFactorExecutions'
 
 const route = useRoute()
@@ -280,8 +280,7 @@ const router = useRouter()
 const { fetchExecutions, fetchHospitals, hospitalList, getPreviewDataByHospital, getDenominatorPreviewDataByHospital, getCountByHospital, formatCountInMetric, executionRecords } = useFourFactorExecutions()
 
 const showHospitalFilter = ref(false)
-const startDate = ref('')
-const endDate = ref('')
+const DETAIL_PAGE_SIZE = 10
 const currentHospitalId = ref('all')
 const hospitalVersion = ref(0)
 
@@ -361,8 +360,22 @@ function selectHospital(h: Hospital) {
   currentHospitalId.value = h.id
   hospitalVersion.value++
   showHospitalFilter.value = false
-  loadHospitalData()
+  void loadHospitalData()
 }
+
+watch(currentHospitalId, () => {
+  hospitalVersion.value++
+  if (currentHospitalId.value !== 'all') {
+    void loadHospitalData()
+  }
+})
+
+watch([timeMode, currentTimeValue], () => {
+  hospitalVersion.value++
+  if (currentHospitalId.value !== 'all') {
+    void loadHospitalData()
+  }
+})
 
 function handleClickOutside(e: MouseEvent) {
   if (!(e.target as HTMLElement).closest('.hospital-filter')) {
@@ -379,7 +392,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 
 const rules = [
   {
-    id: 'r1', indicator_id: 1, mode: 'alert', name: '越权开具抗生素',
+    id: 'r1', indicator_id: 63, mode: 'alert', name: '越权开具抗生素',
     desc: '医师职称与限制级、特殊级抗生素匹配异常，系统自动报警。',
     scope: '住院', threshold: '无',
     logic: '在系统中维护医师职称，设定"职称-限制级、特殊级抗生素"匹配规则，医生开了与自己职称不符的限制级或特殊级抗生素时自动报警。'
@@ -391,10 +404,16 @@ const rules = [
     logic: '在系统中维护医师操作记录，设定"同一医师短时间内在不同医疗机构中出现诊疗记录"匹配规则，某个时间段内医生在不同机构内开了医嘱信息时自动报警。'
   },
   {
-    id: 'r3', indicator_id: 3, mode: 'alert', name: '多点执业冲突',
-    desc: '对主执业机构在公立医院的医师发生民营医院多点执业或诊疗记录进行监测。',
+    id: 'r3', indicator_id: 3, mode: 'alert', name: '医师执业超期异常监控',
+    desc: '对医师执业有效期超期仍开展住院诊疗行为进行监测预警。',
     scope: '住院', threshold: '无',
-    logic: '在系统中维护医师多点执业记录，设定"对主执业机构在公立医院的发生民营医院多点执业或诊疗记录"匹配规则，同一患者由同一医生在公立和民营医院都开了医嘱时自动报警。'
+    logic: '在系统中维护医师执业注册与有效期信息，设定"执业有效期-住院诊疗行为"匹配规则，对执业超期仍存在住院诊疗、医嘱开立或病程记录行为的医师自动报警。'
+  },
+  {
+    id: 'r20', indicator_id: 64, mode: 'alert', name: '医师执业地点异常监控',
+    desc: '对医师实际住院诊疗地点与备案执业地点不一致的行为进行监测预警。',
+    scope: '住院', threshold: '无',
+    logic: '在系统中维护医师执业注册地点信息，设定"执业地点-住院诊疗机构"匹配规则，当医师在非备案执业地点开展住院诊疗、医嘱开立或相关医疗行为时自动报警。'
   },
 ]
 
@@ -405,6 +424,7 @@ const currentRule = computed(() => rules.find(r => r.id === activeTab.value))
 
 watch(activeTab, (val) => {
   router.replace({ query: val === 'overview' ? {} : { tab: val } })
+  resetDetailPage()
 })
 
 const isAll = computed(() => currentHospitalId.value === 'all')
@@ -412,15 +432,41 @@ const isAll = computed(() => currentHospitalId.value === 'all')
 function findExecutionByTime(indicatorId: number): any | null {
   const tm = timeMode.value
   const tv = currentTimeValue.value
-  return executionRecords.value
+  const isImmediateMatch = (record: any) => {
+    const timeRange = record.time_range ?? '全量'
+    const runMode = record.run_mode ?? record.time_mode
+    return timeRange === '全量' || (!record.time_range && runMode === 'immediate')
+  }
+  const results = executionRecords.value
     .filter(r => r.indicator_id === indicatorId && r.status === 'success')
     .filter(r => {
-      if (tm === 'immediate') return true
+      if (!tm || tm === 'immediate') {
+        return isImmediateMatch(r)
+      }
       if (r.run_mode !== tm) return false
       if (tv && r.time_value !== tv) return false
       return true
     })
-    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())[0] || null
+    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())
+
+  console.log('[findExecutionByTime]', {
+    indicatorId,
+    timeMode: tm,
+    timeValue: tv,
+    matchedCount: results.length,
+    records: results.map(r => ({
+      id: r.id,
+      execution_time: r.execution_time,
+      run_mode: r.run_mode,
+      time_value: r.time_value,
+      status: r.status,
+      numerator_count: r.numerator_count,
+      preview_data_rows: r.preview_data?.rows?.length,
+      preview_data_cols: r.preview_data?.columns,
+    })),
+  })
+
+  return results[0] || null
 }
 
 function getRuleCount(rule: any): string {
@@ -507,7 +553,25 @@ const realTableData = computed(() => {
   })
 })
 
-const tableData = computed(() => realTableData.value)
+const {
+  currentPage: detailCurrentPage,
+  totalCount: detailTotalCount,
+  totalPages: detailTotalPages,
+  visiblePages: detailVisiblePages,
+  pagedRows: tableData,
+  prevPage: prevDetailPage,
+  nextPage: nextDetailPage,
+  goToPage: goToDetailPage,
+  resetPage: resetDetailPage,
+} = useDetailPagination({
+  rows: realTableData,
+  pageSize: DETAIL_PAGE_SIZE,
+  resetDeps: [currentRule],
+})
+
+function getDetailTotalCount(): number {
+  return detailTotalCount.value
+}
 
 const openDrawer = (row: any) => { drawerData.value = row }
 

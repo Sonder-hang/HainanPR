@@ -313,12 +313,13 @@ const {
   fetchHospitals,
   fetchExecutions,
   fetchIndicators,
-  getLatestSuccess,
   getCountByHospital,
   getIndicatorCategory,
   getIndicatorName,
   hospitalList,
   executionRecords,
+  ensureTrueCounts,
+  getTrueCountSync,
 } = useFourFactorExecutions()
 
 // 时间筛选状态
@@ -419,13 +420,16 @@ async function refreshData() {
     // 获取所有指标的唯一 ID
     const indicatorIds = [...new Set(executionRecords.value.map(r => r.indicator_id))]
 
+    if (currentHospitalId.value === 'all') {
+      await ensureTrueCounts(indicatorIds, timeMode.value, currentTimeValue.value)
+    }
+
     // 对每个指标获取计数
     for (const indicatorId of indicatorIds) {
       let count: number
       
       if (currentHospitalId.value === 'all') {
-        const rec = getLatestSuccess(indicatorId, timeMode.value, currentTimeValue.value)
-        count = rec?.numerator_count ?? 0
+        count = getTrueCountSync(indicatorId, timeMode.value, currentTimeValue.value)
       } else {
         const result = await getCountByHospital(indicatorId, currentHospitalId.value, timeMode.value, currentTimeValue.value)
         count = result < 0 ? 0 : result

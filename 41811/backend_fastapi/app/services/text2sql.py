@@ -18,8 +18,12 @@ logger = logging.getLogger(__name__)
 
 def _to_serializable_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """将 rows 中的 Decimal/datetime 等非 JSON 类型转为可序列化类型"""
+    if not isinstance(rows, list):
+        return []
     result = []
     for row in rows:
+        if not isinstance(row, dict):
+            continue
         clean = {}
         for k, v in row.items():
             if hasattr(v, "strftime"):
@@ -34,8 +38,12 @@ def _to_serializable_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _to_serializable_logs(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """将 logs 中的 datetime/Decimal 类型转为可序列化类型"""
+    if not isinstance(logs, list):
+        return []
     result = []
     for log in logs:
+        if not isinstance(log, dict):
+            continue
         clean = {}
         for k, v in log.items():
             if hasattr(v, "strftime"):
@@ -1266,7 +1274,8 @@ class Text2SQLService:
                     "message": f"全省汇总：{total_num_overall}/{total_den_overall}={total_rate_overall}%",
                 }
             )
-            first_sub = hospital_results[0].get("preview_data", []) if hospital_results else []
+            first_preview_data = hospital_results[0].get("preview_data", {}) if hospital_results else {}
+            first_sub = first_preview_data.get("rows", []) if isinstance(first_preview_data, dict) else (first_preview_data if isinstance(first_preview_data, list) else [])
             first_cols = list(first_sub[0].keys()) if first_sub else []
 
             result = {
@@ -1535,7 +1544,8 @@ class Text2SQLService:
                     "message": f"全省汇总：总数量={int(total_count_overall)}，全局TOP{ranking_limit}排行已生成。",
                 }
             )
-            first_preview = hospital_results[0].get("preview_data", []) if hospital_results else []
+            first_preview_data = hospital_results[0].get("preview_data", {}) if hospital_results else {}
+            first_preview = first_preview_data.get("rows", []) if isinstance(first_preview_data, dict) else (first_preview_data if isinstance(first_preview_data, list) else [])
             first_cols = hospital_results[0].get("preview_columns", []) if hospital_results else []
 
             result = {
@@ -2352,6 +2362,13 @@ class Text2SQLService:
                     "total_count": 0,
                 }
 
+            logger.info(
+                f"[fetch_preview_page] record_id={record.id}, hospital_code={hospital_code!r}, "
+                f"target={target}, preview_data_type={type(record.preview_data).__name__}, "
+                f"preview_data_preview={str(record.preview_data)[:200]!r}, "
+                f"numerator_count={record.numerator_count}"
+            )
+
             if target == "numerator":
                 raw_sql = record.numerator_sql or record.sql or ""
             elif target == "denominator":
@@ -2368,17 +2385,16 @@ class Text2SQLService:
                     "total_count": 0,
                 }
 
-            # hospital_code 非空时：优先从 hospital_results 取已存储的明细行
-            if hospital_code and record.hospital_results:
+                # hospital_code 非空时：优先从 hospital_results 取已存储的明细行
+            if hospital_code and getattr(record, "hospital_results", None):
                 hosp_data = next(
-                    (h for h in record.hospital_results
+                    (h for h in getattr(record, "hospital_results", [])
                      if str(h.get("hospital_code") or "") == str(hospital_code)),
                     None
                 )
                 if hosp_data:
                     if target == "numerator":
                         prev_data = hosp_data.get("preview_data") or {}
-                        # 兼容：可能是 dict {columns, rows} 或旧的纯数组
                         if isinstance(prev_data, dict):
                             cols = prev_data.get("columns") or hosp_data.get("preview_columns") or []
                             raw_rows = prev_data.get("rows") or []
@@ -2404,62 +2420,163 @@ class Text2SQLService:
                     }
                 # hospital_results 中没有该医院 → 回退到重新执行 SQL
 
-            # 【阶段一·预览页】复用 execute_indicator 中的万能注入器
-            # numerator 用 numerator_date_field，denominator 用 denominator_date_field
-            time_col_for_preview = self._resolve_time_col(
-                (record.numerator_date_field if target == "numerator" else (record.denominator_date_field or record.date_field))
-                or "discharge"
-            )
-            # hospital_code 非空时仅执行该医院的 SQL（用于按医院筛选）
-            codes_to_use = [hospital_code] if hospital_code else (record.hospital_codes or [])
-            sql = self._inject_filters(
-                raw_sql,
-                hospital_codes=codes_to_use,
-                time_mode=record.time_mode,
-                time_value=record.time_value,
-                time_col_name=time_col_for_preview,
-                is_aggregate=False,
-            )
-
-            # 执行分页查询
-            offset = (page - 1) * page_size
-            if self._sql_runner_fetch_preview_page is not None:
-                try:
-                    cols, rows, err = self._sql_runner_fetch_preview_page(
-                        sql, limit=page_size, offset=offset
+            # hospital_code 为空时：直接从 record.preview_data 取全省分页数据
+            rec_preview_data = getattr(record, "preview_data", None)
+            if not hospital_code and target == "numerator" and rec_preview_data:
+                prev_data = rec_preview_data
+                logger.info(
+                    f"[fetch_preview_page] 全省 numerator 命中: type={type(prev_data).__name__}, "
+                    f"keys={list(prev_data.keys()) if isinstance(prev_data, dict) else 'N/A'}"
+                )
+                prev_data = record.preview_data
+                # 兼容数据库中存为 JSON 字符串的情况（双重编码）
+                if isinstance(prev_data, str):
+                    import json as _json
+                    try:
+                        prev_data = _json.loads(prev_data)
+                    except Exception:
+                        prev_data = {}
+                if isinstance(prev_data, dict):
+                    cols = prev_data.get("columns") or []
+                    raw_rows = prev_data.get("rows") or []
+                else:
+                    cols = []
+                    raw_rows = prev_data if isinstance(prev_data, list) else []
+                total_count = record.numerator_count or len(raw_rows)
+                offset = (page - 1) * page_size
+                page_rows = raw_rows[offset:offset + page_size]
+                # 如果当前页为空但还有更多数据未加载完，fallback 到 SQL 执行（暂时禁用）
+                if not page_rows and total_count > len(raw_rows) and raw_sql:
+                    logger.info(
+                        f"[fetch_preview_page] 全省 numerator preview_data 仅存 {len(raw_rows)} 条，"
+                        f"total_count={total_count}，page={page} 超出范围，fallback 到 SQL"
                     )
-                    if err:
-                        return {"ok": False, "error": err, "columns": [], "rows": [], "total_count": 0}
-                    # 优先取该医院的分子/分母计数；没有时用全院计数
-                    hosp_count = None
-                    if hospital_code and record.hospital_results:
-                        for h in record.hospital_results:
-                            if str(h.get("hospital_code") or "") == str(hospital_code):
-                                hosp_count = h.get("numerator_count") if target == "numerator" else h.get("denominator_count")
-                                break
-                    total_count = hosp_count if hosp_count is not None else (record.numerator_count if target == "numerator" else (record.denominator_count or 0))
-                    return {
-                        "ok": True,
-                        "columns": cols,
-                        "rows": _to_serializable_rows(rows),
-                        "total_count": total_count,
-                    }
-                except Exception as e:
-                    return {
-                        "ok": False,
-                        "error": str(e),
-                        "columns": [],
-                        "rows": [],
-                        "total_count": 0,
-                    }
-            else:
+                    # TODO: 恢复时此处需 return fallback_result
                 return {
-                    "ok": False,
-                    "error": "sql_runner 不可用",
-                    "columns": [],
-                    "rows": [],
-                    "total_count": 0,
+                    "ok": True,
+                    "columns": cols,
+                    "rows": _to_serializable_rows(page_rows),
+                    "total_count": total_count,
                 }
+            rec_den_preview = getattr(record, "denominator_preview_data", None)
+            if not hospital_code and target == "denominator" and rec_den_preview:
+                prev_data = rec_den_preview
+                # 兼容数据库中存为 JSON 字符串的情况（双重编码）
+                if isinstance(prev_data, str):
+                    import json as _json
+                    try:
+                        prev_data = _json.loads(prev_data)
+                    except Exception:
+                        prev_data = {}
+                if isinstance(prev_data, dict):
+                    cols = prev_data.get("columns") or []
+                    raw_rows = prev_data.get("rows") or []
+                else:
+                    cols = []
+                    raw_rows = prev_data if isinstance(prev_data, list) else []
+                total_count = record.denominator_count or len(raw_rows)
+                offset = (page - 1) * page_size
+                page_rows = raw_rows[offset:offset + page_size]
+                # 如果当前页为空但还有更多数据未加载完，fallback 到 SQL 执行（暂时禁用）
+                if not page_rows and total_count > len(raw_rows) and raw_sql:
+                    logger.info(
+                        f"[fetch_preview_page] 全省 denominator preview_data 仅存 {len(raw_rows)} 条，"
+                        f"total_count={total_count}，page={page} 超出范围，fallback 到 SQL"
+                    )
+                    # TODO: 恢复时此处需 return fallback_result
+                return {
+                    "ok": True,
+                    "columns": cols,
+                    "rows": _to_serializable_rows(page_rows),
+                    "total_count": total_count,
+                }
+
+            # ===== SQL fallback 已禁用 =====
+            # 恢复时取消以下注释并删除 raise：
+            raise NotImplementedError(
+                "[fetch_preview_page] SQL fallback 已禁用。请通过 preview_data 返回数据。"
+                "若需启用 SQL fallback，取消注释以下代码块。"
+            )
+            # --- 启用时取消注释从此开始 ---
+            # # 【阶段一·预览页】复用 execute_indicator 中的万能注入器
+            # # numerator 用 numerator_date_field，denominator 用 denominator_date_field
+            # time_col_for_preview = self._resolve_time_col(
+            #     (getattr(record, "numerator_date_field", None) if target == "numerator"
+            #      else (getattr(record, "denominator_date_field", None) or getattr(record, "date_field", "discharge")))
+            #     or "discharge"
+            # )
+            # # hospital_code 非空时仅执行该医院的 SQL（用于按医院筛选）
+            # codes_to_use = [hospital_code] if hospital_code else (getattr(record, "hospital_codes", []) or [])
+            # sql = self._inject_filters(
+            #     raw_sql,
+            #     hospital_codes=codes_to_use,
+            #     time_mode=getattr(record, "time_mode", None),
+            #     time_value=getattr(record, "time_value", None),
+            #     time_col_name=time_col_for_preview,
+            #     is_aggregate=False,
+            # )
+            # # 执行分页查询
+            # offset = (page - 1) * page_size
+            # if "{FILTER_PLACEHOLDER}" in sql:
+            #     logger.error(
+            #         f"[fetch_preview_page] 致命：占位符未被替换！SQL前100: {sql[:100]}"
+            #     )
+            #     return {
+            #         "ok": False,
+            #         "error": f"SQL占位符未替换: {sql[:200]}",
+            #         "columns": [],
+            #         "rows": [],
+            #         "total_count": 0,
+            #     }
+            # logger.info(
+            #     f"[fetch_preview_page SQL fallback] record_id={record.id}, target={target}, "
+            #     f"page={page}, page_size={page_size}, offset={offset}, "
+            #     f"hospital_code={hospital_code!r}, raw_sql前100={raw_sql[:100]!r}, "
+            #     f"injected_sql前200={sql[:200]!r}"
+            # )
+            # if self._sql_runner_fetch_preview_page is not None:
+            #     try:
+            #         cols, rows, err = self._sql_runner_fetch_preview_page(
+            #             sql, limit=page_size, offset=offset
+            #         )
+            #         logger.info(
+            #             f"[fetch_preview_page SQL] hospital_code={hospital_code}, "
+            #             f"sql前80={sql[:80]!r}, cols={cols[:3] if cols else []}, "
+            #             f"rows_count={len(rows) if rows else 0}, err={err}"
+            #         )
+            #         if err:
+            #             return {"ok": False, "error": err, "columns": [], "rows": [], "total_count": 0}
+            #         # 优先取该医院的分子/分母计数；没有时用全院计数
+            #         hosp_count = None
+            #         if hospital_code and getattr(record, "hospital_results", None):
+            #             for h in getattr(record, "hospital_results", []):
+            #                 if str(h.get("hospital_code") or "") == str(hospital_code):
+            #                     hosp_count = h.get("numerator_count") if target == "numerator" else h.get("denominator_count")
+            #                     break
+            #         total_count = hosp_count if hosp_count is not None else (record.numerator_count if target == "numerator" else (record.denominator_count or 0))
+            #         return {
+            #             "ok": True,
+            #             "columns": cols,
+            #             "rows": _to_serializable_rows(rows),
+            #             "total_count": total_count,
+            #         }
+            #     except Exception as e:
+            #         return {
+            #             "ok": False,
+            #             "error": str(e),
+            #             "columns": [],
+            #             "rows": [],
+            #             "total_count": 0,
+            #         }
+            # else:
+            #     return {
+            #         "ok": False,
+            #         "error": "sql_runner 不可用",
+            #         "columns": [],
+            #         "rows": [],
+            #         "total_count": 0,
+            #     }
+            # --- 启用时取消注释至此结束 ---
 
         except Exception as e:
             logger.error(f"fetch_preview_page 失败: {e}")

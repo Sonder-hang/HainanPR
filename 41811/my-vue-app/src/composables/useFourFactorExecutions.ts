@@ -73,6 +73,9 @@ const loading = ref(false)
 const hospitalLoading = ref(false)
 const error = ref<string | null>(null)
 
+// 缓存：key = `${indicatorId}-${timeMode}-${timeValue}`, value = preview-page 返回的 total_count
+const overviewTotalCountCache = ref<Record<string, number>>({})
+
 // 缓存：key = `${indicatorId}-${hospitalCode}`, value = 执行结果中该医院的记录
 const hospitalResultCache = ref<Record<string, any>>({})
 
@@ -86,10 +89,16 @@ async function fetchHospitals() {
   if (hospitalList.value.length > 0 || hospitalLoading.value) return
   hospitalLoading.value = true
   try {
-    const resp = await fetch(`${API_ENDPOINTS.hospitals}`)
+    const resp = await fetch(`${API_ENDPOINTS.indicatorHospitals}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json()
-    hospitalList.value = data.value || data || []
+    const rawList = Array.isArray(data) ? data : (Array.isArray(data?.value) ? data.value : [])
+    hospitalList.value = rawList
+      .map((item: any) => ({
+        MDC_ORG_CD: item.MDC_ORG_CD ?? item.hospital_code ?? item.value ?? '',
+        MDC_ORG_NM: item.MDC_ORG_NM ?? item.name ?? item.label ?? item.value ?? '',
+      }))
+      .filter((item: { MDC_ORG_CD: string; MDC_ORG_NM: string }) => item.MDC_ORG_CD && item.MDC_ORG_NM)
   } catch (e) {
     console.error('[useFourFactorExecutions] fetchHospitals failed', e)
     hospitalList.value = []
@@ -152,6 +161,23 @@ async function fetchExecutions(forceRefresh = false) {
       ...r,
       numerator_count: r.numerator_count ?? r.count ?? null,
     }))
+    console.log('[fetchExecutions] raw first record preview_data', {
+      type: typeof records[0]?.preview_data,
+      isArray: Array.isArray(records[0]?.preview_data),
+      isObject: records[0]?.preview_data !== null && typeof records[0]?.preview_data === 'object',
+      keys: records[0]?.preview_data ? Object.keys(records[0].preview_data) : [],
+      preview_data: records[0]?.preview_data,
+      first5: records.slice(0, 5).map(r => ({
+        id: r.id,
+        indicator_id: r.indicator_id,
+        time_mode: r.time_mode,
+        run_mode: r.run_mode,
+        time_value: r.time_value,
+        status: r.status,
+        preview_data_type: typeof r.preview_data,
+        preview_data_rows_len: Array.isArray(r.preview_data?.rows) ? r.preview_data.rows.length : (typeof r.preview_data?.rows),
+      })),
+    })
     executionRecords.value = records
   } catch (e: any) {
     error.value = e.message || '获取执行记录失败'
@@ -169,10 +195,18 @@ export function useFourFactorExecutions() {
    * @param timeValue 时间值（如 "2026-05" 或 "2026-Q1"）
    */
   function getLatestSuccess(indicatorId: number, timeMode?: TimeMode, timeValue?: string): ExecutionRecord | null {
+    const isImmediateMatch = (record: ExecutionRecord) => {
+      const timeRange = record.time_range ?? '全量'
+      const runMode = record.run_mode ?? (record as any).time_mode
+      return timeRange === '全量' || (!record.time_range && runMode === 'immediate')
+    }
+
     const records = executionRecords.value
       .filter(r => r.indicator_id === indicatorId && r.status === 'success')
       .filter(r => {
-        if (!timeMode || timeMode === 'immediate') return true
+        if (!timeMode || timeMode === 'immediate') {
+          return isImmediateMatch(r)
+        }
         if (r.run_mode !== timeMode) return false
         if (timeValue && r.time_value !== timeValue) return false
         return true
@@ -185,10 +219,18 @@ export function useFourFactorExecutions() {
    * 获取指定指标+时间模式的最新执行记录（不限状态）
    */
   function getLatest(indicatorId: number, timeMode?: TimeMode, timeValue?: string): ExecutionRecord | null {
+    const isImmediateMatch = (record: ExecutionRecord) => {
+      const timeRange = record.time_range ?? '全量'
+      const runMode = record.run_mode ?? (record as any).time_mode
+      return timeRange === '全量' || (!record.time_range && runMode === 'immediate')
+    }
+
     const records = executionRecords.value
       .filter(r => r.indicator_id === indicatorId)
       .filter(r => {
-        if (!timeMode || timeMode === 'immediate') return true
+        if (!timeMode || timeMode === 'immediate') {
+          return isImmediateMatch(r)
+        }
         if (r.run_mode !== timeMode) return false
         if (timeValue && r.time_value !== timeValue) return false
         return true
@@ -197,14 +239,72 @@ export function useFourFactorExecutions() {
     return records[0] || null
   }
 
-  function getCount(indicatorId: number, timeMode?: TimeMode, timeValue?: string): number {
+  function getOverviewCountCacheKey(indicatorId: number, timeMode?: TimeMode, timeValue?: string): string {
+    return `${indicatorId}-${timeMode || 'immediate'}-${timeValue || 'all'}`
+  }
+
+  async function ensureTrueCount(indicatorId: number, timeMode?: TimeMode, timeValue?: string): Promise<number> {
+    const cacheKey = getOverviewCountCacheKey(indicatorId, timeMode, timeValue)
+    const cached = overviewTotalCountCache.value[cacheKey]
+    if (cached !== undefined) return cached
+
     const rec = getLatestSuccess(indicatorId, timeMode, timeValue)
-    return rec?.numerator_count ?? 0
+    if (!rec?.id) {
+      overviewTotalCountCache.value[cacheKey] = -1
+      return -1
+    }
+
+    try {
+      const resp = await fetch(API_ENDPOINTS.previewPage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          execution_id: rec.id,
+          target: 'numerator',
+          page: 1,
+          page_size: 1,
+        }),
+      })
+      const json = await resp.json()
+      const totalCount = Number(json.total_count ?? -1)
+      overviewTotalCountCache.value[cacheKey] = totalCount
+      return totalCount
+    } catch (e) {
+      console.error('[useFourFactorExecutions] ensureTrueCount failed', { indicatorId, timeMode, timeValue, error: e })
+      overviewTotalCountCache.value[cacheKey] = -1
+      return -1
+    }
+  }
+
+  async function ensureTrueCounts(indicatorIds: number[], timeMode?: TimeMode, timeValue?: string): Promise<void> {
+    await Promise.all(indicatorIds.map(indicatorId => ensureTrueCount(indicatorId, timeMode, timeValue)))
+  }
+
+  function getTrueCountSync(indicatorId: number, timeMode?: TimeMode, timeValue?: string): number {
+    const cacheKey = getOverviewCountCacheKey(indicatorId, timeMode, timeValue)
+    const cached = overviewTotalCountCache.value[cacheKey]
+    if (cached !== undefined && cached >= 0) {
+      return cached
+    }
+
+    const rec = getLatestSuccess(indicatorId, timeMode, timeValue)
+    if (!rec) return 0
+    const previewCount = Array.isArray(rec.preview_data?.rows) ? rec.preview_data.rows.length : 0
+    return rec.numerator_count ?? previewCount ?? 0
+  }
+
+  async function getTrueCount(indicatorId: number, timeMode?: TimeMode, timeValue?: string): Promise<number> {
+    const totalCount = await ensureTrueCount(indicatorId, timeMode, timeValue)
+    if (totalCount >= 0) return totalCount
+    return getTrueCountSync(indicatorId, timeMode, timeValue)
+  }
+
+  function getCount(indicatorId: number, timeMode?: TimeMode, timeValue?: string): number {
+    return getTrueCountSync(indicatorId, timeMode, timeValue)
   }
 
   function getAlertCount(indicatorId: number, timeMode?: TimeMode, timeValue?: string): number {
-    const rec = getLatestSuccess(indicatorId, timeMode, timeValue)
-    return rec?.numerator_count ?? 0
+    return getTrueCountSync(indicatorId, timeMode, timeValue)
   }
 
   function hasRecord(indicatorId: number): boolean {
@@ -268,9 +368,7 @@ export function useFourFactorExecutions() {
    */
   async function getCountByHospital(indicatorId: number, hospitalCode: string, timeMode?: TimeMode, timeValue?: string): Promise<number> {
     if (hospitalCode === 'all') {
-      const rec = getLatestSuccess(indicatorId, timeMode, timeValue)
-      if (!rec) return -1
-      return rec.numerator_count ?? 0
+      return await getTrueCount(indicatorId, timeMode, timeValue)
     }
     const result = await getHospitalResult(indicatorId, hospitalCode, timeMode, timeValue)
     if (!result) return -1
@@ -290,6 +388,7 @@ export function useFourFactorExecutions() {
 
   async function refresh() {
     executionRecords.value = []
+    overviewTotalCountCache.value = {}
     clearHospitalResultCache()
     await fetchExecutions(true)
   }
@@ -305,18 +404,16 @@ export function useFourFactorExecutions() {
       return hospitalResultCache.value[cacheKey]
     }
     try {
-      // 构建请求 URL，添加时间筛选参数
-      const params = new URLSearchParams({
-        indicator_id: String(indicatorId),
-        hospital_code: hospitalCode,
-      })
+      const url = new URL(API_ENDPOINTS.executionByHospital(indicatorId, hospitalCode))
+      url.searchParams.set('indicator_id', String(indicatorId))
+      url.searchParams.set('hospital_code', hospitalCode)
       if (timeMode && timeMode !== 'immediate') {
-        params.set('time_mode', timeMode)
+        url.searchParams.set('time_mode', timeMode)
         if (timeValue) {
-          params.set('time_value', timeValue)
+          url.searchParams.set('time_value', timeValue)
         }
       }
-      const resp = await fetch(`${API_ENDPOINTS.executionByHospital(indicatorId, hospitalCode)}?${params}`)
+      const resp = await fetch(url.toString())
       if (!resp.ok) {
         hospitalResultCache.value[cacheKey] = null
         return null
@@ -369,6 +466,10 @@ export function useFourFactorExecutions() {
     getIndicatorName,
     getLatestSuccess,
     getLatest,
+    ensureTrueCount,
+    ensureTrueCounts,
+    getTrueCount,
+    getTrueCountSync,
     getCount,
     getAlertCount,
     getResult,

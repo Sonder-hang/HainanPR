@@ -131,7 +131,7 @@
               >
                 <span class="text-[#596080]">{{ sub.display_name }}</span>
                 <span class="font-medium" :class="sub.rate_percent != null ? 'text-[#1F264D]' : 'text-[#B8BCCC]'">
-                  {{ sub.rate_percent != null ? `${sub.rate_percent.toFixed(1)}%` : (sub.count != null ? sub.count : '-') }}
+                  {{ sub.rate_percent != null ? `${sub.rate_percent.toFixed(2)}%` : (sub.count != null ? sub.count : '-') }}
                 </span>
               </div>
               <div v-if="indicator.sub_indicators.length > 3" class="text-[12px] text-[#B8BCCC]">
@@ -258,10 +258,10 @@ const monthOptions = [
   { value: 12, label: '12月' }
 ]
 
-// 获取当前月份
+// 获取当前年份的第一月
 const getCurrentMonth = () => {
   const date = new Date()
-  return { year: date.getFullYear(), month: date.getMonth() + 1 }
+  return { year: date.getFullYear(), month: 1 }
 }
 
 const currentMonth = getCurrentMonth()
@@ -345,12 +345,12 @@ const getIndicatorValue = (indicator: IndicatorCardItem) => {
   }
   if (indicator.is_virtual_parent && indicator.sub_indicators && indicator.sub_indicators.length > 0) {
     const firstSub = indicator.sub_indicators[0]
-    if (firstSub.rate_percent != null) return `${firstSub.rate_percent.toFixed(1)}%`
+    if (firstSub.rate_percent != null) return `${firstSub.rate_percent.toFixed(2)}%`
     if (firstSub.count != null) return firstSub.count.toLocaleString()
     return '暂无数据'
   }
   if (indicator.calc_type === 'ratio') {
-    return indicator.rate_percent != null ? `${indicator.rate_percent.toFixed(1)}%` : '暂无数据'
+    return indicator.rate_percent != null ? `${indicator.rate_percent.toFixed(2)}%` : '暂无数据'
   } else {
     return indicator.count?.toLocaleString() ?? '暂无数据'
   }

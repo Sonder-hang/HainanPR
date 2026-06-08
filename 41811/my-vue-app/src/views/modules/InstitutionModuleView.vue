@@ -131,27 +131,6 @@
               <span v-if="currentRule?.mode === 'alert'" class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[11px] font-bold">{{ tableData.length }}</span>
             </h3>
             <div class="flex items-center gap-2">
-              <div class="flex items-center gap-1.5 border border-[#b8c9e8]/60 rounded-[2px] px-2.5 py-1.5 bg-white">
-                <Calendar class="w-3.5 h-3.5 text-[#596080] shrink-0" />
-                <input
-                  type="date"
-                  v-model="startDate"
-                  class="text-[12px] text-[#1F264D] focus:outline-none bg-transparent w-[130px]"
-                />
-                <span class="text-[11px] text-[#B8BCCC]">至</span>
-                <input
-                  type="date"
-                  v-model="endDate"
-                  class="text-[12px] text-[#1F264D] focus:outline-none bg-transparent w-[130px]"
-                />
-                <button
-                  v-if="startDate || endDate"
-                  @click="startDate = ''; endDate = ''"
-                  class="ml-0.5 text-[#B8BCCC] hover:text-[#596080] transition-colors"
-                >
-                  <X class="w-3 h-3" />
-                </button>
-              </div>
               <div class="relative">
                 <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 transform -translate-y-1/2 text-[#B8BCCC]" />
                 <input type="text" v-model="keyword" placeholder="搜索..." class="pl-8 pr-3 py-1.5 text-[12px] border border-[#b8c9e8]/60 rounded-[2px] focus:outline-none focus:border-[#0A6EFD] w-52 bg-white" />
@@ -230,7 +209,7 @@
                     </td>
                     <td class="px-3.5 py-3 text-[12px]">
                       <span v-if="row.riskCount > 0" class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-500">
-                        <AlertTriangle class="w-3 h-3"/>{{ row.riskCount }} 项预警
+                        <AlertTriangle class="w-3 h-3" />{{ row.riskCount }} 项预警
                       </span>
                       <span v-else class="text-[#9CA3AF]">暂无预警</span>
                     </td>
@@ -246,6 +225,25 @@
                 </template>
               </tbody>
             </table>
+          </div>
+
+          <div v-if="getDetailTotalCount() > 0" class="px-3 py-2 border-t border-[#b8c9e8]/40 bg-[#f8faff] flex items-center justify-between shrink-0">
+            <div class="text-[12px] text-[#596080]">第 {{ detailCurrentPage }} 页，共 {{ detailTotalPages }} 页</div>
+            <div class="flex items-center gap-1">
+              <button @click="prevDetailPage" :disabled="detailCurrentPage === 1" class="p-1.5 text-[#596080] hover:text-[#0A6EFD] disabled:text-[#B8BCCC] disabled:cursor-not-allowed">
+                <ChevronLeft class="w-3.5 h-3.5" />
+              </button>
+              <button
+                v-for="page in detailVisiblePages"
+                :key="page"
+                @click="goToDetailPage(page)"
+                class="w-7 h-7 text-[12px] rounded-[2px] transition-colors"
+                :class="page === detailCurrentPage ? 'bg-[#0A6EFD] text-white' : 'text-[#596080] hover:bg-[#e8eef9]'"
+              >{{ page }}</button>
+              <button @click="nextDetailPage" :disabled="detailCurrentPage === detailTotalPages" class="p-1.5 text-[#596080] hover:text-[#0A6EFD] disabled:text-[#B8BCCC] disabled:cursor-not-allowed">
+                <ChevronRight class="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -461,8 +459,9 @@ import {
   Activity,
   AlertTriangle,
   Building,
-  Calendar,
   CheckCircle,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Download,
   Eye,
@@ -474,13 +473,14 @@ import {
 } from 'lucide-vue-next'
 import { exportToExcel } from '../../utils/exportExcel'
 import { useFourFactorExecutions, TIME_MODE_OPTIONS, MONTH_OPTIONS, QUARTER_OPTIONS } from '../../composables/useFourFactorExecutions'
+import { useDetailPagination } from '../../composables/useDetailPagination'
 import type { TimeMode } from '../../composables/useFourFactorExecutions'
 
 const route = useRoute()
 const router = useRouter()
-const { fetchExecutions, executionRecords, formatCountInMetric } = useFourFactorExecutions()
+const { fetchExecutions, fetchHospitals, hospitalList, getPreviewDataByHospital, getCountByHospital, executionRecords, formatCountInMetric } = useFourFactorExecutions()
 
-// 用于触发医院筛选变化时的重算（当前固定为全选，未来扩展筛选时自动生效）
+const showHospitalFilter = ref(false)
 const hospitalVersion = ref(0)
 const currentHospitalId = ref('all')
 
@@ -526,7 +526,58 @@ const quarterYearOptions = computed(() => {
   return years
 })
 
-// indicator_id 对应 indicator.id（规则 ID 去掉 'r'）
+const ruleCountCache = ref<Record<string, number>>({})
+const rulePreviewCache = ref<Record<string, { columns: string[]; rows: any[] }>>({})
+const countLoading = ref(false)
+
+async function loadHospitalData() {
+  if (currentHospitalId.value === 'all') {
+    ruleCountCache.value = {}
+    rulePreviewCache.value = {}
+    return
+  }
+  countLoading.value = true
+  try {
+    const tm = timeMode.value
+    const tv = currentTimeValue.value
+    const rulesToLoad = rules.filter(rule => rule.indicator_id > 0)
+    const promises = rulesToLoad.map(async (rule) => {
+      const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
+      const [count, preview] = await Promise.all([
+        getCountByHospital(rule.indicator_id, currentHospitalId.value, tm, tv),
+        getPreviewDataByHospital(rule.indicator_id, currentHospitalId.value, tm, tv),
+      ])
+      ruleCountCache.value[key] = count
+      rulePreviewCache.value[key] = preview || { columns: [], rows: [] }
+    })
+    await Promise.all(promises)
+  } finally {
+    countLoading.value = false
+  }
+}
+
+export interface Hospital {
+  id: string
+  name: string
+  level?: string
+}
+
+const hospitalOptions = computed<Hospital[]>(() => [
+  { id: 'all', name: '全省', level: '' },
+  ...hospitalList.value.map(h => ({ id: h.MDC_ORG_CD, name: h.MDC_ORG_NM })),
+])
+
+const currentHospital = computed(() =>
+  hospitalOptions.value.find(h => h.id === currentHospitalId.value) || hospitalOptions.value[0]
+)
+
+function selectHospital(h: Hospital) {
+  currentHospitalId.value = h.id
+  hospitalVersion.value++
+  showHospitalFilter.value = false
+  void loadHospitalData()
+}
+
 const rules = [
   // 红色预警规则
   { id: 'r4', indicator_id: 4, mode: 'alert' as const, name: '超范围经营', desc: '诊断治疗与机构诊疗科目不符，系统自动报警。', scope: '住院', dimension: '资质审核', metric: '2 条', logic: '在系统中维护医疗机构诊疗科目信息，设定"诊断治疗-诊疗科目"匹配规则，医生开了与该医疗机构诊疗科目不符的诊断时自动报警。' },
@@ -540,17 +591,32 @@ const tabs = [{ id: 'overview', name: '分类总览' }, ...rules]
 const activeTab = ref(route.query.tab as string || 'overview')
 const drawerData = ref<any>(null)
 const licenseImageData = ref<any>(null)
+const DETAIL_PAGE_SIZE = 10
 const currentRule = computed(() => rules.find(r => r.id === activeTab.value))
-const startDate = ref('')
-const endDate = ref('')
 const keyword = ref('')
 
 watch(activeTab, (val) => {
   router.replace({ query: val === 'overview' ? {} : { tab: val } })
+  resetDetailPage()
+})
+
+watch(currentHospitalId, () => {
+  hospitalVersion.value++
+  if (currentHospitalId.value !== 'all') {
+    void loadHospitalData()
+  }
+})
+
+watch([timeMode, currentTimeValue], () => {
+  hospitalVersion.value++
+  if (currentHospitalId.value !== 'all') {
+    void loadHospitalData()
+  }
 })
 
 onMounted(() => {
   fetchExecutions()
+  fetchHospitals()
 })
 
 const MOCK_DATA: Record<string, any[]> = {
@@ -617,43 +683,83 @@ const MOCK_DATA: Record<string, any[]> = {
   ],
 }
 
-const tableData = computed(() => {
+const filteredData = computed(() => {
   const rule = currentRule.value
-  // r4/r5 (alert) 和 r6 (monitor)：真实数据
   if (rule?.mode === 'alert' || rule?.id === 'r6') {
     return realTableData.value
   }
-  // r7：mock 数据
   let result = MOCK_DATA[activeTab.value] || []
+  if (currentHospitalId.value !== 'all') {
+    const hospitalName = currentHospital.value?.name || ''
+    result = result.filter((item: any) => matchHospital(item, hospitalName))
+  }
   if (keyword.value) {
     result = result.filter((item: any) =>
       (item.org || item.name || '').toLowerCase().includes(keyword.value.toLowerCase()),
     )
   }
-  if (startDate.value) {
-    result = result.filter((item: any) => !item.time || item.time >= startDate.value)
-  }
-  if (endDate.value) {
-    result = result.filter((item: any) => !item.time || item.time <= endDate.value)
-  }
   return result
 })
+
+const {
+  currentPage: detailCurrentPage,
+  totalCount: detailTotalCount,
+  totalPages: detailTotalPages,
+  visiblePages: detailVisiblePages,
+  pagedRows: tableData,
+  prevPage: prevDetailPage,
+  nextPage: nextDetailPage,
+  goToPage: goToDetailPage,
+  resetPage: resetDetailPage,
+} = useDetailPagination({
+  rows: filteredData,
+  pageSize: DETAIL_PAGE_SIZE,
+  resetDeps: [currentRule],
+})
+
+function getDetailTotalCount(): number {
+  return detailTotalCount.value
+}
+
+function matchHospital(item: any, hName: string): boolean {
+  if (item.org === '全省平均') return false
+  return item.org === hName || item.org.includes(hName)
+}
 
 // 当前规则对应的指标 ID
 const currentIndicatorId = computed(() => {
   const rule = currentRule.value
-  return rule?.indicator_id && rule.indicator_id > 0 ? rule.indicator_id : null
+  return rule?.indicator_id ?? null
+})
+
+const columnOrder = computed(() => {
+  void hospitalVersion.value
+  const indId = currentIndicatorId.value
+  if (!indId) return []
+
+  const rec = findExecutionByTime(indId)
+  if (rec?.preview_data?.columns?.length) {
+    return rec.preview_data.columns
+  }
+  if (rec?.preview_data?.rows?.length) {
+    return Object.keys(rec.preview_data.rows[0])
+  }
+
+  if (currentHospitalId.value !== 'all') {
+    const tm = timeMode.value
+    const tv = currentTimeValue.value
+    const key = `${indId}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
+    const preview = rulePreviewCache.value[key]
+    if (preview?.columns?.length) return preview.columns
+    if (preview?.rows?.length) return Object.keys(preview.rows[0])
+  }
+
+  return []
 })
 
 // 真实预览数据列名
 const realTableColumns = computed(() => {
-  void hospitalVersion.value
-  const indId = currentIndicatorId.value
-  if (!indId) return []
-  const rec = findExecutionByTime(indId)
-  const preview = rec?.preview_data
-  if (!preview) return []
-  return preview.columns || (preview.rows?.[0] ? Object.keys(preview.rows[0]) : [])
+  return columnOrder.value
 })
 
 // 真实预览数据
@@ -661,11 +767,28 @@ const realTableData = computed(() => {
   void hospitalVersion.value
   const indId = currentIndicatorId.value
   if (!indId) return []
-  const rec = findExecutionByTime(indId)
-  const preview = rec?.preview_data
+
+  const cols = columnOrder.value
+  if (!cols.length) return []
+
+  if (currentHospitalId.value === 'all') {
+    const rec = findExecutionByTime(indId)
+    if (!rec?.preview_data?.rows?.length) return []
+    return rec.preview_data.rows.map((row: any, idx: number) => {
+      const item: any = { id: String(idx + 1), _raw: row }
+      for (const col of cols) {
+        item[col] = row[col]
+      }
+      return item
+    })
+  }
+
+  const tm = timeMode.value
+  const tv = currentTimeValue.value
+  const key = `${indId}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
+  const preview = rulePreviewCache.value[key]
   if (!preview || !preview.rows?.length) return []
-  const cols = preview.columns || Object.keys(preview.rows[0])
-  return preview.rows.map((row, idx) => {
+  return preview.rows.map((row: any, idx: number) => {
     const item: any = { id: String(idx + 1), _raw: row }
     for (const col of cols) {
       item[col] = row[col]
@@ -688,7 +811,7 @@ const realTableData = computed(() => {
 function findExecutionByTime(indicatorId: number): any | null {
   const tm = timeMode.value
   const tv = currentTimeValue.value
-  return executionRecords.value
+  const results = executionRecords.value
     .filter(r => r.indicator_id === indicatorId && r.status === 'success')
     .filter(r => {
       if (tm === 'immediate') return true
@@ -696,15 +819,45 @@ function findExecutionByTime(indicatorId: number): any | null {
       if (tv && r.time_value !== tv) return false
       return true
     })
-    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())[0] || null
+    .sort((a, b) => new Date(b.execution_time).getTime() - new Date(a.execution_time).getTime())
+
+  console.log('[findExecutionByTime]', {
+    indicatorId,
+    timeMode: tm,
+    timeValue: tv,
+    matchedCount: results.length,
+    records: results.map(r => ({
+      id: r.id,
+      execution_time: r.execution_time,
+      run_mode: r.run_mode,
+      time_value: r.time_value,
+      status: r.status,
+      numerator_count: r.numerator_count,
+      preview_data_rows: r.preview_data?.rows?.length,
+      preview_data_cols: r.preview_data?.columns,
+    })),
+  })
+
+  return results[0] || null
 }
 
 function getRuleCount(rule: any): string {
   if (!rule) return '-'
   void hospitalVersion.value
-  const rec = findExecutionByTime(rule.indicator_id)
-  if (!rec) return '-'
-  const cnt = rec.numerator_count ?? 0
+  if (currentHospitalId.value === 'all') {
+    void countLoading.value
+    void ruleCountCache.value
+    const rec = findExecutionByTime(rule.indicator_id)
+    if (!rec) return '-'
+    const cnt = rec.numerator_count ?? 0
+    if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
+    return formatCountInMetric(rule.metric, cnt)
+  }
+  const tm = timeMode.value
+  const tv = currentTimeValue.value
+  const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
+  const cnt = ruleCountCache.value[key]
+  if (cnt === undefined || cnt === -1) return '-'
   if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
   return formatCountInMetric(rule.metric, cnt)
 }
