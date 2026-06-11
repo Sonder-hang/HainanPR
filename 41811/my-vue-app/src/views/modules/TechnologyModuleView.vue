@@ -139,7 +139,7 @@
           <div class="p-3 border-b border-[#b8c9e8]/40 flex justify-between items-center shrink-0">
             <h3 class="font-semibold text-[#1F264D] flex items-center text-[12px]">
               {{ currentRule?.mode === 'alert' ? '违规预警数据列表' : '监测指标统计报表' }}
-              <span v-if="currentRule?.mode === 'alert'" class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[10px] font-bold">{{ totalCount > 0 ? totalCount.toLocaleString() + ' 条' : alertTableData.length }}</span>
+              <span v-if="currentRule?.mode === 'alert'" class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[10px] font-bold">{{ detailListCount > 0 ? detailListCount.toLocaleString() + ' 条' : 0 }}</span>
             </h3>
             <div class="flex items-center gap-2">
               <div class="relative">
@@ -153,10 +153,10 @@
           </div>
 
           <div v-if="currentRule?.mode === 'alert'" class="flex-1 overflow-auto">
-            <table v-if="alertTableData.length > 0" class="w-full text-left border-collapse">
+            <table v-if="alertTableData.length > 0" class="w-full table-fixed text-left border-collapse">
               <thead class="bg-[#e8eef9] sticky top-0 z-10">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3 py-2 text-[10px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3 py-2 text-[10px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
@@ -177,10 +177,10 @@
           </div>
 
           <div v-else class="flex-1 overflow-auto">
-            <table v-if="tableData.length > 0" class="w-full text-left border-collapse">
+            <table v-if="tableData.length > 0" class="w-full table-fixed text-left border-collapse">
               <thead class="bg-emerald-50/60 sticky top-0 z-10 border-b border-emerald-100">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3 py-2 text-[10px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3 py-2 text-[10px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
@@ -283,7 +283,7 @@ export interface Hospital {
 
 const route = useRoute()
 const router = useRouter()
-const { fetchExecutions, fetchHospitals, hospitalList, getPreviewDataByHospital, getDenominatorPreviewDataByHospital, getCountByHospital, getDenominatorCountByHospital, formatCountInMetric, executionRecords, ensureTrueCounts, getTrueCountSync } = useFourFactorExecutions()
+const { fetchExecutions, fetchHospitals, hospitalList, getPreviewDataByHospital, getDenominatorPreviewDataByHospital, getCountByHospital, getDenominatorCountByHospital, formatCountInMetric, executionRecords } = useFourFactorExecutions()
 
 const showHospitalFilter = ref(false)
 const currentHospitalId = ref('all')
@@ -381,9 +381,8 @@ async function loadHospitalData() {
   }
 }
 
-async function loadOverviewCounts() {
-  if (!isPageMounted.value || currentHospitalId.value !== 'all') return
-  await ensureTrueCounts(rules.map(rule => rule.indicator_id), timeMode.value, currentTimeValue.value)
+function loadOverviewCounts() {
+  // 空函数，保留占位，调用处无需删除
 }
 
 async function loadMoreRows() {
@@ -641,6 +640,13 @@ const currentIndicatorId = computed(() => {
   return rule?.indicator_id ?? null
 })
 
+const detailListCount = computed(() => {
+  const indId = currentIndicatorId.value
+  if (!indId) return 0
+  const rec = findExecutionByTime(indId)
+  return rec?.numerator_count ?? 0
+})
+
 // 指标/医院/时间筛选变化时重新加载分页数据
 watch(currentIndicatorId, (val) => {
   if (!isPageMounted.value || !val) return
@@ -834,29 +840,23 @@ function findExecutionByTime(indicatorId: number): any | null {
   return results[0] || null
 }
 
-function getOverviewCountValue(rule: any): number | null {
-  if (!rule) return null
-  const tm = timeMode.value
-  const tv = currentTimeValue.value
-
-  if (currentHospitalId.value === 'all') {
-    return getTrueCountSync(rule.indicator_id, tm, tv)
-  }
-
-  const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
-  const cnt = ruleCountCache.value[key]
-  if (cnt === undefined || cnt === -1) return null
-  return cnt
-}
-
 function getRuleCount(rule: any): string {
   if (!rule) return '-'
   void hospitalVersion.value
   void countLoading.value
   void ruleCountCache.value
-
-  const cnt = getOverviewCountValue(rule)
-  if (cnt == null) return '-'
+  if (currentHospitalId.value === 'all') {
+    const rec = findExecutionByTime(rule.indicator_id)
+    if (!rec) return '-'
+    const cnt = rec.numerator_count ?? 0
+    if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
+    return formatCountInMetric(rule.metric, cnt)
+  }
+  const tm = timeMode.value
+  const tv = currentTimeValue.value
+  const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
+  const cnt = ruleCountCache.value[key]
+  if (cnt === undefined || cnt === -1) return '-'
   if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
   return formatCountInMetric(rule.metric, cnt)
 }

@@ -140,7 +140,7 @@
           <div class="p-3.5 border-b border-[#b8c9e8]/40 flex justify-between items-center shrink-0">
             <h3 class="font-semibold text-[#1F264D] flex items-center text-[13px]">
               {{ currentRule?.mode === 'alert' ? '违规预警数据列表' : '监测指标统计报表' }}
-              <span v-if="currentRule?.mode === 'alert'" class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[11px] font-bold">{{ tableData.length }}</span>
+              <span v-if="currentRule?.mode === 'alert'" class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[11px] font-bold">{{ detailListCount }}</span>
             </h3>
             <div class="flex items-center gap-2">
               <div class="relative">
@@ -154,15 +154,15 @@
           </div>
 
           <div v-if="currentRule?.mode === 'alert'" class="flex-1 overflow-auto">
-            <table v-if="realTableData.length > 0" class="w-full text-left border-collapse">
+            <table v-if="realTableData.length > 0" class="w-full table-fixed text-left border-collapse">
               <thead class="bg-[#e8eef9] sticky top-0 z-10">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <tr v-for="row in tableData" :key="row.id" class="hover:bg-[#e8eef9]/40 transition-colors">
-                  <td v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[12px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
+                  <td v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 align-top text-[12px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -174,10 +174,10 @@
           </div>
 
           <div v-else class="flex-1 overflow-auto">
-            <table v-if="realTableData.length > 0" class="w-full text-left border-collapse">
+            <table v-if="realTableData.length > 0" class="w-full table-fixed text-left border-collapse">
               <thead class="bg-emerald-50/60 sticky top-0 z-10 border-b border-emerald-100">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="String(col)" class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
@@ -485,6 +485,13 @@ function matchHospital(item: any, hName: string): boolean {
 const currentIndicatorId = computed(() => {
   const rule = currentRule.value
   return rule?.indicator_id ?? null
+})
+
+const detailListCount = computed(() => {
+  const indId = currentIndicatorId.value
+  if (!indId) return 0
+  const rec = findExecutionByTime(indId)
+  return rec?.numerator_count ?? 0
 })
 
 // 获取列顺序：优先使用全省执行记录的列顺序，保持一致性

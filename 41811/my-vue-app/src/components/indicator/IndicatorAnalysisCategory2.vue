@@ -114,7 +114,7 @@
                 />
               </svg>
               <div class="text-center">
-                <div class="text-[36px] font-bold text-[#2E57E5]">{{ currentRate }}{{ rateUnit }}</div>
+                <div class="text-[36px] font-bold text-[#2E57E5]">{{ Number(currentRate.toFixed(2)) }}{{ rateUnit }}</div>
                 <div class="text-[14px] text-[#596080]">{{ rateLabel }}</div>
               </div>
             </div>
@@ -586,10 +586,10 @@ const updateTimeComparisonChart = () => {
   const seriesData = trendData.rates || trendData.data || []
 
   timeComparisonChart.setOption({
-    tooltip: { trigger: 'axis', formatter: (params: any) => params[0].name + '<br/>' + props.rateLabel + ': ' + params[0].value + props.yAxisUnit },
+    tooltip: { trigger: 'axis', formatter: (params: any) => params[0].name + '<br/>' + props.rateLabel + ': ' + (params[0].value != null ? Number(params[0].value.toFixed(2)) : '-') + props.yAxisUnit },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '3%', containLabel: true },
     xAxis: { type: 'category', boundaryGap: false, data: xAxisData },
-    yAxis: { type: 'value', name: props.rateLabel + ' (' + props.yAxisUnit + ')', axisLabel: { formatter: '{value}' + props.yAxisUnit } },
+    yAxis: { type: 'value', name: props.rateLabel + ' (' + props.yAxisUnit + ')', axisLabel: { formatter: (value: number) => (value != null ? Number(value.toFixed(2)) : '-') + props.yAxisUnit } },
     series: [{
       name: props.rateLabel, type: 'line', data: seriesData, smooth: true,
       lineStyle: { width: 2, color: '#2E57E5' },
@@ -614,11 +614,11 @@ const updateHospitalComparisonChart = () => {
   })
 
   hospitalComparisonChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params: any) => params[0].name + '<br/>' + props.rateLabel + ': ' + params[0].value + props.yAxisUnit },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params: any) => params[0].name + '<br/>' + props.rateLabel + ': ' + (params[0].value != null ? Number(params[0].value.toFixed(2)) : '-') + props.yAxisUnit },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '3%', containLabel: true },
     xAxis: { type: 'category', data: selectedHospitals.value.map(key => (hospitals.value as Array<{ value: string; label: string }>).find(h => h.value === key)?.label || key) },
-    yAxis: { type: 'value', name: props.rateLabel + ' (' + props.yAxisUnit + ')', axisLabel: { formatter: '{value}' + props.yAxisUnit }, max: getDynamicYAxisMax(seriesData) },
-    series: [{ type: 'bar', data: seriesData, itemStyle: { color: '#2E57E5' }, label: { show: true, position: 'top', formatter: '{c}' + props.yAxisUnit }, barWidth: 40 }]
+    yAxis: { type: 'value', name: props.rateLabel + ' (' + props.yAxisUnit + ')', axisLabel: { formatter: (value: number) => (value != null ? Number(value.toFixed(2)) : '-') + props.yAxisUnit }, max: getDynamicYAxisMax(seriesData) },
+    series: [{ type: 'bar', data: seriesData, itemStyle: { color: '#2E57E5' }, label: { show: true, position: 'top', formatter: (params: any) => (params.value != null ? Number(params.value.toFixed(2)) : '-') + props.yAxisUnit }, barWidth: 40 }]
   }, true)
 }
 
@@ -651,6 +651,17 @@ onMounted(async () => {
       const parts = props.initTimeValue.split('-Q')
       cardQuarterYear.value = parseInt(parts[0])
       cardQuarterNum.value = parts[1]
+    }
+    // 同时初始化医院对比图的时间筛选器
+    hospitalComparisonType.value = props.initTimeMode as 'monthly' | 'quarterly'
+    if (props.initTimeMode === 'monthly' && props.initTimeValue) {
+      const parts = props.initTimeValue.split('-')
+      selectedComparisonYearForMonth.value = parseInt(parts[0])
+      selectedComparisonMonth.value = parseInt(parts[1])
+    } else if (props.initTimeMode === 'quarterly' && props.initTimeValue) {
+      const parts = props.initTimeValue.split('-Q')
+      selectedComparisonYear.value = parseInt(parts[0])
+      selectedComparisonQuarter.value = parts[1]
     }
   }
 

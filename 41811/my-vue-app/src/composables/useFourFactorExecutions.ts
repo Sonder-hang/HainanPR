@@ -73,10 +73,7 @@ const loading = ref(false)
 const hospitalLoading = ref(false)
 const error = ref<string | null>(null)
 
-// 缓存：key = `${indicatorId}-${timeMode}-${timeValue}`, value = preview-page 返回的 total_count
-const overviewTotalCountCache = ref<Record<string, number>>({})
-
-// 缓存：key = `${indicatorId}-${hospitalCode}`, value = 执行结果中该医院的记录
+// 缓存：key = `${indicatorId}-${hospitalCode}-${timeMode}-${timeValue}`, value = 按医院查询结果
 const hospitalResultCache = ref<Record<string, any>>({})
 
 // 四要素指标ID白名单（core18=20-62，four=1-19/63, 64）
@@ -243,59 +240,13 @@ export function useFourFactorExecutions() {
     return `${indicatorId}-${timeMode || 'immediate'}-${timeValue || 'all'}`
   }
 
-  async function ensureTrueCount(indicatorId: number, timeMode?: TimeMode, timeValue?: string): Promise<number> {
-    const cacheKey = getOverviewCountCacheKey(indicatorId, timeMode, timeValue)
-    const cached = overviewTotalCountCache.value[cacheKey]
-    if (cached !== undefined) return cached
-
-    const rec = getLatestSuccess(indicatorId, timeMode, timeValue)
-    if (!rec?.id) {
-      overviewTotalCountCache.value[cacheKey] = -1
-      return -1
-    }
-
-    try {
-      const resp = await fetch(API_ENDPOINTS.previewPage, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          execution_id: rec.id,
-          target: 'numerator',
-          page: 1,
-          page_size: 1,
-        }),
-      })
-      const json = await resp.json()
-      const totalCount = Number(json.total_count ?? -1)
-      overviewTotalCountCache.value[cacheKey] = totalCount
-      return totalCount
-    } catch (e) {
-      console.error('[useFourFactorExecutions] ensureTrueCount failed', { indicatorId, timeMode, timeValue, error: e })
-      overviewTotalCountCache.value[cacheKey] = -1
-      return -1
-    }
-  }
-
-  async function ensureTrueCounts(indicatorIds: number[], timeMode?: TimeMode, timeValue?: string): Promise<void> {
-    await Promise.all(indicatorIds.map(indicatorId => ensureTrueCount(indicatorId, timeMode, timeValue)))
-  }
-
   function getTrueCountSync(indicatorId: number, timeMode?: TimeMode, timeValue?: string): number {
-    const cacheKey = getOverviewCountCacheKey(indicatorId, timeMode, timeValue)
-    const cached = overviewTotalCountCache.value[cacheKey]
-    if (cached !== undefined && cached >= 0) {
-      return cached
-    }
-
     const rec = getLatestSuccess(indicatorId, timeMode, timeValue)
     if (!rec) return 0
-    const previewCount = Array.isArray(rec.preview_data?.rows) ? rec.preview_data.rows.length : 0
-    return rec.numerator_count ?? previewCount ?? 0
+    return rec.numerator_count ?? 0
   }
 
   async function getTrueCount(indicatorId: number, timeMode?: TimeMode, timeValue?: string): Promise<number> {
-    const totalCount = await ensureTrueCount(indicatorId, timeMode, timeValue)
-    if (totalCount >= 0) return totalCount
     return getTrueCountSync(indicatorId, timeMode, timeValue)
   }
 
@@ -368,7 +319,9 @@ export function useFourFactorExecutions() {
    */
   async function getCountByHospital(indicatorId: number, hospitalCode: string, timeMode?: TimeMode, timeValue?: string): Promise<number> {
     if (hospitalCode === 'all') {
-      return await getTrueCount(indicatorId, timeMode, timeValue)
+      const rec = getLatestSuccess(indicatorId, timeMode, timeValue)
+      if (!rec) return -1
+      return rec.numerator_count ?? 0
     }
     const result = await getHospitalResult(indicatorId, hospitalCode, timeMode, timeValue)
     if (!result) return -1
@@ -388,7 +341,6 @@ export function useFourFactorExecutions() {
 
   async function refresh() {
     executionRecords.value = []
-    overviewTotalCountCache.value = {}
     clearHospitalResultCache()
     await fetchExecutions(true)
   }
@@ -466,8 +418,8 @@ export function useFourFactorExecutions() {
     getIndicatorName,
     getLatestSuccess,
     getLatest,
-    ensureTrueCount,
-    ensureTrueCounts,
+    // ensureTrueCount,
+    // ensureTrueCounts,
     getTrueCount,
     getTrueCountSync,
     getCount,

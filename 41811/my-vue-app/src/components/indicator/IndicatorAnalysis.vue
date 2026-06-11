@@ -763,6 +763,17 @@ onMounted(async () => {
       leftQuarterYear.value = parseInt(parts[0])
       leftQuarterNum.value = parts[1]
     }
+    // 同时初始化医院对比图的时间筛选器
+    hospitalComparisonType.value = props.initTimeMode as 'monthly' | 'quarterly'
+    if (props.initTimeMode === 'monthly' && props.initTimeValue) {
+      const parts = props.initTimeValue.split('-')
+      selectedComparisonYearForMonth.value = parseInt(parts[0])
+      selectedComparisonMonth.value = parseInt(parts[1])
+    } else if (props.initTimeMode === 'quarterly' && props.initTimeValue) {
+      const parts = props.initTimeValue.split('-Q')
+      selectedComparisonYear.value = parseInt(parts[0])
+      selectedComparisonQuarter.value = parts[1]
+    }
   }
 
   await fetchHospitals()

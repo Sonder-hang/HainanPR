@@ -128,7 +128,7 @@
           <div class="p-3.5 border-b border-[#b8c9e8]/40 flex justify-between items-center shrink-0">
             <h3 class="font-semibold text-[#1F264D] flex items-center text-[13px]">
               {{ currentRule?.mode === 'alert' ? '违规预警数据列表' : '监测指标统计报表' }}
-              <span v-if="currentRule?.mode === 'alert'" class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[11px] font-bold">{{ tableData.length }}</span>
+              <span v-if="currentRule?.mode === 'alert'" class="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-[11px] font-bold">{{ detailListCount }}</span>
             </h3>
             <div class="flex items-center gap-2">
               <div class="relative">
@@ -144,15 +144,15 @@
           <!-- 预警模式表格（r4/r5） -->
           <div v-if="currentRule?.mode === 'alert'" class="flex-1 overflow-auto">
             <!-- 真实数据：动态列 -->
-            <table v-if="realTableData.length > 0" class="w-full text-left border-collapse">
+            <table v-if="realTableData.length > 0" class="w-full table-fixed text-left border-collapse">
               <thead class="bg-[#e8eef9] sticky top-0 z-10">
                 <tr>
-                  <th v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">{{ col }}</th>
+                  <th v-for="col in realTableColumns" :key="col" class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
                 <tr v-for="row in tableData" :key="row.id" class="hover:bg-[#e8eef9]/40 transition-colors">
-                  <td v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[12px] text-[#596080] max-w-xs truncate" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
+                  <td v-for="col in realTableColumns" :key="col" class="px-3.5 py-2.5 text-[12px] text-[#596080] max-w-xs truncate align-top" :title="String(row[col] ?? '-')">{{ row[col] ?? '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -163,17 +163,12 @@
             </div>
           </div>
 
-          <!-- 常规监测表格（r6/r7） -->
-          <div v-else class="flex-1 overflow-auto">
+          <!-- 常规监测表格（r6 -->
+          <div v-else-if="currentRule?.id==='r6'" class="flex-1 overflow-auto">
             <table class="w-full text-left border-collapse">
-              <thead :class="['sticky top-0 z-10 border-b', currentRule?.id === 'r7' ? 'bg-emerald-50/60 border-emerald-100' : 'bg-emerald-50/60 border-emerald-100']">
+              <thead :class="['sticky top-0 z-10 border-b','bg-emerald-50/60 border-emerald-100']">
                 <tr>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">医疗机构</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">机构类别 / 级别</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">许可证有效期</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">标准核验</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide">风险预警</th>
-                  <th class="px-3.5 py-2.5 text-[11px] font-semibold text-[#596080] uppercase tracking-wide text-right">操作</th>
+                  <th v-for="col in realTableColumns" :key="col" class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">{{ col }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-[#b8c9e8]/30">
@@ -213,11 +208,107 @@
                       </span>
                       <span v-else class="text-[#9CA3AF]">暂无预警</span>
                     </td>
+                    <td class="px-3.5 py-3 align-top text-right whitespace-nowrap">
+                      <button @click="openDrawer(row)" class="text-[#0A6EFD] hover:text-[#1F264D] font-medium text-[11px] whitespace-nowrap inline-flex items-center">
+                        <Eye class="w-3 h-3 inline mr-1" />查看详情
+                      </button>
+                      <button @click="showLicenseImage(row)" class="ml-3 text-emerald-600 hover:text-emerald-700 font-medium text-[11px] whitespace-nowrap inline-flex items-center">
+                        <Shield class="w-3 h-3 inline mr-1" />查看资质
+                      </button>
+                    </td>
+                  </tr>
+                </template>
+                <!-- r7 医疗资质监测（保留 mock） -->
+                <template v-else-if="currentRule?.id === 'r7'">
+                  <tr v-for="row in tableData" :key="row.id" class="hover:bg-emerald-50/40 transition-colors">
+                    <td class="px-3.5 py-3 text-[12px] text-[#1F264D] font-medium flex items-center">
+                      <Building class="w-3.5 h-3.5 text-emerald-500 mr-2" /> {{ row.org || '-' }}
+                    </td>
+                    <td class="px-3.5 py-3 text-[12px]">
+                      <span class="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">{{ row.category || '-' }}</span>
+                      <span class="ml-1 text-[11px] text-[#596080]">{{ row.level || '-' }}</span>
+                    </td>
+                    <td class="px-3.5 py-3 text-[12px]">
+                      <span :class="row.licenseValid ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'">{{ row.licensePeriod || '-' }}</span>
+                      <span class="ml-1.5 rounded px-1 py-0.5 text-[10px] font-medium" :class="row.licenseValid ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'">{{ row.licenseValid ? '有效' : '过期' }}</span>
+                    </td>
+                    <td class="px-3.5 py-3 text-[12px]">
+                      <span :class="row.standardMeet ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'">{{ row.standardMeet ? '符合标准' : '存在不符合项' }}</span>
+                    </td>
+                    <td class="px-3.5 py-3 text-[12px]">
+                      <span v-if="row.riskCount > 0" class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-500">
+                        <AlertTriangle class="w-3 h-3" />{{ row.riskCount }} 项预警
+                      </span>
+                      <span v-else class="text-[#9CA3AF]">暂无预警</span>
+                    </td>
                     <td class="px-3.5 py-3 text-right">
                       <button @click="openDrawer(row)" class="text-[#0A6EFD] hover:text-[#1F264D] font-medium text-[11px]">
                         <Eye class="w-3 h-3 inline mr-1" />查看详情
                       </button>
-                      <button @click="showLicenseImage(row)" class="ml-3 text-emerald-600 hover:text-emerald-700 font-medium text-[11px]">
+                      <button @click="showLicenseImage(row)" class="ml-3 text-emerald-600 hover:text-emerald-700 font-medium text-[11px] whitespace-nowrap inline-flex items-center">
+                        <Shield class="w-3 h-3 inline mr-1" />查看资质
+                      </button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <!-- r7 医疗资质监测（保留 mock） -->
+          <div v-else class="flex-1 overflow-auto">
+            <table class="w-full table-fixed text-left border-collapse">
+              <thead :class="['sticky top-0 z-10 border-b', currentRule?.id === 'r7' ? 'bg-emerald-50/60 border-emerald-100' : 'bg-emerald-50/60 border-emerald-100']">
+                <tr>
+                  <th class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">医疗机构</th>
+                  <th class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">机构类别 / 级别</th>
+                  <th class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">许可证有效期</th>
+                  <th class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">标准核验</th>
+                  <th class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden">风险预警</th>
+                  <th class="px-3.5 py-2 text-[11px] font-semibold text-[#596080] whitespace-nowrap overflow-hidden text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#b8c9e8]/30">
+                <!-- r6 科目零业务 -->
+                <template v-if="currentRule?.id === 'r6'">
+                  <tr v-if="realTableData.length > 0" v-for="row in tableData" :key="row.id" class="hover:bg-emerald-50/40 transition-colors">
+                    <td v-for="col in realTableColumns" :key="col" class="px-3.5 py-3 align-top text-[12px] text-[#596080]">{{ row[col] ?? '-' }}</td>
+                  </tr>
+                  <tr v-if="realTableData.length === 0">
+                    <td colspan="5" class="px-3.5 py-12 text-center text-[#9CA3AF]">
+                      <Activity class="w-10 h-10 mx-auto mb-2 opacity-30" />
+                      <p class="text-[13px]">暂无监测数据</p>
+                      <p class="text-[11px] mt-1">请在「指标执行」页面执行相应指标</p>
+                    </td>
+                  </tr>
+                </template>
+                <!-- r7 医疗资质监测（保留 mock） -->
+                <template v-else-if="currentRule?.id === 'r7'">
+                  <tr v-for="row in tableData" :key="row.id" class="hover:bg-emerald-50/40 transition-colors">
+                    <td class="px-3.5 py-3 text-[12px] text-[#1F264D] font-medium flex items-center">
+                      <Building class="w-3.5 h-3.5 text-emerald-500 mr-2" /> {{ row.org || '-' }}
+                    </td>
+                    <td class="px-3.5 py-3 text-[12px]">
+                      <span class="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">{{ row.category || '-' }}</span>
+                      <span class="ml-1 text-[11px] text-[#596080]">{{ row.level || '-' }}</span>
+                    </td>
+                    <td class="px-3.5 py-3 text-[12px]">
+                      <span :class="row.licenseValid ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'">{{ row.licensePeriod || '-' }}</span>
+                      <span class="ml-1.5 rounded px-1 py-0.5 text-[10px] font-medium" :class="row.licenseValid ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'">{{ row.licenseValid ? '有效' : '过期' }}</span>
+                    </td>
+                    <td class="px-3.5 py-3 text-[12px]">
+                      <span :class="row.standardMeet ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'">{{ row.standardMeet ? '符合标准' : '存在不符合项' }}</span>
+                    </td>
+                    <td class="px-3.5 py-3 text-[12px]">
+                      <span v-if="row.riskCount > 0" class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-500">
+                        <AlertTriangle class="w-3 h-3" />{{ row.riskCount }} 项预警
+                      </span>
+                      <span v-else class="text-[#9CA3AF]">暂无预警</span>
+                    </td>
+                    <td class="px-3.5 py-3 align-top text-right whitespace-nowrap">
+                      <button @click="openDrawer(row)" class="text-[#0A6EFD] hover:text-[#1F264D] font-medium text-[11px] whitespace-nowrap inline-flex items-center">
+                        <Eye class="w-3 h-3 inline mr-1" />查看详情
+                      </button>
+                      <button @click="showLicenseImage(row)" class="ml-3 text-emerald-600 hover:text-emerald-700 font-medium text-[11px] whitespace-nowrap inline-flex items-center">
                         <Shield class="w-3 h-3 inline mr-1" />查看资质
                       </button>
                     </td>
@@ -732,6 +823,13 @@ const currentIndicatorId = computed(() => {
   return rule?.indicator_id ?? null
 })
 
+const detailListCount = computed(() => {
+  const indId = currentIndicatorId.value
+  if (!indId) return 0
+  const rec = findExecutionByTime(indId)
+  return rec?.numerator_count ?? 0
+})
+
 const columnOrder = computed(() => {
   void hospitalVersion.value
   const indId = currentIndicatorId.value
@@ -811,10 +909,17 @@ const realTableData = computed(() => {
 function findExecutionByTime(indicatorId: number): any | null {
   const tm = timeMode.value
   const tv = currentTimeValue.value
+  const isImmediateMatch = (record: any) => {
+    const timeRange = record.time_range ?? '全量'
+    const runMode = record.run_mode ?? record.time_mode
+    return timeRange === '全量' || (!record.time_range && runMode === 'immediate')
+  }
   const results = executionRecords.value
     .filter(r => r.indicator_id === indicatorId && r.status === 'success')
     .filter(r => {
-      if (tm === 'immediate') return true
+      if (!tm || tm === 'immediate') {
+        return isImmediateMatch(r)
+      }
       if (r.run_mode !== tm) return false
       if (tv && r.time_value !== tv) return false
       return true
@@ -849,18 +954,35 @@ function getRuleCount(rule: any): string {
     void ruleCountCache.value
     const rec = findExecutionByTime(rule.indicator_id)
     if (!rec) return '-'
-    const cnt = rec.numerator_count ?? 0
-    if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
-    return formatCountInMetric(rule.metric, cnt)
+    return `${rec.numerator_count ?? 0} 条`
   }
   const tm = timeMode.value
   const tv = currentTimeValue.value
   const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
   const cnt = ruleCountCache.value[key]
   if (cnt === undefined || cnt === -1) return '-'
-  if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
-  return formatCountInMetric(rule.metric, cnt)
+  return `${cnt} 条`
 }
+// function getRuleCount(rule: any): string {
+//   if (!rule) return '-'
+//   void hospitalVersion.value
+//   if (currentHospitalId.value === 'all') {
+//     void countLoading.value
+//     void ruleCountCache.value
+//     const rec = findExecutionByTime(rule.indicator_id)
+//     if (!rec) return '-'
+//     const cnt = rec.numerator_count ?? 0
+//     if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
+//     return formatCountInMetric(rule.metric, cnt)
+//   }
+//   const tm = timeMode.value
+//   const tv = currentTimeValue.value
+//   const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
+//   const cnt = ruleCountCache.value[key]
+//   if (cnt === undefined || cnt === -1) return '-'
+//   if (rule.mode !== 'monitor' || !rule.metric) return `${cnt} 条`
+//   return formatCountInMetric(rule.metric, cnt)
+// }
 
 const openDrawer = (row: any) => { drawerData.value = row }
 const showLicenseImage = (row: any) => { licenseImageData.value = row }

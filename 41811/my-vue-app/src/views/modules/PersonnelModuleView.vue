@@ -438,7 +438,7 @@ function findExecutionByTime(indicatorId: number): any | null {
     return timeRange === '全量' || (!record.time_range && runMode === 'immediate')
   }
   const results = executionRecords.value
-    .filter(r => r.indicator_id === indicatorId && r.status === 'success')
+    .filter(r => r.indicator_id === indicatorId)
     .filter(r => {
       if (!tm || tm === 'immediate') {
         return isImmediateMatch(r)
@@ -466,7 +466,8 @@ function findExecutionByTime(indicatorId: number): any | null {
     })),
   })
 
-  return results[0] || null
+  const success = results.find(r => r.status === 'success')
+  return success || results[0] || null
 }
 
 function getRuleCount(rule: any): string {
@@ -570,7 +571,20 @@ const {
 })
 
 function getDetailTotalCount(): number {
-  return detailTotalCount.value
+  const rule = currentRule.value
+  if (!rule?.indicator_id) return detailTotalCount.value
+
+  const tm = timeMode.value
+  const tv = currentTimeValue.value
+
+  if (currentHospitalId.value === 'all') {
+    const rec = findExecutionByTime(rule.indicator_id)
+    return rec?.numerator_count ?? 0
+  }
+
+  const key = `${rule.indicator_id}-${currentHospitalId.value}-${tm}-${tv || 'all'}`
+  const cnt = ruleCountCache.value[key]
+  return cnt === undefined || cnt === -1 ? 0 : cnt
 }
 
 const openDrawer = (row: any) => { drawerData.value = row }

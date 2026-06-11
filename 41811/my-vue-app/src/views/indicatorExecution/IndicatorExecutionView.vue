@@ -733,7 +733,7 @@ const denRowsCache = reactive(new Map<string, Record<string, unknown>[]>())
 const numRowsLoading = ref(false)
 const denRowsLoading = ref(false)
 
-async function loadNumPage(page: number) {
+async function loadNumPage(page: number, setCurrent=true) {
   const rec = selectedRecord.value
   if (!rec?.id) return
   if (rec.status === 'running' || rec.status === 'pending') return
@@ -741,7 +741,7 @@ async function loadNumPage(page: number) {
   const apiId: number | string = rec.dbRecordId ?? rec.id
   const cacheKey = `${rec.id}_numerator_${selectedDetailHospCode.value || 'all'}_${page}`
   if (numRowsCache.has(cacheKey)) {
-    numPage.value = page
+    if(setCurrent) numPage.value = page
     return
   }
   numRowsLoading.value = true
@@ -755,7 +755,7 @@ async function loadNumPage(page: number) {
     })
     if (res.ok && res.rows) {
       numRowsCache.set(cacheKey, res.rows)
-      numPage.value = page
+      if(setCurrent) numPage.value = page
       if (res.total_count != null) numTotal.value = res.total_count
     } else {
       console.warn('loadNumPage failed:', res.error)
@@ -767,7 +767,7 @@ async function loadNumPage(page: number) {
   }
 }
 
-async function loadDenPage(page: number) {
+async function loadDenPage(page: number, setCurrent=true) {
   const rec = selectedRecord.value
   if (!rec?.id) return
   if (rec.status === 'running' || rec.status === 'pending') return
@@ -775,7 +775,7 @@ async function loadDenPage(page: number) {
   const apiId: number | string = rec.dbRecordId ?? rec.id
   const cacheKey = `${rec.id}_denominator_${selectedDetailHospCode.value || 'all'}_${page}`
   if (denRowsCache.has(cacheKey)) {
-    denPage.value = page
+    if(setCurrent) denPage.value = page
     return
   }
   denRowsLoading.value = true
@@ -789,7 +789,7 @@ async function loadDenPage(page: number) {
     })
     if (res.ok && res.rows) {
       denRowsCache.set(cacheKey, res.rows)
-      denPage.value = page
+      if(setCurrent) denPage.value = page
       if (res.total_count != null) denTotal.value = res.total_count
     } else {
       console.warn('loadDenPage failed:', res.error)
@@ -1336,10 +1336,10 @@ function selectRecord(row: ExecutionRecord) {
     // 预加载第2页（仅当记录已持久化且数据量超过一页时）
     if (!executingIds.value.has(String(row.id))) {
       if (hasNum && (row.numeratorCount ?? 0) > PAGE_SIZE) {
-        loadNumPage(2)
+        loadNumPage(2, false)
       }
       if (hasDen && (row.denominatorCount ?? 0) > PAGE_SIZE) {
-        loadDenPage(2)
+        loadDenPage(2, false)
       }
     }
   }
